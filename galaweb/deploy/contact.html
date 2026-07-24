@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>(function(){if(localStorage.getItem('ghk_lock')!=='ok'){location.replace('lock.html?r='+encodeURIComponent(location.pathname.split('/').pop()||'index.html'));}})();</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact — Galápagos Hook Adventure</title>
+<meta name="description" content="Plan your Galápagos trip with a local San Cristóbal family. WhatsApp, email or send us a message.">
+<link rel="icon" href="assets/img/logo.png">
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body data-page="contact">
+<header class="site-header" id="site-header"></header>
+
+<section class="pagehero" style="min-height:48vh">
+  <div class="pagehero-bg" style="background-image:url(assets/img/kicker-day.jpg)"></div>
+  <div class="pagehero-inner"><div class="wrap">
+    <p class="breadcrumb"><a href="index.html" data-en="Home" data-es="Inicio">Home</a> · <span data-en="Contact" data-es="Contacto">Contact</span></p>
+    <h1 data-en="Let's plan your Galápagos" data-es="Planifiquemos tu Galápagos">Let's plan your Galápagos</h1>
+    <p class="lead" data-en="Tell us your dates and dreams. A real local — not a call centre — will reply." data-es="Cuéntanos tus fechas y sueños. Un local de verdad — no un call center — te responderá."></p>
+  </div></div>
+</section>
+
+<section class="section dark">
+  <div class="wrap">
+    <div class="contact-grid">
+      <div class="reveal">
+        <p class="eyebrow" data-en="Talk to a local" data-es="Habla con un local">Talk to a local</p>
+        <h2 style="font-size:clamp(28px,3.6vw,42px);margin-bottom:24px" data-en="Get in touch" data-es="Contáctanos">Get in touch</h2>
+        <ul class="contact-info" id="contactInfo"></ul>
+        <a class="btn btn-gold" style="margin-top:26px" id="waBig" target="_blank" rel="noopener" href="#" data-en="Chat on WhatsApp" data-es="Chatea por WhatsApp">Chat on WhatsApp</a>
+      </div>
+
+      <div class="reveal">
+        <form data-contact style="background:rgba(255,255,255,.05);border:1px solid var(--line-on-dark);border-radius:12px;padding:30px">
+          <div class="form-row">
+            <div class="field"><label data-en="Full name" data-es="Nombre completo">Full name</label><input name="name" required></div>
+            <div class="field"><label data-en="Email" data-es="Correo">Email</label><input name="email" type="email"></div>
+          </div>
+          <div class="field"><label data-en="I'm interested in" data-es="Me interesa">I'm interested in</label>
+            <select name="interest">
+              <option data-en="All-inclusive package" data-es="Paquete todo incluido">All-inclusive package</option>
+              <option data-en="Day tours" data-es="Tours de día">Day tours</option>
+              <option data-en="Sport fishing" data-es="Pesca deportiva">Sport fishing</option>
+              <option data-en="Diving" data-es="Buceo">Diving</option>
+              <option data-en="Private / custom trip" data-es="Viaje privado / a medida">Private / custom trip</option>
+            </select>
+          </div>
+          <div class="field"><label data-en="Your message" data-es="Tu mensaje">Your message</label><textarea name="message" placeholder="Dates, group size, what you'd love to see…"></textarea></div>
+          <button type="submit" class="btn btn-gold btn-block" data-wa-shortcut data-en="Send via WhatsApp" data-es="Enviar por WhatsApp">Send via WhatsApp</button>
+          <p style="font-size:12.5px;color:rgba(255,255,255,.5);text-align:center;margin:14px 0 0" data-en="Opens WhatsApp with your message ready to send." data-es="Abre WhatsApp con tu mensaje listo para enviar."></p>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section paper-bg">
+  <div class="wrap">
+    <div class="sectionhead center reveal">
+      <p class="eyebrow" style="justify-content:center" data-en="The Island" data-es="La Isla">The Island</p>
+      <h2 data-en="Where the adventures happen" data-es="Donde ocurren las aventuras">Where the adventures happen</h2>
+      <p class="lead" style="margin:16px auto 0" data-en="San Cristóbal — the easternmost island and our home. Hover the pins to explore." data-es="San Cristóbal — la isla más oriental y nuestro hogar. Pasa el cursor sobre los pines para explorar."></p>
+    </div>
+    <div class="map-wrap reveal" id="mapWrap"></div>
+    <div class="map-legend" id="mapLegend"></div>
+  </div>
+</section>
+
+<footer class="site-footer" id="site-footer"></footer>
+<script src="assets/js/content.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+  // contact info list + big WA button (after app render)
+  window.addEventListener('load',function(){
+    var S=window.GHA.content, L=window.GHA.lang, svg=window.GHA.svg, m=S.meta;
+    var t=function(v){return v&&typeof v==='object'?(v[L]||v.en):v;};
+    var ul=document.getElementById('contactInfo');
+    if(ul) ul.innerHTML=
+      '<li>'+svg('pin')+'<div><small>'+(L==='es'?'Galápagos (sede)':'Galápagos (HQ)')+'</small><span>'+t(m.address)+'</span></div></li>'
+     +'<li>'+svg('pin')+'<div><small>'+(L==='es'?'Oficina EE. UU.':'USA Office')+'</small><span>'+t(m.addressUs)+'</span></div></li>'
+     +'<li>'+svg('wa')+'<div><small>WhatsApp</small><span>+'+m.whatsapp+'</span></div></li>'
+     +'<li>'+svg('phone')+'<div><small>'+(L==='es'?'Teléfono':'Phone')+'</small><span>'+m.phone+'</span></div></li>'
+     +'<li>'+svg('mail')+'<div><small>Email</small><span>'+m.email+'</span></div></li>'
+     +'<li>'+svg('clock')+'<div><small>'+(L==='es'?'Horario':'Hours')+'</small><span>'+t(m.hours)+'</span></div></li>';
+    var wa=document.getElementById('waBig');
+    if(wa) wa.href='https://wa.me/'+(m.whatsapp||'').replace(/\D/g,'')+'?text='+encodeURIComponent(L==='es'?'¡Hola Galápagos Hook! Quisiera planificar un viaje.':'Hi Galápagos Hook! I would love to plan a trip.');
+  });
+</script>
+</body>
+</html>

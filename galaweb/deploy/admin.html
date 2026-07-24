@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>(function(){if(localStorage.getItem('ghk_lock')!=='ok'){location.replace('lock.html?r='+encodeURIComponent(location.pathname.split('/').pop()||'index.html'));}})();</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Galápagos Hook Adventure</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="stylesheet" href="assets/css/site.css">
+<style>
+  body{background:#0c2322;}
+  .admin-shell{min-height:100vh;display:flex;flex-direction:column;}
+  /* login */
+  .login{min-height:100vh;display:grid;place-items:center;padding:24px;
+    background:linear-gradient(rgba(8,32,31,.82),rgba(8,32,31,.92)),url(assets/img/kicker-sunrise.jpg);background-size:cover;background-position:center;}
+  .login-card{width:100%;max-width:400px;background:var(--paper);border-radius:14px;padding:40px 34px;box-shadow:var(--shadow);}
+  .login-card img{height:84px;margin:0 auto 18px;display:block;}
+  .login-card h1{font-size:24px;text-align:center;margin-bottom:6px;}
+  .login-card p{text-align:center;color:var(--ink-soft);font-size:14px;margin-bottom:24px;}
+  .err{background:#fbe7e3;color:#9a2b16;border-radius:6px;padding:10px 14px;font-size:13.5px;margin-bottom:14px;display:none;}
+  .err.show{display:block;}
+  /* topbar */
+  .admin-top{position:sticky;top:0;z-index:50;background:var(--deep);color:var(--paper);display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 22px;box-shadow:0 1px 0 var(--line-on-dark);}
+  .admin-top .brand-mini{display:flex;align-items:center;gap:11px;}
+  .admin-top img{height:36px;}
+  .admin-top b{font-family:var(--display);font-weight:800;font-size:15px;}
+  .admin-top .actions{display:flex;gap:10px;align-items:center;}
+  .save-state{font-size:12.5px;color:var(--gold-soft);opacity:0;transition:.3s;}
+  .save-state.show{opacity:1;}
+  /* layout */
+  .admin-body{flex:1;display:grid;grid-template-columns:230px 1fr;align-items:start;}
+  .admin-nav{position:sticky;top:60px;background:var(--deep-2);min-height:calc(100vh - 60px);padding:22px 14px;display:flex;flex-direction:column;gap:3px;}
+  .admin-nav button{display:flex;align-items:center;gap:11px;text-align:left;color:rgba(255,255,255,.72);font-family:var(--body);font-weight:600;font-size:14.5px;padding:11px 14px;border-radius:8px;transition:.25s;width:100%;}
+  .admin-nav button:hover{background:rgba(255,255,255,.06);color:#fff;}
+  .admin-nav button.active{background:var(--gold);color:var(--deep);}
+  .admin-main{padding:34px clamp(20px,4vw,52px);max-width:1000px;}
+  .panel{display:none;}
+  .panel.active{display:block;}
+  .panel-anim{animation:fade .4s var(--ease) both;}
+  @keyframes fade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+  .panel h2{font-size:30px;margin-bottom:6px;color:var(--paper);}
+  .admin-main h2{color:var(--paper);}
+  .panel .sub{color:rgba(255,255,255,.6);margin-bottom:28px;font-size:15px;}
+  /* cards & fields (dark) */
+  .ed-card{background:rgba(255,255,255,.04);border:1px solid var(--line-on-dark);border-radius:12px;padding:24px;margin-bottom:20px;}
+  .ed-card h3{color:var(--paper);font-family:var(--body);font-weight:700;font-size:17px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .ed-card .hint{color:rgba(255,255,255,.5);font-size:13px;margin-bottom:16px;}
+  .ed-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .ed-field{margin-bottom:14px;}
+  .ed-field label{display:block;font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:6px;}
+  .ed-field input,.ed-field textarea,.ed-field select{width:100%;padding:11px 13px;border:1.5px solid var(--line-on-dark);border-radius:7px;background:rgba(255,255,255,.07);color:var(--paper);font-family:var(--body);font-size:14.5px;}
+  .ed-field input:focus,.ed-field textarea:focus{outline:none;border-color:var(--gold);}
+  .ed-field textarea{resize:vertical;min-height:72px;}
+  .price-in{display:flex;align-items:center;gap:8px;}
+  .price-in span{color:var(--gold-soft);font-weight:700;}
+  .img-edit{display:flex;gap:14px;align-items:center;}
+  .img-edit .thumb{width:96px;height:72px;border-radius:7px;object-fit:cover;background:#0c2322 center/cover;flex-shrink:0;border:1px solid var(--line-on-dark);}
+  .img-edit .img-actions{flex:1;display:flex;flex-direction:column;gap:8px;}
+  .mini-btn{font-size:12.5px;font-weight:700;letter-spacing:.04em;padding:8px 14px;border-radius:6px;background:rgba(255,255,255,.1);color:var(--paper);transition:.25s;cursor:pointer;display:inline-flex;align-items:center;gap:7px;}
+  .mini-btn:hover{background:rgba(255,255,255,.18);}
+  .mini-btn.danger{background:rgba(200,70,50,.22);color:#ffb3a3;}
+  .mini-btn.danger:hover{background:rgba(200,70,50,.35);}
+  .list-item{position:relative;}
+  .item-head{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;}
+  .add-btn{width:100%;border:1.5px dashed var(--line-on-dark);border-radius:10px;padding:16px;color:var(--gold-soft);font-weight:700;letter-spacing:.04em;transition:.25s;}
+  .add-btn:hover{background:rgba(255,255,255,.05);border-color:var(--gold);}
+  .inc-row{display:flex;gap:8px;margin-bottom:8px;align-items:center;}
+  .inc-row input{flex:1;}
+  @media(max-width:760px){
+    .admin-body{grid-template-columns:1fr;}
+    .admin-nav{position:static;min-height:auto;flex-direction:row;flex-wrap:wrap;}
+    .admin-nav button{width:auto;}
+    .ed-row{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="admin-shell" id="shell"></div>
+<script src="assets/js/content.js"></script>
+<script src="assets/js/admin.js"></script>
+</body>
+</html>

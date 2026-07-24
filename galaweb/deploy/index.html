@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>(function(){if(localStorage.getItem('ghk_lock')!=='ok'){location.replace('lock.html?r='+encodeURIComponent(location.pathname.split('/').pop()||'index.html'));}})();</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Galápagos Hook Adventure — Local Roots, Wild Experiences</title>
+<meta name="description" content="All-inclusive Galápagos journeys, ocean tours and world-class sport fishing from San Cristóbal Island — run by a local family.">
+<link rel="icon" href="assets/img/logo.png">
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body data-page="index">
+
+<!-- Globe intro / preloader: progress bar to 100%, then "Ready for your next experience?" + enter arrow. Shows once per session. -->
+<div id="globeIntro" data-session style="position:fixed;inset:0;z-index:9999;background:radial-gradient(120% 120% at 50% 35%,#0f4034,#0a2a22 60%,#071d18)"></div>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<script src="assets/js/intro.js"></script>
+
+<header class="site-header" id="site-header"></header>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="hero-slides" id="heroSlides"></div>
+  <div class="hero-inner">
+    <div class="wrap-wide">
+      <p class="eyebrow" data-hero="kicker"></p>
+      <h1><span data-hero="title"></span><span class="h-script" data-hero="script"></span></h1>
+      <p class="lead" data-hero="sub"></p>
+      <div class="hero-cta">
+        <a class="btn btn-gold" href="packages.html" data-en="Explore Packages" data-es="Ver Paquetes">Explore Packages</a>
+        <a class="btn btn-ghost" href="contact.html" data-en="Plan With Us" data-es="Planifica con Nosotros">Plan With Us</a>
+      </div>
+    </div>
+  </div>
+  <div class="hero-dots" id="heroDots"></div>
+  <div class="scroll-hint"><span data-en="Scroll" data-es="Desliza">Scroll</span><i></i></div>
+</section>
+
+<!-- ============ TRUST STRIP ============ -->
+<section class="trust" id="trustStrip"></section>
+
+<!-- ============ PACKAGES (lead) ============ -->
+<section class="section paper-bg" id="packages">
+  <div class="wrap">
+    <div class="sectionhead center reveal">
+      <p class="eyebrow" data-en="All-Inclusive Journeys" data-es="Viajes Todo Incluido">All-Inclusive Journeys</p>
+      <h2 data-en="All-Inclusive Galápagos, done the local way" data-es="Galápagos Todo Incluido, a la manera local">All-Inclusive Galápagos, done the local way</h2>
+      <p class="lead" style="margin:18px auto 0" data-en="No middlemen, no crowds. Every package is hosted by our own family and crew — stays, meals, guided tours, transfers and airport pickup all handled, so you only think about the wildlife." data-es="Sin intermediarios, sin multitudes. Cada paquete es atendido por nuestra propia familia y tripulación — estadías, comidas, tours guiados, traslados y recogida en el aeropuerto, para que solo pienses en la vida silvestre."></p>
+    </div>
+    <div class="pkg-grid" id="pkgGrid"></div>
+    <div class="center" style="margin-top:44px">
+      <a class="btn btn-ink" href="packages.html" data-en="Compare all packages" data-es="Comparar todos los paquetes">Compare all packages</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LIKE A LOCAL (about teaser) ============ -->
+<section class="section dark">
+  <div class="wrap">
+    <div class="split">
+      <div class="split-media tall reveal">
+        <img src="assets/img/sealion-blacksand.jpg" alt="Sea lions on a Galápagos beach">
+      </div>
+      <div class="split-body reveal">
+        <p class="eyebrow" data-en="Our Story" data-es="Nuestra Historia">Our Story</p>
+        <h2 data-en="A local family with the ocean in our blood" data-es="Una familia local con el mar en la sangre">A local family with the ocean in our blood</h2>
+        <p class="lead" data-en="Galápagos Hook Adventure was born in San Cristóbal — the oldest island, where Darwin first set foot. For generations we've fished, guided and protected these waters. We share the islands the way we know them: unhurried, authentic, deeply local." data-es="Galápagos Hook Adventure nació en San Cristóbal — la isla más antigua, donde Darwin pisó por primera vez. Por generaciones hemos pescado, guiado y protegido estas aguas. Compartimos las islas como las conocemos: sin prisa, auténticas, profundamente locales."></p>
+        <div class="stats">
+          <div class="stat"><b>100%</b><span data-en="Locally owned" data-es="Propiedad local">Locally owned</span></div>
+          <div class="stat"><b>0</b><span data-en="Middlemen" data-es="Intermediarios">Middlemen</span></div>
+          <div class="stat"><b>3</b><span data-en="Generations" data-es="Generaciones">Generations</span></div>
+          <div class="stat"><b>365</b><span data-en="Days a year" data-es="Días al año">Days a year</span></div>
+        </div>
+        <div style="margin-top:34px"><a class="btn btn-gold" href="about.html" data-en="Meet the family" data-es="Conoce a la familia">Meet the family</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TOURS TEASER ============ -->
+<section class="section paper-bg">
+  <div class="wrap">
+    <div class="sectionhead reveal" style="display:flex;justify-content:space-between;align-items:flex-end;max-width:none;gap:24px;flex-wrap:wrap">
+      <div style="max-width:560px">
+        <p class="eyebrow" data-en="Ocean Tours & Adventures" data-es="Tours y Aventuras">Ocean Tours &amp; Adventures</p>
+        <h2 data-en="Choose your next adventure" data-es="Elige tu próxima aventura">Choose your next adventure</h2>
+      </div>
+      <a class="textlink" href="tours.html" data-en="View all tours" data-es="Ver todos los tours">View all tours</a>
+    </div>
+    <div class="grid grid-3" id="toursGrid" data-limit="3"></div>
+  </div>
+</section>
+
+<!-- ============ SPORT FISHING TEASER ============ -->
+<section class="section teal" style="position:relative;overflow:hidden">
+  <div class="wrap">
+    <div class="split flip">
+      <div class="split-media tall reveal"><img src="assets/img/fishing-marlin.jpg" alt="Sport fishing in Galápagos"></div>
+      <div class="split-body reveal">
+        <p class="eyebrow" data-en="Sport Fishing" data-es="Pesca Deportiva">Sport Fishing</p>
+        <h2 data-en="One of the last great fishing frontiers" data-es="Una de las últimas grandes fronteras de pesca">One of the last great fishing frontiers</h2>
+        <p class="lead" data-en="Catch-and-release charters with local captains who have fished these seamounts their whole lives. Marlin, tuna, wahoo and mahi-mahi in some of the most pristine water on Earth." data-es="Charters de captura y liberación con capitanes locales que han pescado estos montes submarinos toda su vida. Marlín, atún, wahoo y dorado en algunas de las aguas más prístinas del planeta."></p>
+        <div class="chips" style="margin:24px 0 30px">
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M3 12c4-6 11-6 15 0-4 6-11 6-15 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M18 12c1.5-1 3-1.5 3-1.5s-.5 3-1.5 4M18 12c1.5 1 3 1.5 3 1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/></svg><b data-en="Striped Marlin" data-es="Marlín Rayado">Striped Marlin</b></span>
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M3 12c4-6 11-6 15 0-4 6-11 6-15 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M18 12c1.5-1 3-1.5 3-1.5s-.5 3-1.5 4M18 12c1.5 1 3 1.5 3 1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/></svg><b data-en="Yellowfin Tuna" data-es="Atún Aleta Amarilla">Yellowfin Tuna</b></span>
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M3 12c4-6 11-6 15 0-4 6-11 6-15 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M18 12c1.5-1 3-1.5 3-1.5s-.5 3-1.5 4M18 12c1.5 1 3 1.5 3 1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/></svg><b data-en="Wahoo" data-es="Wahoo">Wahoo</b></span>
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M3 12c4-6 11-6 15 0-4 6-11 6-15 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M18 12c1.5-1 3-1.5 3-1.5s-.5 3-1.5 4M18 12c1.5 1 3 1.5 3 1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/></svg><b data-en="Mahi-Mahi" data-es="Dorado">Mahi-Mahi</b></span>
+          <span class="chip"><svg viewBox="0 0 24 24"><path d="M3 12c4-6 11-6 15 0-4 6-11 6-15 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M18 12c1.5-1 3-1.5 3-1.5s-.5 3-1.5 4M18 12c1.5 1 3 1.5 3 1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/></svg><b data-en="Yellowtail" data-es="Jurel">Yellowtail</b></span>
+        </div>
+        <a class="btn btn-gold" href="sport-fishing.html" data-en="Plan a fishing expedition" data-es="Planifica una expedición">Plan a fishing expedition</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONSERVATION BAND ============ -->
+<section class="section dark">
+  <div class="wrap">
+    <div class="split">
+      <div class="split-body reveal">
+        <p class="eyebrow" data-en="Responsible Tourism" data-es="Turismo Responsable">Responsible Tourism</p>
+        <h2 data-en="We protect what we love" data-es="Protegemos lo que amamos">We protect what we love</h2>
+        <p class="lead" data-en="The Galápagos gave our family everything. We run small groups, use responsible boats, practice catch-and-release and reinvest in local conservation — so these islands stay wild for the next generation." data-es="Galápagos le dio todo a nuestra familia. Operamos en grupos pequeños, usamos botes responsables, practicamos captura y liberación y reinvertimos en la conservación local — para que estas islas sigan salvajes."></p>
+        <div style="margin-top:30px"><a class="btn btn-ghost" href="conservation.html" data-en="Our commitment" data-es="Nuestro compromiso">Our commitment</a></div>
+      </div>
+      <div class="split-media tall reveal"><img src="assets/img/sealion-underwater.jpg" alt="Sea lion underwater"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ GALLERY REEL ============ -->
+<section class="section-sm paper-bg">
+  <div class="wrap">
+    <div class="center reveal" style="margin-bottom:30px">
+      <p class="eyebrow" style="justify-content:center" data-en="Follow Our Adventures" data-es="Síguenos">Follow Our Adventures</p>
+      <h2 style="font-size:clamp(28px,4vw,44px)"><a href="https://instagram.com/galapagoshookadventure" target="_blank" rel="noopener" style="color:inherit">@galapagoshookadventure</a></h2>
+      <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap">
+        <a class="btn btn-ink btn-sm" href="https://instagram.com/galapagoshookadventure" target="_blank" rel="noopener" data-en="Follow on Instagram" data-es="Síguenos en Instagram">Follow on Instagram</a>
+        <a class="btn btn-ghost btn-sm" href="https://tiktok.com/@galapagoshookadve" target="_blank" rel="noopener" data-en="Watch on TikTok" data-es="Míranos en TikTok">Watch on TikTok</a>
+      </div>
+    </div>
+    <div class="reel" id="galleryReel"></div>
+  </div>
+</section>
+
+<!-- ============ CTA ============ -->
+<section class="section teal center" style="background-image:linear-gradient(rgba(8,32,31,.72),rgba(8,32,31,.82)),url(assets/img/kicker-sunrise.jpg);background-size:cover;background-position:center">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow" style="justify-content:center" data-en="Ready when you are" data-es="Listos cuando tú lo estés">Ready when you are</p>
+      <h2 style="font-size:clamp(34px,6vw,68px);max-width:16ch;margin:0 auto 22px" data-en="Let's plan your Galápagos" data-es="Planifiquemos tu Galápagos">Let's plan your Galápagos</h2>
+      <p class="lead" style="margin:0 auto 32px" data-en="Tell us your dates and dreams — we'll build the trip around you." data-es="Cuéntanos tus fechas y sueños — armamos el viaje a tu medida."></p>
+      <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+        <a class="btn btn-gold" href="contact.html" data-en="Start planning" data-es="Empezar a planificar">Start planning</a>
+        <a class="btn btn-ghost" href="tours.html" data-en="Browse tours" data-es="Explorar tours">Browse tours</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer" id="site-footer"></footer>
+
+<script src="assets/js/content.js"></script>
+<script src="assets/js/details.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

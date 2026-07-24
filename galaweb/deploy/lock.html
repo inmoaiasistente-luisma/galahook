@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>En construcción — Galápagos Hook Adventure</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#eef2ea;background:radial-gradient(120% 120% at 50% 35%,#0f4034,#0a2a22 60%,#071d18);padding:24px}
+.card{width:100%;max-width:420px;text-align:center}
+.logo{width:min(320px,28vw);height:min(320px,28vw);object-fit:contain;margin:0 auto 26px;display:block;filter:drop-shadow(0 6px 16px rgba(0,0,0,.35))}
+.eyebrow{font-weight:700;font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:#cf9f54;margin:0 0 14px}
+h1{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:700;font-size:clamp(28px,5vw,38px);line-height:1.08;margin:0 0 14px;color:#fbf8f1;letter-spacing:-.01em}
+p.sub{margin:0 0 32px;color:#c7d3cd;font-size:15.5px;line-height:1.6}
+form{display:flex;flex-direction:column;gap:12px}
+input[type="password"]{width:100%;padding:15px 18px;border-radius:8px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fbf8f1;font-size:16px;font-family:inherit;outline:none;transition:border-color .2s}
+input[type="password"]:focus{border-color:#cf9f54}
+input[type="password"]::placeholder{color:#7f9490}
+button{padding:15px 18px;border-radius:8px;background:#cf9f54;color:#11302f;font-weight:700;font-size:15.5px;font-family:inherit;cursor:pointer;transition:background .2s}
+button:hover{background:#e4c98c}
+.err{min-height:20px;font-size:13.5px;color:#e78b8b;margin-top:2px}
+.shake{animation:shake .4s}
+@keyframes shake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-4px)}40%,60%{transform:translateX(4px)}}
+footer{margin-top:34px;font-size:12.5px;color:#6d8a83}
+</style>
+</head>
+<body>
+<div class="card">
+<img class="logo" src="assets/img/logo.png" alt="Galápagos Hook Adventure">
+<p class="eyebrow">Sitio en construcción</p>
+<h1>Estamos preparando<br>algo especial</h1>
+<p class="sub">Volvemos pronto. Si tienes acceso anticipado, ingresa la clave para continuar.</p>
+<form id="gateForm" autocomplete="off">
+<input type="password" id="gatePass" placeholder="Clave de acceso" autofocus>
+<button type="submit">Entrar</button>
+<div class="err" id="gateErr"></div>
+</form>
+<footer>© Galápagos Hook Adventure</footer>
+</div>
+<script>
+(function(){
+var KEY='ANAKLUISMA0522';
+var params=new URLSearchParams(location.search);
+var target=params.get('r')||'index.html';
+if(!/^[a-zA-Z0-9_-]+\.html$/.test(target))target='index.html';
+if(localStorage.getItem('ghk_lock')==='ok'){location.replace(target);return;}
+var form=document.getElementById('gateForm');
+var input=document.getElementById('gatePass');
+var err=document.getElementById('gateErr');
+form.addEventListener('submit',function(e){
+e.preventDefault();
+if(input.value===KEY){
+localStorage.setItem('ghk_lock','ok');
+location.replace(target);
+}else{
+err.textContent='Clave incorrecta, intenta de nuevo.';
+input.value='';
+input.classList.add('shake');
+setTimeout(function(){input.classList.remove('shake')},400);
+input.focus();
+}
+});
+})();
+</script>
+</body>
+</html>
