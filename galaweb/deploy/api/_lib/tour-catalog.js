@@ -38,8 +38,8 @@ const TOURS = {
   private:      { name: 'Private Boat Charter',       priceCents: null,  unit: 'boat',   minGuests: 1, requiresQuote: true,  type: 'tour' },
 
   // ---- Pesca deportiva (boat, mínimo 1) ----
-  half:       { name: 'Half-Day Charter',     priceCents: 68000,  unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
-  full:       { name: 'Full-Day Charter',     priceCents: 119000, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
+  half:       { name: 'Half-Day Charter',     priceCents: 219900, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
+  full:       { name: 'Full-Day Charter',     priceCents: 289900, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
   expedition: { name: 'Multi-Day Expedition', priceCents: null,   unit: 'boat', minGuests: 1, requiresQuote: true,  type: 'fishing' }
 };
 
