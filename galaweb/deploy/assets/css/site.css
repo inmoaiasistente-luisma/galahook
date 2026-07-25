@@ -385,7 +385,7 @@ ul{margin:0;padding:0;list-style:none;}
 .contact-info li small{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.6;margin-bottom:3px;}
 .contact-info li span{font-size:16px;font-weight:600;}
 
-.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(120%);background:var(--ink);color:var(--paper);padding:15px 26px;border-radius:40px;font-weight:600;z-index:500;box-shadow:var(--shadow);transition:transform .5s var(--ease);}
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(120%);background:var(--ink);color:var(--paper);padding:15px 26px;border-radius:40px;font-weight:600;z-index:2000;box-shadow:var(--shadow);transition:transform .5s var(--ease);}
 .toast.show{transform:translateX(-50%) translateY(0);}
 
 /* ====================================================

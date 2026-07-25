@@ -485,6 +485,7 @@ function bkErrorMessage(code, es){
     case 'GUESTS_TOO_MANY':          return es?'Demasiados viajeros.':'Too many travelers.';
     case 'QUOTE_REQUIRED':           return es?'Esta experiencia es por cotización.':'This experience is quote-only.';
     case 'PAYMENT_REQUIRED':         return es?'Esta experiencia requiere pago.':'This experience requires payment.';
+    case 'INTERNAL_ERROR': case 'CONFIG_UNAVAILABLE': return normalizeStripeError({type:'api_error'}, es);
     default:                         return es?'No se pudo completar. Intenta de nuevo.':'Could not complete. Please try again.';
   }
 }
@@ -492,6 +493,28 @@ function handleBkError(r, es){
   const code=r.data && r.data.error;
   if(code==='PAYMENT_ATTEMPT_FAILED'||code==='PAYMENT_ATTEMPT_CANCELED'||code==='REQUEST_ID_CONFLICT') bkResetRequestId();
   GHA.toast(bkErrorMessage(code, es));
+}
+/* Normalización central de errores de Stripe → mensajes claros para el cliente.
+   Nunca expone error.message, códigos internos, ids, claves ni detalles técnicos. */
+function normalizeStripeError(err, es){
+  const M={
+    declined: es?'Tu tarjeta fue rechazada. Intenta con otra tarjeta.':'Your card was declined. Please try another card.',
+    invalid:  es?'Revisa la información de tu tarjeta.':'Please review your card information.',
+    funds:    es?'Tu tarjeta no tiene fondos suficientes. Intenta con otro método de pago.':'Your card has insufficient funds. Please try another payment method.',
+    network:  es?'No pudimos conectarnos con el servicio de pago. Inténtalo nuevamente.':'We could not connect to the payment service. Please try again.',
+    auth:     es?'No pudimos autenticar este pago. Inténtalo nuevamente.':'We could not authenticate this payment. Please try again.',
+    config:   es?'El servicio de pago no está disponible temporalmente. Inténtalo nuevamente en unos momentos.':'The payment service is temporarily unavailable. Please try again shortly.',
+    unknown:  es?'No pudimos procesar tu pago. Inténtalo nuevamente o utiliza otra tarjeta.':'We could not process your payment. Please try again or use another card.'
+  };
+  if(!err) return M.unknown;
+  const type=err.type||'', code=err.code||'', decline=err.declineCode||err.decline_code||'';
+  if(err.__network || type==='api_connection_error') return M.network;
+  if(decline==='insufficient_funds') return M.funds;
+  if(code==='card_declined') return M.declined;
+  if(type==='validation_error' || /incomplete|invalid_number|invalid_expiry|invalid_cvc|incomplete_zip/.test(code)) return M.invalid;
+  if(code==='payment_intent_authentication_failure' || /authentication/.test(code)) return M.auth;
+  if(type==='api_error' || type==='invalid_request_error') return M.config;
+  return M.unknown;
 }
 /* ---- pantallas de éxito (usan datos confirmados por el backend) ---- */
 function bkShowSuccessShell(){ document.getElementById('bkGrid').style.display='none'; document.getElementById('bkSuccess').classList.add('show'); const m=document.querySelector('.bkmodal'); if(m) m.scrollTop=0; }
@@ -507,19 +530,19 @@ function bkRenderRecap(data, dt, guests, es, showAmount, amountLabel){
 function showPaidSuccess(data, name, email, dt, guests, es){
   bkShowSuccessShell();
   document.getElementById('bkSucTitle').textContent= es?'¡Reserva confirmada!':'Booking confirmed!';
-  document.getElementById('bkSucMsg').textContent= es?('¡Gracias, '+name+'! Enviamos la confirmación a '+email+'. Nos vemos en San Cristóbal.'):('Thank you, '+name+'! A confirmation is on its way to '+email+'. See you in San Cristóbal.');
+  document.getElementById('bkSucMsg').textContent= es?'Tu pago fue recibido correctamente. Guarda tu código de reserva.':'Your payment was received successfully. Save your booking code for your records.';
   bkRenderRecap(data, dt, guests, es, true, es?'Pagado':'Paid');
 }
 function showProcessing(data, name, email, dt, guests, es){
   bkShowSuccessShell();
   document.getElementById('bkSucTitle').textContent= es?'Pago en procesamiento':'Payment processing';
-  document.getElementById('bkSucMsg').textContent= es?('Estamos confirmando tu pago, '+name+'. Te avisaremos por correo a '+email+' en cuanto se complete.'):('We\'re confirming your payment, '+name+'. We\'ll email '+email+' as soon as it completes.');
+  document.getElementById('bkSucMsg').textContent= es?'Tu pago se está procesando. Guarda tu código de reserva; confirmaremos tu reserva en breve.':'Your payment is processing. Save your booking code — we\'ll confirm your booking shortly.';
   bkRenderRecap(data, dt, guests, es, true, es?'Importe':'Amount');
 }
 function showQuoteSuccess(data, name, email, dt, guests, es){
   bkShowSuccessShell();
   document.getElementById('bkSucTitle').textContent= es?'¡Solicitud recibida!':'Request received!';
-  document.getElementById('bkSucMsg').textContent= es?('Gracias, '+name+'. Te enviaremos una cotización personalizada a '+email+' muy pronto.'):('Thanks, '+name+'. We\'ll email a custom quote to '+email+' shortly.');
+  document.getElementById('bkSucMsg').textContent= es?'Recibimos tu solicitud. Nuestro equipo se pondrá en contacto contigo.':'We received your request. Our team will contact you shortly.';
   bkRenderRecap(data, dt, guests, es, false, '');
 }
 async function submitBooking(){
@@ -544,13 +567,13 @@ async function submitBooking(){
       const r=await bkPost('/api/quote-request', payload);
       if(!r.ok){ handleBkError(r, es); bkSubmitting=false; setPayBusy(false); return; }
       showQuoteSuccess(r.data, name, email, dt, guests, es); bkSubmitting=false;
-    }catch(e){ GHA.toast(es?'Error de conexión. Intenta de nuevo.':'Connection error. Please try again.'); bkSubmitting=false; setPayBusy(false); }
+    }catch(e){ GHA.toast(normalizeStripeError({__network:true}, es)); bkSubmitting=false; setPayBusy(false); }
     return;
   }
 
   /* ---------- PAGO (create-payment-intent + Stripe Elements) ---------- */
   if(!(window.GHAPayments && GHAPayments.ready())){
-    GHA.toast(es?'El pago no está disponible en este momento.':'Payment is not available right now.'); bkSubmitting=false; setPayBusy(false); return;
+    GHA.toast(normalizeStripeError({type:'api_error'}, es)); bkSubmitting=false; setPayBusy(false); return;
   }
   try{
     const r=await bkPost('/api/create-payment-intent', payload);
@@ -560,7 +583,7 @@ async function submitBooking(){
     if(!data.clientSecret){ GHA.toast(es?'Respuesta inválida del servidor.':'Invalid server response.'); bkSubmitting=false; setPayBusy(false); return; }
     const billing={ name:(document.getElementById('bkCardName').value||name).trim(), email:email, address:{ postal_code:(document.getElementById('bkZip').value||'').trim()||undefined } };
     const result=await GHAPayments.confirmCardPayment(data.clientSecret, billing);
-    if(result.error){ GHA.toast(result.error.message||(es?'No se pudo procesar el pago.':'Payment could not be processed.')); bkSubmitting=false; setPayBusy(false); return; } // tarjeta rechazada → mismo request_id
+    if(result.error){ GHA.toast(normalizeStripeError(result.error, es)); bkSubmitting=false; setPayBusy(false); return; } // tarjeta rechazada → mismo request_id, PAY reactivado
     const pi=result.paymentIntent;
     if(pi && pi.status==='succeeded'){ showPaidSuccess(data, name, email, dt, guests, es); bkSubmitting=false; return; }
     if(pi && pi.status==='processing'){ showProcessing(data, name, email, dt, guests, es); bkSubmitting=false; return; }
@@ -797,7 +820,8 @@ function initForms(){
 let toastTimer;
 function toast(msg){
   let el=document.querySelector('.toast');
-  if(!el){ el=document.createElement('div'); el.className='toast'; document.body.appendChild(el); }
+  // Se monta directamente en document.body (hermano del modal) para no quedar atrapado en su stacking context.
+  if(!el){ el=document.createElement('div'); el.className='toast'; el.setAttribute('role','alert'); el.setAttribute('aria-live','assertive'); document.body.appendChild(el); }
   el.textContent=msg; requestAnimationFrame(()=>el.classList.add('show'));
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),3200);
 }
