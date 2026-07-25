@@ -6,9 +6,23 @@
 (function(){
 "use strict";
 
-const CRED = { email:"galahookadventure@outlook.com", pass:"LuismaLuanahook052217" };
-const CKEY="GHA_CONTENT", SKEY="GHA_ADMIN";
+const CKEY="GHA_CONTENT";              // editor de contenido LOCAL/legacy (solo este navegador, ver docs)
 const shell=document.getElementById('shell');
+const ES=(function(){ try{ return localStorage.getItem('GHA_LANG')==='es'; }catch(e){ return false; } })();
+
+/* ---- API helpers (sesión por cookie HttpOnly; el navegador nunca accede a Supabase) ---- */
+function apiGet(url){ return fetch(url,{headers:{Accept:'application/json'},credentials:'same-origin'}).then(handleRes); }
+function apiPost(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},credentials:'same-origin',body:JSON.stringify(body||{})}).then(handleRes); }
+function handleRes(res){ return res.json().catch(function(){return {};}).then(function(data){ return {ok:res.ok,status:res.status,data:data}; }); }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+let adminToastTimer;
+function adminToast(msg){
+  let t=document.querySelector('.toast');
+  if(!t){ t=document.createElement('div'); t.className='toast'; t.setAttribute('role','alert'); t.setAttribute('aria-live','assertive'); document.body.appendChild(t); }
+  t.textContent=msg; requestAnimationFrame(function(){ t.classList.add('show'); });
+  clearTimeout(adminToastTimer); adminToastTimer=setTimeout(function(){ t.classList.remove('show'); },3200);
+}
+function onUnauthorized(){ adminToast(ES?'Tu sesión expiró. Inicia sesión nuevamente.':'Your session expired. Please sign in again.'); showLogin(); }
 
 /* deep clone + merge (same shape as app.js) */
 function clone(o){ return JSON.parse(JSON.stringify(o)); }
@@ -37,18 +51,25 @@ function showLogin(){
    '<div class="login"><form class="login-card" id="loginForm">'
    +'<img src="assets/img/logo.png" alt="logo">'
    +'<h1>Owner Login</h1><p>Galápagos Hook Adventure · Admin</p>'
-   +'<div class="err" id="loginErr">Incorrect email or password.</div>'
-   +'<div class="field"><label>Email</label><input type="email" id="aEmail" autocomplete="username" required></div>'
+   +'<div class="err" id="loginErr"></div>'
    +'<div class="field"><label>Password</label><input type="password" id="aPass" autocomplete="current-password" required></div>'
-   +'<button type="submit" class="btn btn-gold btn-block" style="margin-top:8px">Log in</button>'
+   +'<button type="submit" class="btn btn-gold btn-block" id="loginBtn" style="margin-top:8px">Log in</button>'
    +'<p style="margin:16px 0 0"><a href="index.html" style="color:var(--sea);font-weight:600;font-size:13px">← Back to site</a></p>'
    +'</form></div>';
-  document.getElementById('loginForm').addEventListener('submit',e=>{
+  const btn=document.getElementById('loginBtn'), errEl=document.getElementById('loginErr');
+  document.getElementById('loginForm').addEventListener('submit',function(e){
     e.preventDefault();
-    const em=document.getElementById('aEmail').value.trim().toLowerCase();
     const pw=document.getElementById('aPass').value;
-    if(em===CRED.email && pw===CRED.pass){ sessionStorage.setItem(SKEY,'1'); showAdmin(); }
-    else document.getElementById('loginErr').classList.add('show');
+    if(!pw) return;
+    errEl.classList.remove('show'); btn.disabled=true; const lbl=btn.textContent; btn.textContent=ES?'Ingresando…':'Signing in…';
+    apiPost('/api/admin-login',{password:pw}).then(function(r){
+      if(r.ok && r.data && r.data.authenticated){ showAdmin(); return; }
+      errEl.textContent=ES?'Contraseña incorrecta.':'Invalid password.'; errEl.classList.add('show');
+      btn.disabled=false; btn.textContent=lbl;
+    }).catch(function(){
+      errEl.textContent=ES?'No pudimos iniciar sesión. Inténtalo nuevamente.':'We could not sign you in. Please try again.'; errEl.classList.add('show');
+      btn.disabled=false; btn.textContent=lbl;
+    });
   });
 }
 
@@ -277,48 +298,146 @@ function panelStory(){
   return p;
 }
 
-function panelMessages(){
+/* ============ BOOKINGS (fuente de verdad: Supabase vía /api) ============ */
+function bkSelectField(label, options){
+  const wrap=el('<div class="ed-field"><label>'+label+'</label></div>');
+  const s=document.createElement('select');
+  options.forEach(function(o){ const opt=document.createElement('option'); opt.value=o[0]; opt.textContent=o[1]; s.appendChild(opt); });
+  wrap.appendChild(s); return {wrap:wrap, select:s};
+}
+function bkDateField(label){
+  const wrap=el('<div class="ed-field"><label>'+label+'</label></div>');
+  const i=document.createElement('input'); i.type='date'; wrap.appendChild(i); return {wrap:wrap, input:i};
+}
+function bkRow(label,val){ return '<div><span style="opacity:.55">'+label+':</span> '+val+'</div>'; }
+function bkFmtDT(s){ if(!s) return '—'; try{ return new Date(s).toLocaleString(ES?'es-ES':'en-US'); }catch(e){ return escapeHtml(s); } }
+function bkFmtMoney(b){
+  if(b.amount_cents==null || b.request_type==='quote') return ES?'Cotización':'Quote';
+  try{ return new Intl.NumberFormat('en-US',{style:'currency',currency:String(b.currency||'usd').toUpperCase()}).format(b.amount_cents/100); }
+  catch(e){ return '$'+(b.amount_cents/100); }
+}
+function bkPill(text,bg,color){ return '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:4px 10px;border-radius:30px;background:'+bg+';color:'+color+'">'+escapeHtml(text)+'</span>'; }
+function bkPayBadge(s){
+  const m={ paid:['#1f8a5b','#fff'], pending:['rgba(207,159,84,.25)','#e4c98c'], processing:['rgba(207,159,84,.25)','#e4c98c'], failed:['rgba(200,70,50,.25)','#ffb3a3'], refunded:['rgba(120,120,200,.28)','#c7c9ff'], not_required:['rgba(255,255,255,.12)','rgba(255,255,255,.75)'] };
+  const c=m[s]||['rgba(255,255,255,.12)','#fff']; return '<span style="opacity:.55;font-size:11px">'+(ES?'Pago':'Payment')+'</span> '+bkPill(s,c[0],c[1]);
+}
+function bkBookBadge(s){
+  const m={ confirmed:['#1f8a5b','#fff'], completed:['rgba(90,160,120,.30)','#bfe8cf'], new:['rgba(255,255,255,.12)','rgba(255,255,255,.8)'], pending_payment:['rgba(207,159,84,.25)','#e4c98c'], cancelled:['rgba(200,70,50,.25)','#ffb3a3'], failed:['rgba(200,70,50,.25)','#ffb3a3'] };
+  const c=m[s]||['rgba(255,255,255,.12)','#fff']; return '<span style="opacity:.55;font-size:11px">'+(ES?'Reserva':'Booking')+'</span> '+bkPill(s,c[0],c[1]);
+}
+function bkBookingCard(b){
+  const c=el('<div class="ed-card"></div>');
+  const isQuote=b.request_type==='quote';
+  c.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">'
+      +'<div><div style="font-family:var(--body);font-weight:800;letter-spacing:.04em;color:#e4c98c;font-size:13px">'+escapeHtml(b.booking_code||'')+'</div>'
+        +'<div style="font-family:var(--display);font-weight:700;font-size:18px;color:var(--paper);margin-top:4px">'+escapeHtml(b.tour_name||'—')+'</div>'
+        +'<div style="margin-top:9px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">'+bkPayBadge(b.payment_status)+bkBookBadge(b.booking_status)+'</div></div>'
+      +'<div style="text-align:right;color:#e4c98c;font-weight:800;font-size:18px">'+bkFmtMoney(b)+'</div>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px 18px;margin-top:16px;font-size:14px;color:rgba(255,255,255,.85)">'
+      +bkRow(ES?'Tipo':'Type', isQuote?(ES?'Cotización':'Quote request'):(ES?'Reserva':'Booking'))
+      +bkRow(ES?'Cliente':'Customer', escapeHtml(b.customer_name))
+      +bkRow('Email','<a href="mailto:'+escapeHtml(b.customer_email)+'" style="color:#e4c98c">'+escapeHtml(b.customer_email)+'</a>')
+      +(b.customer_phone?bkRow(ES?'Teléfono':'Phone', escapeHtml(b.customer_phone)):'')
+      +bkRow(ES?'Fecha de viaje':'Travel date', escapeHtml(b.booking_date))
+      +bkRow('Guests', escapeHtml(b.guests))
+      +bkRow(ES?'Creada':'Created', bkFmtDT(b.created_at))
+      +(b.paid_at?bkRow(ES?'Pagada':'Paid at', bkFmtDT(b.paid_at)):'')
+      +(b.notes?'<div style="grid-column:1/3">'+bkRow(ES?'Notas':'Notes', escapeHtml(b.notes))+'</div>':'')
+    +'</div>';
+  const ctrl=el('<div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"></div>');
+  const sel=document.createElement('select'); sel.style.cssText='padding:9px 12px;border-radius:7px;background:rgba(255,255,255,.07);color:var(--paper);border:1.5px solid var(--line-on-dark);font-family:var(--body)';
+  ['new','pending_payment','confirmed','cancelled','completed','failed'].forEach(function(s){ const o=document.createElement('option'); o.value=s; o.textContent=s; if(b.booking_status===s)o.selected=true; sel.appendChild(o); });
+  const upd=el('<button class="mini-btn" type="button">'+(ES?'Actualizar estado':'Update status')+'</button>');
+  upd.addEventListener('click',function(){
+    const ns=sel.value; if(ns===b.booking_status) return;
+    if(b.payment_status==='paid' && ns==='cancelled'){
+      if(!confirm(ES?'Cancelar esta reserva no reembolsará el pago de Stripe. ¿Deseas continuar?':'Canceling this booking will not refund the Stripe payment. Continue?')){ sel.value=b.booking_status; return; }
+    }
+    upd.disabled=true; const lbl=upd.textContent; upd.textContent=ES?'Guardando…':'Saving…';
+    apiPost('/api/admin-booking-update',{booking_id:b.id,booking_status:ns}).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok || !r.data || !r.data.booking){ upd.disabled=false; upd.textContent=lbl; adminToast(ES?'No se pudo actualizar. Inténtalo nuevamente.':'Could not update. Please try again.'); return; }
+      c.replaceWith(bkBookingCard(r.data.booking)); adminToast(ES?'Reserva actualizada':'Booking updated');
+    }).catch(function(){ upd.disabled=false; upd.textContent=lbl; adminToast(ES?'No se pudo actualizar. Inténtalo nuevamente.':'Could not update. Please try again.'); });
+  });
+  ctrl.appendChild(sel); ctrl.appendChild(upd); c.appendChild(ctrl);
+  return c;
+}
+function panelBookings(){
   const p=el('<div></div>');
-  let msgs=[]; try{ msgs=JSON.parse(localStorage.getItem('GHA_MESSAGES')||'[]'); }catch(e){}
-  const head=card('Inbox','Every booking and quote request made on the site lands here. To also receive these by email at '+(window.GHA_DEFAULT.meta.notifyEmail)+', paste a Formspree endpoint in “Site &amp; Contact”.');
-  const bar=el('<div style="display:flex;gap:10px;align-items:center;justify-content:space-between"><h3 style="margin:0">'+msgs.length+' message'+(msgs.length===1?'':'s')+'</h3></div>');
-  if(msgs.length){ const clr=el('<button class="mini-btn danger" type="button">Clear all</button>'); clr.addEventListener('click',()=>{ if(confirm('Delete all messages?')){ localStorage.removeItem('GHA_MESSAGES'); rebuild(); } }); bar.appendChild(clr); }
-  head.appendChild(bar); p.appendChild(head);
-  function fmt(ts){ try{ return new Date(ts).toLocaleString(); }catch(e){ return ''; } }
-  function rebuild(){
-    p.innerHTML=''; p.appendChild(head);
-    try{ msgs=JSON.parse(localStorage.getItem('GHA_MESSAGES')||'[]'); }catch(e){ msgs=[]; }
-    bar.querySelector('h3').textContent=msgs.length+' message'+(msgs.length===1?'':'s');
-    if(!msgs.length){ p.appendChild(el('<div class="ed-card" style="text-align:center;color:rgba(255,255,255,.5)">No messages yet. Bookings and quote requests will appear here.</div>')); return; }
-    msgs.forEach((m,idx)=>{
-      const paid=m.status==='paid';
-      const c=el('<div class="ed-card"></div>');
-      c.innerHTML=
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">'
-         +'<div><span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:30px;'+(paid?'background:#1f8a5b;color:#fff':'background:rgba(207,159,84,.25);color:#e4c98c')+'">'+(paid?'Paid booking':'Quote request')+'</span>'
-           +'<div style="font-family:var(--display);font-weight:700;font-size:18px;color:var(--paper);margin-top:10px">'+(m.experience||'—')+'</div></div>'
-         +'<div style="text-align:right;color:rgba(255,255,255,.5);font-size:12px">'+fmt(m.ts)+'</div>'
-        +'</div>'
-        +'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px 18px;margin-top:14px;font-size:14px;color:rgba(255,255,255,.85)">'
-         +'<div><span style="opacity:.55">Traveler:</span> '+(m.name||'')+'</div>'
-         +'<div><span style="opacity:.55">Email:</span> <a href="mailto:'+(m.email||'')+'" style="color:#e4c98c">'+(m.email||'')+'</a></div>'
-         +'<div><span style="opacity:.55">Travel date:</span> '+(m.date||'')+'</div>'
-         +'<div><span style="opacity:.55">Guests:</span> '+(m.guests||'')+'</div>'
-         +(paid?'<div><span style="opacity:.55">Paid:</span> <b style="color:#e4c98c">$'+(m.total||0).toLocaleString()+'</b></div><div><span style="opacity:.55">Card:</span> •••• '+(m.card||'')+'</div>':'<div style="grid-column:1/3"><span style="opacity:.55">Status:</span> Awaiting your custom quote</div>')
-         +(m.message?'<div style="grid-column:1/3"><span style="opacity:.55">Message:</span> '+m.message+'</div>':'')
-        +'</div>';
-      const del=el('<button class="mini-btn danger" type="button" style="margin-top:14px">Delete</button>');
-      del.addEventListener('click',()=>{ msgs.splice(idx,1); localStorage.setItem('GHA_MESSAGES',JSON.stringify(msgs)); rebuild(); });
-      c.appendChild(del); p.appendChild(c);
+  const state={ page:1, limit:25, loading:false };
+
+  const fcard=card('', '');
+  const r1=el('<div class="ed-row"></div>');
+  const searchWrap=el('<div class="ed-field"><label>'+(ES?'Buscar':'Search')+'</label></div>');
+  const searchInput=document.createElement('input'); searchInput.maxLength=100; searchInput.placeholder=ES?'Código, nombre, correo o tour':'Code, name, email or tour'; searchWrap.appendChild(searchInput);
+  const typeF=bkSelectField(ES?'Tipo':'Type',[['',ES?'Todos':'All'],['booking',ES?'Reserva':'Booking'],['quote',ES?'Cotización':'Quote']]);
+  r1.appendChild(searchWrap); r1.appendChild(typeF.wrap);
+  const r2=el('<div class="ed-row"></div>');
+  const payF=bkSelectField(ES?'Estado de pago':'Payment status',[['',ES?'Todos':'All'],['not_required','not_required'],['pending','pending'],['processing','processing'],['paid','paid'],['failed','failed'],['refunded','refunded']]);
+  const bookF=bkSelectField(ES?'Estado de reserva':'Booking status',[['',ES?'Todos':'All'],['new','new'],['pending_payment','pending_payment'],['confirmed','confirmed'],['cancelled','cancelled'],['completed','completed'],['failed','failed']]);
+  r2.appendChild(payF.wrap); r2.appendChild(bookF.wrap);
+  const r3=el('<div class="ed-row"></div>');
+  const fromF=bkDateField(ES?'Desde':'From'); const toF=bkDateField(ES?'Hasta':'To');
+  r3.appendChild(fromF.wrap); r3.appendChild(toF.wrap);
+  const r4=el('<div class="ed-row"></div>');
+  const sortF=bkSelectField(ES?'Orden':'Sort',[['newest',ES?'Más recientes':'Newest'],['oldest',ES?'Más antiguas':'Oldest'],['booking_date_asc',ES?'Fecha viaje ↑':'Travel date ↑'],['booking_date_desc',ES?'Fecha viaje ↓':'Travel date ↓']]);
+  const applyWrap=el('<div class="ed-field" style="display:flex;align-items:flex-end"></div>');
+  const applyBtn=el('<button class="btn btn-gold btn-sm" type="button" style="width:100%">'+(ES?'Aplicar filtros':'Apply filters')+'</button>');
+  applyWrap.appendChild(applyBtn); r4.appendChild(sortF.wrap); r4.appendChild(applyWrap);
+  fcard.appendChild(r1); fcard.appendChild(r2); fcard.appendChild(r3); fcard.appendChild(r4);
+  p.appendChild(fcard);
+
+  const listWrap=el('<div></div>'); p.appendChild(listWrap);
+  const pager=el('<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 2px 0;color:rgba(255,255,255,.7);font-size:13px"></div>');
+  const prevBtn=el('<button class="mini-btn" type="button">'+(ES?'‹ Anterior':'‹ Prev')+'</button>');
+  const nextBtn=el('<button class="mini-btn" type="button">'+(ES?'Siguiente ›':'Next ›')+'</button>');
+  const pageInfo=el('<span></span>');
+  pager.appendChild(prevBtn); pager.appendChild(pageInfo); pager.appendChild(nextBtn); p.appendChild(pager);
+
+  function buildQS(){
+    const q=['page='+state.page,'limit='+state.limit];
+    const s=searchInput.value.trim().slice(0,100); if(s) q.push('search='+encodeURIComponent(s));
+    if(typeF.select.value) q.push('request_type='+typeF.select.value);
+    if(payF.select.value) q.push('payment_status='+payF.select.value);
+    if(bookF.select.value) q.push('booking_status='+bookF.select.value);
+    if(fromF.input.value) q.push('date_from='+fromF.input.value);
+    if(toF.input.value) q.push('date_to='+toF.input.value);
+    if(sortF.select.value) q.push('sort='+sortF.select.value);
+    return q.join('&');
+  }
+  function load(){
+    if(state.loading) return; state.loading=true; applyBtn.disabled=true; prevBtn.disabled=true; nextBtn.disabled=true;
+    listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:rgba(255,255,255,.5)">'+(ES?'Cargando…':'Loading…')+'</div>';
+    apiGet('/api/admin-bookings?'+buildQS()).then(function(r){
+      state.loading=false; applyBtn.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok){ listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:#ffb3a3">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</div>'; return; }
+      const list=(r.data&&r.data.bookings)||[]; const pg=(r.data&&r.data.pagination)||{page:1,totalPages:1,total:0};
+      listWrap.innerHTML='';
+      if(!list.length) listWrap.appendChild(el('<div class="ed-card" style="text-align:center;color:rgba(255,255,255,.5)">'+(ES?'No hay reservas para estos filtros.':'No bookings for these filters.')+'</div>'));
+      list.forEach(function(b){ listWrap.appendChild(bkBookingCard(b)); });
+      state.page=pg.page||1;
+      pageInfo.textContent=(ES?'Página ':'Page ')+(pg.page||1)+' / '+(pg.totalPages||1)+' · '+(pg.total||0)+(ES?' registros':' records');
+      prevBtn.disabled=(pg.page||1)<=1; nextBtn.disabled=(pg.page||1)>=(pg.totalPages||1);
+    }).catch(function(){
+      state.loading=false; applyBtn.disabled=false;
+      listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:#ffb3a3">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</div>';
     });
   }
-  rebuild();
+  applyBtn.addEventListener('click',function(){ state.page=1; load(); });
+  searchInput.addEventListener('keydown',function(e){ if(e.key==='Enter'){ state.page=1; load(); } });
+  prevBtn.addEventListener('click',function(){ if(state.page>1){ state.page--; load(); } });
+  nextBtn.addEventListener('click',function(){ state.page++; load(); });
+  load();
   return p;
 }
 
 const PANELS=[
+  {id:'bookings',label:(ES?'Reservas':'Bookings'), build:panelBookings},
   {id:'site',  label:'Site & Contact', build:panelSite},
-  {id:'messages',label:'Messages',     build:panelMessages},
   {id:'hero',  label:'Home Hero',      build:panelHero},
   {id:'packages',label:'Packages',     build:panelPackages},
   {id:'tours', label:'Tours',          build:panelTours},
@@ -358,12 +477,10 @@ function showAdmin(){
     main.scrollTo&&main.scrollTo(0,0); window.scrollTo(0,0);
   }
   PANELS.forEach(def=>{
-    let badge='';
-    if(def.id==='messages'){ let n=0; try{ n=JSON.parse(localStorage.getItem('GHA_MESSAGES')||'[]').length; }catch(e){} if(n) badge=' <span style="margin-left:auto;background:#cf9f54;color:#082420;font-size:11px;font-weight:800;border-radius:30px;padding:1px 8px">'+n+'</span>'; }
-    const b=el('<button data-id="'+def.id+'" style="display:flex;align-items:center">'+def.label+badge+'</button>');
+    const b=el('<button data-id="'+def.id+'" style="display:flex;align-items:center">'+def.label+'</button>');
     b.addEventListener('click',()=>open(def.id)); nav.appendChild(b);
   });
-  open('site');
+  open('bookings');
 
   document.getElementById('saveBtn').addEventListener('click',()=>{
     try{ localStorage.setItem(CKEY, JSON.stringify(W)); }
@@ -379,11 +496,11 @@ function showAdmin(){
   });
   document.getElementById('logoutBtn').addEventListener('click',()=>{
     if(dirty && !confirm('You have unsaved changes. Log out anyway?')) return;
-    sessionStorage.removeItem(SKEY); showLogin();
+    apiPost('/api/admin-logout',{}).then(function(){ showLogin(); }).catch(function(){ showLogin(); });
   });
   window.addEventListener('beforeunload',e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });
 }
 
 /* ============ boot ============ */
-if(sessionStorage.getItem(SKEY)==='1') showAdmin(); else showLogin();
+apiGet('/api/admin-session').then(function(r){ if(r.ok && r.data && r.data.authenticated) showAdmin(); else showLogin(); }).catch(function(){ showLogin(); });
 })();
