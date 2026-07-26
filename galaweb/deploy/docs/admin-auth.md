@@ -1,5 +1,34 @@
 # Panel admin — autenticación multiusuario
 
+## Dónde vive el código (importante)
+
+El plan Hobby de Vercel admite **12 Serverless Functions**. Para no superarlo,
+solo `/api` contiene funciones desplegables; el resto del servidor vive fuera:
+
+```
+api/                      → 6 funciones desplegadas
+  admin-router.js           las 11 acciones del panel
+  booking-qr-lookup.js      check-in
+  create-payment-intent.js  pago
+  quote-request.js          cotización
+  stripe-config.js          clave publicable
+  stripe-webhook.js         webhook (raw body, aparte a propósito)
+server/lib/               → librerías compartidas (NO son funciones)
+server/admin-handlers/    → la lógica de los 11 endpoints admin
+```
+
+**Las URLs públicas no cambiaron.** `vercel.json` reescribe internamente
+`/api/admin-login` → `/api/admin-router?action=login`, etc. Son *rewrites*, no
+redirecciones: el navegador sigue llamando a `/api/admin-login` como siempre y
+`admin.js` no se modificó.
+
+El router **no autentica**: despacha `req` y `res` intactos al handler, que
+conserva su `requireAdmin`, `sameOrigin`, control de método HTTP, cookies y
+proyecciones por rol. La tabla de rutas es **estática** (`require()` literales
+resueltos al cargar el módulo), así que ninguna cadena del navegador puede
+cargar un fichero arbitrario. Una acción desconocida devuelve **404** sin
+revelar cuáles existen.
+
 Cada persona entra con **su propio email y contraseña**. Las contraseñas las
 gestiona **Supabase Auth** (`auth.users`); el proyecto **no** guarda contraseñas
 ni hashes propios, ni en la base de datos ni en variables de entorno.

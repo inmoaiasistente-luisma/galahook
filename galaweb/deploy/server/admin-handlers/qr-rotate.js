@@ -9,10 +9,10 @@
    No reenvía correos automáticamente.
    ========================================================= */
 
-const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('./_lib/http');
-const { getSupabase } = require('./_lib/supabase');
-const { requireAdmin, sameOrigin } = require('./_lib/admin-auth');
-const { ensureBookingQrAccess, generateBookingQrPng, computeExpiresAt, isQrEligible } = require('./_lib/booking-qr');
+const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('../lib/http');
+const { getSupabase } = require('../lib/supabase');
+const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { ensureBookingQrAccess, generateBookingQrPng, computeExpiresAt, isQrEligible } = require('../lib/booking-qr');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }

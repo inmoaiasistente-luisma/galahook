@@ -11,10 +11,10 @@
    arbitrario a una dirección arbitraria.
    ========================================================= */
 
-const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('./_lib/http');
-const { getSupabase } = require('./_lib/supabase');
-const { requireAdmin, sameOrigin } = require('./_lib/admin-auth');
-const { sendBookingEmail } = require('./_lib/booking-email-service');
+const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('../lib/http');
+const { getSupabase } = require('../lib/supabase');
+const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { sendBookingEmail } = require('../lib/booking-email-service');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }

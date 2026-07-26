@@ -10,9 +10,9 @@
    Cancelar NO reembolsa en Stripe.
    ========================================================= */
 
-const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('./_lib/http');
-const { getSupabase } = require('./_lib/supabase');
-const { requireAdmin, sameOrigin } = require('./_lib/admin-auth');
+const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('../lib/http');
+const { getSupabase } = require('../lib/supabase');
+const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
 
 const BOOKING_STATUSES = ['new', 'pending_payment', 'confirmed', 'cancelled', 'completed', 'failed'];
 const FIELDS = 'id,booking_code,request_type,tour_id,tour_name,unit,booking_date,guests,' +

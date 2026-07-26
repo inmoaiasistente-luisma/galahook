@@ -8,7 +8,7 @@
    ninguna otra variable de entorno.
    ========================================================= */
 
-const { sendJson, sendError, logServer } = require('./_lib/http');
+const { sendJson, sendError, logServer } = require('../server/lib/http');
 
 module.exports = async function handler(req, res) {
   try {

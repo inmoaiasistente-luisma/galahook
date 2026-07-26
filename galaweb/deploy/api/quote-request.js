@@ -10,14 +10,14 @@
    ========================================================= */
 
 const crypto = require('crypto');
-const { getSupabase } = require('./_lib/supabase');
-const { notifyBooking } = require('./_lib/booking-email-service');
-const catalog = require('./_lib/tour-catalog');
+const { getSupabase } = require('../server/lib/supabase');
+const { notifyBooking } = require('../server/lib/booking-email-service');
+const catalog = require('../server/lib/tour-catalog');
 const {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
   isUuid, isEmail, normalizeEmail, isNonEmptyString, isPositiveInt,
   isRealYmd, isNotPastGalapagos, todayInGalapagos, getTenantId
-} = require('./_lib/http');
+} = require('../server/lib/http');
 
 const ALLOWED_KEYS = ['request_id', 'tour_id', 'booking_date', 'guests',
   'customer_name', 'customer_email', 'customer_phone', 'notes'];

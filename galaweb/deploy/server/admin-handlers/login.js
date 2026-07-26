@@ -10,9 +10,9 @@
    ========================================================= */
 
 const { createClient } = require('@supabase/supabase-js');
-const { getSupabase } = require('./_lib/supabase');
-const { sendJson, sendError, logServer, readJsonBody, isEmail, normalizeEmail, getTenantId } = require('./_lib/http');
-const { createSessionToken, buildSessionCookie, isSecureEnv, sameOrigin, loadProfile, isProfileUsable, DEFAULT_MAX_AGE } = require('./_lib/admin-auth');
+const { getSupabase } = require('../lib/supabase');
+const { sendJson, sendError, logServer, readJsonBody, isEmail, normalizeEmail, getTenantId } = require('../lib/http');
+const { createSessionToken, buildSessionCookie, isSecureEnv, sameOrigin, loadProfile, isProfileUsable, DEFAULT_MAX_AGE } = require('../lib/admin-auth');
 
 /* Throttle básico en memoria (por instancia; sin infraestructura extra).
    Supabase Auth aplica además sus propios límites. */

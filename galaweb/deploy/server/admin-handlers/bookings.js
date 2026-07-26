@@ -18,9 +18,9 @@
    Siempre filtra por tenant_id del servidor.
    ========================================================= */
 
-const { sendJson, sendError, logServer, isRealYmd, todayInGalapagos, getTenantId } = require('./_lib/http');
-const { getSupabase } = require('./_lib/supabase');
-const { requireAdmin } = require('./_lib/admin-auth');
+const { sendJson, sendError, logServer, isRealYmd, todayInGalapagos, getTenantId } = require('../lib/http');
+const { getSupabase } = require('../lib/supabase');
+const { requireAdmin } = require('../lib/admin-auth');
 
 /* Campos administrativos (owner/admin). Nunca incluye stripe_payment_intent_id,
    client_request_id ni metadata. */

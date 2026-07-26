@@ -15,15 +15,15 @@
    ========================================================= */
 
 const crypto = require('crypto');
-const { getSupabase } = require('./_lib/supabase');
-const { requireAdmin, sameOrigin } = require('./_lib/admin-auth');
-const { notifyBooking } = require('./_lib/booking-email-service');
-const catalog = require('./_lib/tour-catalog');
+const { getSupabase } = require('../lib/supabase');
+const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { notifyBooking } = require('../lib/booking-email-service');
+const catalog = require('../lib/tour-catalog');
 const {
   sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys,
   isUuid, isEmail, normalizeEmail, isNonEmptyString, isPositiveInt,
   isRealYmd, todayInGalapagos, getTenantId
-} = require('./_lib/http');
+} = require('../lib/http');
 
 const ALLOWED_KEYS = ['request_id', 'customer_name', 'customer_phone', 'customer_email',
   'tour_id', 'tour_name', 'booking_date', 'guests', 'amount_cents', 'payment_method', 'notes'];

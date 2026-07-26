@@ -8,9 +8,9 @@
    correo, el error interno completo ni identificadores del proveedor.
    ========================================================= */
 
-const { sendJson, sendError, logServer, getTenantId } = require('./_lib/http');
-const { getSupabase } = require('./_lib/supabase');
-const { requireAdmin } = require('./_lib/admin-auth');
+const { sendJson, sendError, logServer, getTenantId } = require('../lib/http');
+const { getSupabase } = require('../lib/supabase');
+const { requireAdmin } = require('../lib/admin-auth');
 
 function getQuery(req) {
   if (req.query && typeof req.query === 'object') return req.query;

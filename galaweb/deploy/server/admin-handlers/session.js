@@ -9,8 +9,8 @@
    No devuelve user_id, tokens ni información interna.
    ========================================================= */
 
-const { sendJson, sendError, logServer, getTenantId } = require('./_lib/http');
-const { readCookies, verifySessionToken, loadProfile, isProfileUsable, COOKIE_NAME } = require('./_lib/admin-auth');
+const { sendJson, sendError, logServer, getTenantId } = require('../lib/http');
+const { readCookies, verifySessionToken, loadProfile, isProfileUsable, COOKIE_NAME } = require('../lib/admin-auth');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only GET is allowed'); }

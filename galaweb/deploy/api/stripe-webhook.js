@@ -10,10 +10,10 @@
    secretos, firmas, clientSecret ni datos de tarjeta.
    ========================================================= */
 
-const { getStripe } = require('./_lib/stripe');
-const { getSupabase } = require('./_lib/supabase');
-const { readRawBody } = require('./_lib/raw-body');
-const { notifyBooking } = require('./_lib/booking-email-service');
+const { getStripe } = require('../server/lib/stripe');
+const { getSupabase } = require('../server/lib/supabase');
+const { readRawBody } = require('../server/lib/raw-body');
+const { notifyBooking } = require('../server/lib/booking-email-service');
 
 const HANDLED = [
   'payment_intent.processing',

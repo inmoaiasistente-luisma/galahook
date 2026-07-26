@@ -17,9 +17,9 @@
    nunca el conjunto de reservas.
    ========================================================= */
 
-const { sendJson, sendError, logServer, isRealYmd, getTenantId } = require('./_lib/http');
-const { getSupabase } = require('./_lib/supabase');
-const { requireAdmin } = require('./_lib/admin-auth');
+const { sendJson, sendError, logServer, isRealYmd, getTenantId } = require('../lib/http');
+const { getSupabase } = require('../lib/supabase');
+const { requireAdmin } = require('../lib/admin-auth');
 
 const METHODS = ['stripe', 'cash', 'card', 'bank_transfer', 'zelle', 'other'];
 const CHANNELS = ['web', 'agency'];

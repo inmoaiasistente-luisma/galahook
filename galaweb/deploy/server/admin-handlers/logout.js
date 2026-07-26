@@ -2,8 +2,8 @@
 
 /* POST /api/admin-logout — borra la cookie de sesión. */
 
-const { sendJson, sendError } = require('./_lib/http');
-const { clearSessionCookie, isSecureEnv, sameOrigin } = require('./_lib/admin-auth');
+const { sendJson, sendError } = require('../lib/http');
+const { clearSessionCookie, isSecureEnv, sameOrigin } = require('../lib/admin-auth');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }

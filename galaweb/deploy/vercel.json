@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/api/admin-login", "destination": "/api/admin-router?action=login" },
+    { "source": "/api/admin-logout", "destination": "/api/admin-router?action=logout" },
+    { "source": "/api/admin-session", "destination": "/api/admin-router?action=session" },
+    { "source": "/api/admin-bookings", "destination": "/api/admin-router?action=bookings" },
+    { "source": "/api/admin-booking-update", "destination": "/api/admin-router?action=booking-update" },
+    { "source": "/api/admin-agency-booking-create", "destination": "/api/admin-router?action=agency-booking-create" },
+    { "source": "/api/admin-finance-summary", "destination": "/api/admin-router?action=finance-summary" },
+    { "source": "/api/admin-booking-qr-rotate", "destination": "/api/admin-router?action=qr-rotate" },
+    { "source": "/api/admin-booking-qr-revoke", "destination": "/api/admin-router?action=qr-revoke" },
+    { "source": "/api/admin-booking-notifications", "destination": "/api/admin-router?action=booking-notifications" },
+    { "source": "/api/admin-email-retry", "destination": "/api/admin-router?action=email-retry" }
+  ]
+}

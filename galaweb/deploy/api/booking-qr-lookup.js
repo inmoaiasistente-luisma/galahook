@@ -19,10 +19,10 @@
    El token nunca se registra en logs ni se devuelve en la respuesta.
    ========================================================= */
 
-const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('./_lib/http');
-const { getSupabase } = require('./_lib/supabase');
-const { requireAdmin, sameOrigin } = require('./_lib/admin-auth');
-const { verifyQrToken, QR_BOOKING_STATUSES } = require('./_lib/booking-qr');
+const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('../server/lib/http');
+const { getSupabase } = require('../server/lib/supabase');
+const { requireAdmin, sameOrigin } = require('../server/lib/admin-auth');
+const { verifyQrToken, QR_BOOKING_STATUSES } = require('../server/lib/booking-qr');
 
 const TOKEN_MIN = 8;
 const TOKEN_MAX = 512;
