@@ -409,6 +409,100 @@ function bkStaffDetail(b){
     +'</div>';
   m.classList.add('open');
 }
+/* ---- QR operativo (owner/admin) ----
+   El PNG llega en base64 desde el servidor al rotar; para el QR vigente se
+   descarga bajo demanda. Nunca se guarda el token en el navegador. */
+function bkQrPanel(b){
+  const box=el('<div class="bk-sub"></div>');
+  box.innerHTML='<h4>'+(ES?'Código QR':'QR code')+'</h4>'
+    +'<p class="bk-sub-hint">'+(ES?'El cliente lo recibe por correo. Escanéalo el día del tour con la cámara del teléfono.'
+                                  :'The customer receives it by email. Scan it on the tour day with the phone camera.')+'</p>';
+  const imgWrap=el('<div class="bk-qr-img"></div>');
+  const acts=el('<div class="bk-sub-acts"></div>');
+  const rotateB=el('<button class="mini-btn" type="button">'+(ES?'Rotar QR':'Rotate QR')+'</button>');
+  const revokeB=el('<button class="mini-btn danger" type="button">'+(ES?'Revocar QR':'Revoke QR')+'</button>');
+  const dlB=el('<a class="mini-btn" style="display:none">'+(ES?'Descargar QR':'Download QR')+'</a>');
+  const msg=el('<div class="bk-sub-msg"></div>');
+
+  function showPng(base64, filename, url){
+    imgWrap.innerHTML='<img alt="QR" src="data:image/png;base64,'+base64+'">'
+      +'<div class="bk-qr-url">'+escapeHtml(url||'')+'</div>';
+    dlB.href='data:image/png;base64,'+base64; dlB.download=filename||'qr.png'; dlB.style.display='';
+  }
+  rotateB.addEventListener('click',function(){
+    if(!confirm(ES?'Al rotar, el QR que ya recibió el cliente dejará de funcionar de inmediato. ¿Continuar?'
+                  :'Rotating will immediately invalidate the QR the customer already received. Continue?')) return;
+    rotateB.disabled=true; const lbl=rotateB.textContent; rotateB.textContent=ES?'Rotando…':'Rotating…';
+    apiPost('/api/admin-booking-qr-rotate',{booking_id:b.id}).then(function(r){
+      rotateB.disabled=false; rotateB.textContent=lbl;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data||!r.data.pngBase64){ msg.className='bk-sub-msg err'; msg.textContent=ES?'No se pudo rotar el QR.':'Could not rotate the QR.'; return; }
+      showPng(r.data.pngBase64, r.data.filename, r.data.qrUrl);
+      msg.className='bk-sub-msg warn';
+      msg.textContent=ES?'QR rotado. El anterior quedó invalidado: descarga el nuevo y envíaselo al cliente.'
+                        :'QR rotated. The previous one is now invalid: download the new one and send it to the customer.';
+      adminToast(ES?'QR rotado':'QR rotated');
+    }).catch(function(){ rotateB.disabled=false; rotateB.textContent=lbl; msg.className='bk-sub-msg err'; msg.textContent=ES?'Error de conexión.':'Connection error.'; });
+  });
+  revokeB.addEventListener('click',function(){
+    if(!confirm(ES?'Revocar dejará el QR inservible para el check-in. ¿Continuar?':'Revoking will make the QR unusable for check-in. Continue?')) return;
+    revokeB.disabled=true;
+    apiPost('/api/admin-booking-qr-revoke',{booking_id:b.id}).then(function(r){
+      revokeB.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok){ msg.className='bk-sub-msg err'; msg.textContent=ES?'No se pudo revocar.':'Could not revoke.'; return; }
+      imgWrap.innerHTML=''; dlB.style.display='none';
+      msg.className='bk-sub-msg err'; msg.textContent=ES?'QR revocado. Usa "Rotar QR" para emitir uno nuevo.':'QR revoked. Use "Rotate QR" to issue a new one.';
+      adminToast(ES?'QR revocado':'QR revoked');
+    }).catch(function(){ revokeB.disabled=false; });
+  });
+  acts.appendChild(rotateB); acts.appendChild(revokeB); acts.appendChild(dlB);
+  box.appendChild(imgWrap); box.appendChild(acts); box.appendChild(msg);
+  return box;
+}
+
+/* ---- estado de notificaciones (owner/admin) ---- */
+const BK_NOTIF_KIND={sent:'ok',pending:'warn',sending:'warn',failed:'bad',skipped:'muted'};
+function bkNotifPanel(b){
+  const box=el('<div class="bk-sub"></div>');
+  box.innerHTML='<h4>'+(ES?'Notificaciones':'Notifications')+'</h4>';
+  const list=el('<div class="bk-notifs"></div>');
+  box.appendChild(list);
+  function load(){
+    list.innerHTML='<div class="bk-sub-hint">'+(ES?'Cargando…':'Loading…')+'</div>';
+    apiGet('/api/admin-booking-notifications?booking_id='+encodeURIComponent(b.id)).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data){ list.innerHTML='<div class="bk-sub-msg err">'+(ES?'No se pudo cargar.':'Could not load.')+'</div>'; return; }
+      const rows=r.data.notifications||[];
+      if(!rows.length){ list.innerHTML='<div class="bk-sub-hint">'+(ES?'Sin correos registrados.':'No emails recorded.')+'</div>'; return; }
+      list.innerHTML='';
+      rows.forEach(function(n){
+        const line=el('<div class="bk-notif"></div>');
+        line.innerHTML='<div class="bk-notif-main"><b>'+escapeHtml(n.notification_type)+'</b>'
+          +'<small>'+escapeHtml(n.recipient_email)+' · '+(ES?'intentos':'attempts')+' '+escapeHtml(n.attempts)+'</small></div>'
+          +'<div>'+bkBadge(n.status, BK_NOTIF_KIND[n.status])+'</div>';
+        if(n.status==='failed'){
+          const rb=el('<button class="mini-btn" type="button">'+(ES?'Reintentar':'Retry')+'</button>');
+          rb.addEventListener('click',function(){
+            rb.disabled=true; rb.textContent=ES?'Enviando…':'Sending…';
+            apiPost('/api/admin-email-retry',{notification_id:n.id}).then(function(rr){
+              if(rr.status===401){ onUnauthorized(); return; }
+              adminToast(rr.ok&&rr.data&&rr.data.status==='sent'
+                ? (ES?'Correo enviado':'Email sent')
+                : (ES?'No se pudo enviar':'Could not send'));
+              load();
+            }).catch(function(){ rb.disabled=false; rb.textContent=ES?'Reintentar':'Retry'; });
+          });
+          line.appendChild(rb);
+        }
+        list.appendChild(line);
+      });
+    }).catch(function(){ list.innerHTML='<div class="bk-sub-msg err">'+(ES?'No se pudo cargar.':'Could not load.')+'</div>'; });
+  }
+  load();
+  return box;
+}
+
 /* Detalle de OWNER/ADMIN: información completa + cambio de booking_status. */
 function bkAdminDetail(b, onUpdated){
   const m=bkModal(), body=m.querySelector('.bk-modal-body');
@@ -433,6 +527,13 @@ function bkAdminDetail(b, onUpdated){
       +bkDl(ES?'Creada':'Created', bkFmtDT(b.created_at))
       +(b.notes?bkDl(ES?'Notas':'Notes', escapeHtml(b.notes)):'')
     +'</div>';
+  /* QR y notificaciones: solo para reservas pagadas y confirmadas/completadas.
+     Ambos bloques son exclusivos de owner/admin (este detalle no se usa en staff). */
+  if(b.payment_status==='paid' && (b.booking_status==='confirmed'||b.booking_status==='completed')){
+    body.appendChild(bkQrPanel(b));
+    body.appendChild(bkNotifPanel(b));
+  }
+
   const ctrl=el('<div class="bk-modal-actions"></div>');
   const sel=document.createElement('select');
   ['new','pending_payment','confirmed','cancelled','completed','failed'].forEach(function(s){

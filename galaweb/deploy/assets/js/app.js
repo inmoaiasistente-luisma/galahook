@@ -530,7 +530,7 @@ function bkRenderRecap(data, dt, guests, es, showAmount, amountLabel){
 function showPaidSuccess(data, name, email, dt, guests, es){
   bkShowSuccessShell();
   document.getElementById('bkSucTitle').textContent= es?'¡Reserva confirmada!':'Booking confirmed!';
-  document.getElementById('bkSucMsg').textContent= es?'Tu pago fue recibido correctamente. Guarda tu código de reserva.':'Your payment was received successfully. Save your booking code for your records.';
+  document.getElementById('bkSucMsg').textContent= es?'Tu reserva está confirmada. Recibirás en breve un correo con tu código QR.':'Your booking is confirmed. A confirmation email with your QR code will arrive shortly.';
   bkRenderRecap(data, dt, guests, es, true, es?'Pagado':'Paid');
 }
 function showProcessing(data, name, email, dt, guests, es){
@@ -542,7 +542,7 @@ function showProcessing(data, name, email, dt, guests, es){
 function showQuoteSuccess(data, name, email, dt, guests, es){
   bkShowSuccessShell();
   document.getElementById('bkSucTitle').textContent= es?'¡Solicitud recibida!':'Request received!';
-  document.getElementById('bkSucMsg').textContent= es?'Recibimos tu solicitud. Nuestro equipo se pondrá en contacto contigo.':'We received your request. Our team will contact you shortly.';
+  document.getElementById('bkSucMsg').textContent= es?'Recibimos tu solicitud. Recibirás un correo de confirmación en breve.':'We received your request. A confirmation email will arrive shortly.';
   bkRenderRecap(data, dt, guests, es, false, '');
 }
 async function submitBooking(){

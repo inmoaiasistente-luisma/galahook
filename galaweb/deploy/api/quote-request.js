@@ -11,6 +11,7 @@
 
 const crypto = require('crypto');
 const { getSupabase } = require('./_lib/supabase');
+const { notifyBooking } = require('./_lib/booking-email-service');
 const catalog = require('./_lib/tour-catalog');
 const {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
@@ -124,7 +125,13 @@ module.exports = async function handler(req, res) {
         booking_status: 'new'
       };
       const { data: inserted, error } = await supabase.from('bookings').insert(candidate).select().single();
-      if (!error) return sendJson(res, 200, { bookingCode: inserted.booking_code, status: 'quote_received' });
+      if (!error) {
+        /* Correos (sin QR). Un fallo NO invalida la cotización ya creada:
+           queda registrado como failed y se puede reintentar desde el panel. */
+        try { await notifyBooking(inserted, 'customer_quote_acknowledgement', 'owner_quote_notification'); }
+        catch (e) { logServer('quote-request', 'notify failed'); }
+        return sendJson(res, 200, { bookingCode: inserted.booking_code, status: 'quote_received' });
+      }
       if (error.code === '23505') {
         const blob = (error.message || '') + ' ' + (error.details || '');
         if (blob.includes('client_request')) { insertConflict = true; break; }

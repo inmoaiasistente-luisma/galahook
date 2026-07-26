@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Check-in — Galápagos Hook Adventure</title>
+<link rel="icon" href="assets/img/logo.png">
+<link rel="stylesheet" href="assets/css/site.css">
+<style>
+  body{background:#0c2322;color:var(--paper);}
+  .ck-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px 16px 40px;}
+  .ck-top{display:flex;align-items:center;gap:10px;margin:6px 0 20px;}
+  .ck-top img{height:38px;}
+  .ck-top b{font-family:var(--display);font-size:16px;color:var(--paper);}
+  .ck-card{width:100%;max-width:460px;background:rgba(255,255,255,.05);border:1px solid var(--line-on-dark);
+    border-radius:14px;padding:22px;}
+  .ck-state{width:100%;max-width:460px;text-align:center;padding:26px 18px;border-radius:14px;margin-bottom:16px;font-weight:800;}
+  .ck-ok{background:#1f8a5b;color:#fff;}
+  .ck-done{background:rgba(90,160,120,.28);color:#bfe8cf;border:1px solid rgba(90,160,120,.5);}
+  .ck-err{background:rgba(200,70,50,.24);color:#ffb3a3;border:1px solid rgba(200,70,50,.45);}
+  .ck-state .big{font-size:23px;line-height:1.2;display:block;}
+  .ck-state .sub{font-size:14px;font-weight:600;opacity:.9;display:block;margin-top:6px;}
+  .ck-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:20px;font-weight:800;
+    color:var(--gold-soft);letter-spacing:.06em;text-align:center;margin-bottom:4px;}
+  .ck-tour{font-family:var(--display);font-size:24px;font-weight:700;text-align:center;margin-bottom:18px;line-height:1.2;}
+  .ck-rows{display:flex;flex-direction:column;gap:1px;background:var(--line-on-dark);border-radius:10px;overflow:hidden;}
+  .ck-row{display:flex;justify-content:space-between;gap:14px;background:#10312e;padding:13px 15px;font-size:16px;}
+  .ck-row span{color:rgba(255,255,255,.55);font-size:12px;text-transform:uppercase;letter-spacing:.06em;align-self:center;}
+  .ck-row b{font-weight:700;text-align:right;word-break:break-word;}
+  .ck-row a{color:var(--gold-soft);}
+  .ck-notes{margin-top:14px;background:rgba(207,159,84,.12);border:1px solid rgba(207,159,84,.35);
+    border-radius:10px;padding:13px 15px;font-size:15px;line-height:1.5;}
+  .ck-notes i{display:block;font-style:normal;font-size:11px;letter-spacing:.07em;text-transform:uppercase;
+    color:var(--gold-soft);margin-bottom:5px;}
+  .ck-muted{color:rgba(255,255,255,.6);text-align:center;font-size:14px;padding:16px 0;}
+  .ck-card .field label{color:rgba(255,255,255,.65);}
+  .ck-card .field input{background:rgba(255,255,255,.07);border-color:var(--line-on-dark);color:var(--paper);}
+  .ck-err-msg{background:#fbe7e3;color:#9a2b16;border-radius:6px;padding:10px 14px;font-size:13.5px;margin-bottom:14px;display:none;}
+  .ck-err-msg.show{display:block;}
+  .ck-actions{margin-top:18px;text-align:center;}
+  @media(max-width:400px){ .ck-row{font-size:15px;} .ck-tour{font-size:21px;} }
+</style>
+</head>
+<body>
+<div class="ck-wrap">
+  <div class="ck-top"><img src="assets/img/logo.png" alt=""><b>Hook Adventure · Check-in</b></div>
+  <div id="ckRoot"></div>
+</div>
+<script src="assets/js/checkin.js"></script>
+</body>
+</html>

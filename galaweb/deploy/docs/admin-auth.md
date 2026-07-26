@@ -142,10 +142,102 @@ processing, failed, refunded y las cotizaciones.
 
 La suma se hace **en el servidor**; al navegador solo viajan los totales.
 
+## Correos automáticos (Resend)
+
+Cada correo se registra en `public.email_notifications` con unicidad
+`(booking_id, notification_type, recipient_email)`: **un mismo correo nunca se
+envía dos veces**, ni por reintentos de Stripe, ni por doble clic, ni por
+ejecución concurrente (el envío se reclama con un *compare-and-swap* sobre
+`status`).
+
+**Normalización del destinatario.** El correo se pasa por `trim()` +
+`toLowerCase()` **antes** de validarlo, y a partir de ahí solo se usa esa forma
+normalizada para insertar, buscar, comparar, enviar y aplicar la idempotencia.
+`Cliente@Email.com`, `cliente@email.com` y `" cliente@email.com "` son el mismo
+destinatario y generan **una sola** notificación. Si tras normalizar el valor no
+es un correo válido, se descarta sin dejar rastro.
+
+La migración **0009** normaliza el historial ya existente y añade el índice único
+funcional `uq_email_notification_normalized` sobre
+`(booking_id, notification_type, lower(btrim(recipient_email)))`, de modo que la
+protección también la impone la base de datos. Conserva el constraint
+`uq_email_notification` de 0007 y **se detiene con un error** si encuentra
+duplicados: no borra filas ni elige una arbitrariamente.
+
+| Tipo | Cuándo | Destinatario | QR |
+|---|---|---|:--:|
+| `customer_booking_confirmation` | reserva web pagada (webhook) | cliente | ✅ |
+| `owner_booking_notification` | reserva web pagada | `BOOKING_NOTIFICATION_EMAIL` | ❌ |
+| `customer_quote_acknowledgement` | cotización creada | cliente | ❌ |
+| `owner_quote_notification` | cotización creada | interno | ❌ |
+| `customer_agency_confirmation` | venta directa | cliente | ✅ |
+| `owner_agency_notification` | venta directa | interno | ❌ |
+
+Los correos al **cliente son bilingües** (inglés primero, español después); los
+**internos van en español**. Todo dato introducido por el usuario se escapa.
+
+**Un fallo de correo nunca rompe la operación:** la reserva permanece
+`paid + confirmed`, la cotización y la venta directa siguen creadas, y la
+notificación queda en `failed`. Owner/admin ven el estado en el detalle de la
+reserva y pueden pulsar **Reintentar** (solo para `failed`).
+
+Los destinatarios salen **únicamente** de `booking.customer_email` y de
+`BOOKING_NOTIFICATION_EMAIL`. No existe ningún endpoint para enviar correos
+arbitrarios.
+
+## Código QR de check-in
+
+Cada reserva pagada y confirmada obtiene una fila en `public.booking_qr_access`.
+**El token no se almacena**: se firma con HMAC-SHA256 y `QR_SIGNING_SECRET` a
+partir de un identificador público opaco (`public_id`) y una versión.
+
+```
+token = base64url("<public_id>.<token_version>") + "." + base64url(HMAC(payload))
+url   = PUBLIC_SITE_URL/checkin.html#t=<token>
+```
+
+El token viaja en el **fragmento** (`#`), nunca en la query (`?`). El navegador
+no envía el fragmento al servidor en la carga inicial, así que el token no
+aparece en los registros de acceso ni en la cabecera `Referer` de recursos
+externos. **No se genera ninguna URL con `?t=`.**
+
+El QR **no contiene** nombre, correo, teléfono, importe, `booking_code`,
+`booking_id` ni identificadores de Stripe. Caduca al final del día del tour
+(hora de Galápagos) **+ 7 días**.
+
+**Check-in:** el guía escanea con la cámara nativa del móvil; se abre
+`checkin.html`, que exige sesión (owner, admin o staff) y consulta
+`POST /api/booking-qr-lookup` con el token **en el cuerpo JSON**
+(`{ "token": "…" }`). El endpoint solo acepta **POST** (cualquier otro método
+responde **405**), exige **mismo origen**, rechaza cualquier clave que no sea
+`token`, valida tipo y longitud (8–512) y **no habilita CORS**.
+
+El token vive solo en memoria: se lee exclusivamente de `location.hash`, se
+retira de la barra de direcciones con `history.replaceState` **inmediatamente
+después de leerlo**, no se guarda en `localStorage` ni `sessionStorage`, no se
+vuelve a escribir en la URL y nunca se registra en logs ni se devuelve en las
+respuestas.
+
+Válido para `booking_status` **`confirmed`** y **`completed`**. Rechaza
+`new`, `pending_payment`, `cancelled`, `failed`, `refunded`, `processing` y
+cualquier cotización.
+
+**Staff ve** código, tour, fecha, cliente, pax, teléfono, email y notas.
+**No ve** importe, método de pago, canal ni ningún dato financiero.
+Escanear **no cambia** ningún estado.
+
+**Rotar / revocar** (solo owner/admin): rotar incrementa `token_version` y el QR
+anterior deja de funcionar **al instante** — hay que descargar el nuevo PNG y
+enviárselo al cliente manualmente (en esta versión no hay reenvío automático).
+Revocar deja el acceso inservible sin tocar `booking_status`.
+
 ## Notas
 
 - Cambiar `booking_status` a `cancelled` **no** reembolsa en Stripe ni altera
   `payment_status`. El panel avisa antes de cancelar una reserva pagada.
+- **Preview vs Production:** los QR se generan con `PUBLIC_SITE_URL`. Un QR
+  emitido desde Preview apunta a la URL de Preview y dejará de funcionar cuando
+  ese deployment caduque. **En Preview usa solo correos propios de prueba.**
 - El editor de contenido (textos/imágenes de `content.js`) sigue siendo una función
   **local/legacy**: guarda en el `localStorage` del propio navegador y no afecta a los
   clientes. Los **precios reales de cobro** viven en `api/_lib/tour-catalog.js` (servidor).

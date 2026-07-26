@@ -17,6 +17,7 @@
 const crypto = require('crypto');
 const { getSupabase } = require('./_lib/supabase');
 const { requireAdmin, sameOrigin } = require('./_lib/admin-auth');
+const { notifyBooking } = require('./_lib/booking-email-service');
 const catalog = require('./_lib/tour-catalog');
 const {
   sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys,
@@ -169,6 +170,10 @@ module.exports = async function handler(req, res) {
 
       const { data, error } = await supabase.from('bookings').insert(row).select().single();
       if (!error) {
+        /* QR + correos. Un fallo NO invalida la venta ya registrada: se
+           devuelve éxito y la notificación queda como failed para reintentar. */
+        try { await notifyBooking(data, 'customer_agency_confirmation', 'owner_agency_notification'); }
+        catch (e) { logServer('agency-create', 'notify failed'); }
         const view = session.role === 'staff' ? pick(data, STAFF_VIEW) : data;
         return sendJson(res, 200, { booking: view });
       }

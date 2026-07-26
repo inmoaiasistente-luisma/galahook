@@ -13,6 +13,7 @@
 const { getStripe } = require('./_lib/stripe');
 const { getSupabase } = require('./_lib/supabase');
 const { readRawBody } = require('./_lib/raw-body');
+const { notifyBooking } = require('./_lib/booking-email-service');
 
 const HANDLED = [
   'payment_intent.processing',
@@ -173,6 +174,19 @@ async function processPaymentIntent(supabase, event, pi) {
       const ts = (event.created || pi.created || 0) * 1000;
       const paidAt = new Date(ts).toISOString();
       await updateBooking(supabase, booking, { payment_status: 'paid', booking_status: 'confirmed', paid_at: paidAt });
+
+      /* Notificaciones: QR + correo al cliente y al equipo.
+         REGLA CRÍTICA: la confirmación del pago NO depende del correo ni del QR.
+         Un fallo aquí queda registrado en email_notifications y se puede
+         reintentar desde el panel, pero jamás devuelve 500 a Stripe. */
+      try {
+        const fresh = await supabase.from('bookings').select('*').eq('id', booking.id).maybeSingle();
+        const row = (fresh && fresh.data) || Object.assign({}, booking,
+          { payment_status: 'paid', booking_status: 'confirmed', paid_at: paidAt });
+        await notifyBooking(row, 'customer_booking_confirmation', 'owner_booking_notification');
+      } catch (e) {
+        logSafe('notify (no afecta al pago)', sanitize(e && e.message));
+      }
       return;
     }
 
