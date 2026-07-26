@@ -4,9 +4,10 @@
    POST /api/admin-booking-update
    ---------------------------------------------------------
    Actualiza SOLO booking_status de una reserva del tenant.
-   Requiere sesión de administrador. NUNCA cambia payment_status
-   (eso solo lo mueve Stripe/webhook), ni importe, moneda, PI id,
-   paid_at, email o tour_id. Cancelar NO reembolsa en Stripe.
+   Autorizado exclusivamente para owner y admin — staff recibe 403.
+   NUNCA cambia payment_status (eso solo lo mueve Stripe/webhook),
+   ni importe, moneda, PI id, paid_at, email o tour_id.
+   Cancelar NO reembolsa en Stripe.
    ========================================================= */
 
 const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('./_lib/http');
@@ -20,7 +21,9 @@ const FIELDS = 'id,booking_code,request_type,tour_id,tour_name,unit,booking_date
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  if (!requireAdmin(req, res)) return;                // 401 ya enviado
+  // Solo owner y admin. staff → 403 FORBIDDEN (aunque llame al endpoint directamente).
+  const session = await requireAdmin(req, res, ['owner', 'admin']);
+  if (!session) return;                               // 401/403 ya enviado
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 
   let tenant;

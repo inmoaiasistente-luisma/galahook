@@ -3,42 +3,48 @@
 /* =========================================================
    LOAN-IX Booking Engine — autenticación del panel admin
    ---------------------------------------------------------
-   SERVER-ONLY. Verifica la contraseña contra ADMIN_PASSWORD_HASH
-   (scrypt) y firma/verifica una cookie de sesión con HMAC-SHA256
-   usando SESSION_SECRET. Nada de esto se expone al navegador.
+   SERVER-ONLY. Multiusuario con Supabase Auth:
+     · Las contraseñas viven en auth.users (Supabase Auth).
+     · La AUTORIZACIÓN vive en public.admin_profiles
+       (tenant_id + role + active) y se revalida en CADA petición.
+     · La sesión es una cookie HttpOnly firmada con HMAC-SHA256
+       (SESSION_SECRET). No contiene tokens de Supabase.
+
+   El rol se lee SIEMPRE de la base de datos, nunca de la cookie:
+   así una desactivación o un cambio de rol surten efecto en la
+   siguiente petición sin esperar a que expire la sesión.
    ========================================================= */
 
 const crypto = require('crypto');
+const { getSupabase } = require('./supabase');
+const { getTenantId, logServer } = require('./http');
 
 const COOKIE_NAME = 'gha_admin_session';
 const DEFAULT_MAX_AGE = 8 * 60 * 60; // 8 horas (segundos)
+const ROLES = ['owner', 'admin', 'staff'];
 
 /* ¿Entorno seguro (HTTPS)? En Vercel NODE_ENV='production' en prod y preview. */
 function isSecureEnv() { return process.env.NODE_ENV === 'production'; }
 
-/* ---------------- contraseña (scrypt) ----------------
-   Formato del hash almacenado:  scrypt$N$r$p$saltHex$keyHex   */
-function verifyPassword(password, storedHash) {
-  try {
-    if (typeof password !== 'string' || typeof storedHash !== 'string') return false;
-    const parts = storedHash.split('$');
-    if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
-    const N = parseInt(parts[1], 10), r = parseInt(parts[2], 10), p = parseInt(parts[3], 10);
-    const salt = Buffer.from(parts[4], 'hex');
-    const expected = Buffer.from(parts[5], 'hex');
-    if (!N || !r || !p || salt.length === 0 || expected.length === 0) return false;
-    const derived = crypto.scryptSync(password, salt, expected.length, { N: N, r: r, p: p, maxmem: 64 * 1024 * 1024 });
-    if (derived.length !== expected.length) return false; // evita que timingSafeEqual lance con longitudes distintas
-    return crypto.timingSafeEqual(derived, expected);
-  } catch (e) { return false; }
-}
-
 /* ---------------- token de sesión (HMAC) ---------------- */
-function createSessionToken(secret, maxAgeSeconds) {
+/**
+ * @param {string} secret  SESSION_SECRET
+ * @param {object} user    { user_id, email, full_name, role, tenant_id }
+ */
+function createSessionToken(secret, user, maxAgeSeconds) {
   const iat = Math.floor(Date.now() / 1000);
   const exp = iat + (maxAgeSeconds || DEFAULT_MAX_AGE);
-  const sid = crypto.randomBytes(16).toString('hex');
-  const body = Buffer.from(JSON.stringify({ iat: iat, exp: exp, sid: sid })).toString('base64url');
+  const payload = {
+    user_id: user.user_id,
+    email: user.email,
+    full_name: user.full_name,
+    role: user.role,
+    tenant_id: user.tenant_id,
+    iat: iat,
+    exp: exp,
+    sid: crypto.randomBytes(16).toString('hex')   // nonce
+  };
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto.createHmac('sha256', secret).update(body).digest('base64url');
   return body + '.' + sig; // la firma cubre TODO el cuerpo del token
 }
@@ -90,23 +96,83 @@ function clearSessionCookie(opts) {
   return parts.join('; ');
 }
 
-/* ---------------- guardas ---------------- */
+/* ---------------- perfil de autorización ---------------- */
+/** Lee public.admin_profiles con la SECRET KEY. Lanza si la consulta falla. */
+async function loadProfile(userId) {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('admin_profiles')
+    .select('user_id,tenant_id,full_name,role,active')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw new Error('profile lookup failed');
+  return data || null;
+}
+
+/** true si el perfil es utilizable para el tenant indicado. */
+function isProfileUsable(profile, tenant) {
+  return !!profile && profile.active === true &&
+    profile.tenant_id === tenant && ROLES.indexOf(profile.role) !== -1;
+}
+
+/* ---------------- respuestas ---------------- */
 function sendUnauthorized(res) {
   res.statusCode = 401;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.end(JSON.stringify({ error: 'UNAUTHORIZED' }));
 }
+function sendForbidden(res) {
+  res.statusCode = 403;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.end(JSON.stringify({ error: 'FORBIDDEN' }));
+}
 
-/* Devuelve el payload de sesión o null (y responde 401) si no es válida. */
-function requireAdmin(req, res) {
+/* ---------------- guarda principal ---------------- */
+/**
+ * Verifica la cookie Y revalida el perfil contra la base de datos.
+ * Devuelve { user_id, email, full_name, role, tenant_id } o null
+ * (habiendo respondido ya 401/403). Fail-closed ante cualquier error.
+ *
+ * IMPORTANTE: es ASÍNCRONA — los llamadores deben usar `await`.
+ */
+async function requireAdmin(req, res, allowedRoles) {
+  const allowed = allowedRoles && allowedRoles.length ? allowedRoles : ROLES;
+
   const secret = process.env.SESSION_SECRET;
-  if (!secret) { sendUnauthorized(res); return null; } // sin secreto → no autorizado (sin revelar el motivo)
+  if (!secret) { sendUnauthorized(res); return null; }
+
   const token = readCookies(req)[COOKIE_NAME];
   if (!token) { sendUnauthorized(res); return null; }
+
   const payload = verifySessionToken(token, secret);
-  if (!payload) { sendUnauthorized(res); return null; }
-  return payload;
+  if (!payload || !payload.user_id) { sendUnauthorized(res); return null; }
+
+  let tenant;
+  try { tenant = getTenantId(); }
+  catch (e) { logServer('requireAdmin', e.message); sendUnauthorized(res); return null; }
+
+  if (payload.tenant_id !== tenant) { sendUnauthorized(res); return null; }
+
+  let profile;
+  try { profile = await loadProfile(payload.user_id); }
+  catch (e) { logServer('requireAdmin', e.message); sendUnauthorized(res); return null; }
+
+  // active / tenant / rol válido → se toman de la BD, no de la cookie.
+  if (!isProfileUsable(profile, tenant)) { sendUnauthorized(res); return null; }
+
+  if (allowed.indexOf(profile.role) === -1) { sendForbidden(res); return null; }
+
+  return {
+    user_id: payload.user_id,
+    email: payload.email,
+    full_name: profile.full_name,
+    role: profile.role,
+    tenant_id: profile.tenant_id
+  };
 }
+
+function requireOwner(req, res) { return requireAdmin(req, res, ['owner']); }
+function requireOwnerOrAdmin(req, res) { return requireAdmin(req, res, ['owner', 'admin']); }
 
 /* Defensa CSRF adicional: exige mismo origen cuando hay Origin/Referer. */
 function sameOrigin(req) {
@@ -119,8 +185,10 @@ function sameOrigin(req) {
 }
 
 module.exports = {
-  COOKIE_NAME, DEFAULT_MAX_AGE, isSecureEnv,
-  verifyPassword, createSessionToken, verifySessionToken,
+  COOKIE_NAME, DEFAULT_MAX_AGE, ROLES, isSecureEnv,
+  createSessionToken, verifySessionToken,
   readCookies, buildSessionCookie, clearSessionCookie,
-  requireAdmin, sameOrigin
+  loadProfile, isProfileUsable,
+  requireAdmin, requireOwner, requireOwnerOrAdmin,
+  sendUnauthorized, sendForbidden, sameOrigin
 };

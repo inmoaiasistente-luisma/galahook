@@ -52,6 +52,7 @@ function showLogin(){
    +'<img src="assets/img/logo.png" alt="logo">'
    +'<h1>Owner Login</h1><p>Galápagos Hook Adventure · Admin</p>'
    +'<div class="err" id="loginErr"></div>'
+   +'<div class="field"><label>Email</label><input type="email" id="aEmail" autocomplete="username" required></div>'
    +'<div class="field"><label>Password</label><input type="password" id="aPass" autocomplete="current-password" required></div>'
    +'<button type="submit" class="btn btn-gold btn-block" id="loginBtn" style="margin-top:8px">Log in</button>'
    +'<p style="margin:16px 0 0"><a href="index.html" style="color:var(--sea);font-weight:600;font-size:13px">← Back to site</a></p>'
@@ -59,18 +60,29 @@ function showLogin(){
   const btn=document.getElementById('loginBtn'), errEl=document.getElementById('loginErr');
   document.getElementById('loginForm').addEventListener('submit',function(e){
     e.preventDefault();
+    const em=document.getElementById('aEmail').value.trim();
     const pw=document.getElementById('aPass').value;
-    if(!pw) return;
+    if(!em||!pw) return;
     errEl.classList.remove('show'); btn.disabled=true; const lbl=btn.textContent; btn.textContent=ES?'Ingresando…':'Signing in…';
-    apiPost('/api/admin-login',{password:pw}).then(function(r){
-      if(r.ok && r.data && r.data.authenticated){ showAdmin(); return; }
-      errEl.textContent=ES?'Contraseña incorrecta.':'Invalid password.'; errEl.classList.add('show');
-      btn.disabled=false; btn.textContent=lbl;
+    apiPost('/api/admin-login',{email:em,password:pw}).then(function(r){
+      if(r.ok && r.data && r.data.authenticated){ showAdmin(r.data.user); return; }
+      const code=r.data && r.data.error;
+      errEl.textContent = (code==='NO_ACCESS')
+        ? (ES?'No tienes acceso a este panel.':'You do not have access to this panel.')
+        : (ES?'Correo o contraseña incorrectos.':'Invalid email or password.');
+      errEl.classList.add('show'); btn.disabled=false; btn.textContent=lbl;
     }).catch(function(){
       errEl.textContent=ES?'No pudimos iniciar sesión. Inténtalo nuevamente.':'We could not sign you in. Please try again.'; errEl.classList.add('show');
       btn.disabled=false; btn.textContent=lbl;
     });
   });
+}
+/* Etiquetas de rol para la interfaz */
+function roleLabel(role){
+  if(role==='owner') return ES?'Administrador maestro':'Master administrator';
+  if(role==='admin') return ES?'Administrador':'Administrator';
+  if(role==='staff') return ES?'Personal operativo':'Staff';
+  return '';
 }
 
 /* ============ helpers to build bound fields ============ */
@@ -435,27 +447,123 @@ function panelBookings(){
   return p;
 }
 
-const PANELS=[
-  {id:'bookings',label:(ES?'Reservas':'Bookings'), build:panelBookings},
-  {id:'site',  label:'Site & Contact', build:panelSite},
-  {id:'hero',  label:'Home Hero',      build:panelHero},
-  {id:'packages',label:'Packages',     build:panelPackages},
-  {id:'tours', label:'Tours',          build:panelTours},
-  {id:'fishing',label:'Sport Fishing', build:panelFishing},
-  {id:'story', label:'About & Conservation', build:panelStory},
-];
+/* ============ AGENDA DE STAFF (solo lectura) ============
+   Tarjeta sin <select> ni botones: staff no puede modificar nada.
+   No contiene ninguna referencia a /api/admin-booking-update. */
+function bkStaffCard(b){
+  const c=el('<div class="ed-card"></div>');
+  c.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">'
+      +'<div><div style="font-family:var(--body);font-weight:800;letter-spacing:.04em;color:#e4c98c;font-size:13px">'+escapeHtml(b.booking_code||'')+'</div>'
+        +'<div style="font-family:var(--display);font-weight:700;font-size:18px;color:var(--paper);margin-top:4px">'+escapeHtml(b.tour_name||'—')+'</div></div>'
+      +'<div style="text-align:right"><div style="color:#e4c98c;font-weight:800;font-size:16px">'+escapeHtml(b.booking_date||'')+'</div>'
+        +'<div style="color:rgba(255,255,255,.6);font-size:13px;margin-top:2px">'+(ES?'Viajeros: ':'Guests: ')+escapeHtml(b.guests)+'</div></div>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px 18px;margin-top:16px;font-size:14px;color:rgba(255,255,255,.85)">'
+      +bkRow(ES?'Cliente':'Customer', escapeHtml(b.customer_name))
+      +(b.customer_phone?bkRow(ES?'Teléfono':'Phone','<a href="tel:'+escapeHtml(b.customer_phone)+'" style="color:#e4c98c">'+escapeHtml(b.customer_phone)+'</a>'):'')
+      +bkRow('Email','<a href="mailto:'+escapeHtml(b.customer_email)+'" style="color:#e4c98c">'+escapeHtml(b.customer_email)+'</a>')
+      +(b.notes?'<div style="grid-column:1/3">'+bkRow(ES?'Notas':'Notes', escapeHtml(b.notes))+'</div>':'')
+    +'</div>';
+  return c;
+}
+function panelStaffSchedule(){
+  const p=el('<div></div>');
+  const state={ page:1, limit:25, loading:false };
+
+  const fcard=card('', ES?'Reservas confirmadas y pagadas. Por defecto se muestran las de hoy en adelante.'
+                       :'Confirmed and paid bookings. Today onward by default.');
+  const r1=el('<div class="ed-row"></div>');
+  const searchWrap=el('<div class="ed-field"><label>'+(ES?'Buscar':'Search')+'</label></div>');
+  const searchInput=document.createElement('input'); searchInput.maxLength=100;
+  searchInput.placeholder=ES?'Código, cliente o tour':'Code, customer or tour'; searchWrap.appendChild(searchInput);
+  const applyWrap=el('<div class="ed-field" style="display:flex;align-items:flex-end"></div>');
+  const applyBtn=el('<button class="btn btn-gold btn-sm" type="button" style="width:100%">'+(ES?'Buscar':'Search')+'</button>');
+  applyWrap.appendChild(applyBtn);
+  r1.appendChild(searchWrap); r1.appendChild(applyWrap);
+  const r2=el('<div class="ed-row"></div>');
+  const fromF=bkDateField(ES?'Desde':'From'); const toF=bkDateField(ES?'Hasta':'To');
+  r2.appendChild(fromF.wrap); r2.appendChild(toF.wrap);
+  fcard.appendChild(r1); fcard.appendChild(r2);
+  p.appendChild(fcard);
+
+  const listWrap=el('<div></div>'); p.appendChild(listWrap);
+  const pager=el('<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 2px 0;color:rgba(255,255,255,.7);font-size:13px"></div>');
+  const prevBtn=el('<button class="mini-btn" type="button">'+(ES?'‹ Anterior':'‹ Prev')+'</button>');
+  const nextBtn=el('<button class="mini-btn" type="button">'+(ES?'Siguiente ›':'Next ›')+'</button>');
+  const pageInfo=el('<span></span>');
+  pager.appendChild(prevBtn); pager.appendChild(pageInfo); pager.appendChild(nextBtn); p.appendChild(pager);
+
+  function buildQS(){
+    // El servidor fuerza booking+paid+confirmed; aquí solo fecha, búsqueda y orden.
+    const q=['page='+state.page,'limit='+state.limit,'sort=booking_date_asc'];
+    const s=searchInput.value.trim().slice(0,100); if(s) q.push('search='+encodeURIComponent(s));
+    if(fromF.input.value) q.push('date_from='+fromF.input.value);
+    if(toF.input.value) q.push('date_to='+toF.input.value);
+    return q.join('&');
+  }
+  function load(){
+    if(state.loading) return; state.loading=true; applyBtn.disabled=true; prevBtn.disabled=true; nextBtn.disabled=true;
+    listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:rgba(255,255,255,.5)">'+(ES?'Cargando…':'Loading…')+'</div>';
+    apiGet('/api/admin-bookings?'+buildQS()).then(function(r){
+      state.loading=false; applyBtn.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok){ listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:#ffb3a3">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</div>'; return; }
+      const list=(r.data&&r.data.bookings)||[]; const pg=(r.data&&r.data.pagination)||{page:1,totalPages:1,total:0};
+      listWrap.innerHTML='';
+      if(!list.length) listWrap.appendChild(el('<div class="ed-card" style="text-align:center;color:rgba(255,255,255,.5)">'+(ES?'No hay reservas para estas fechas.':'No bookings for these dates.')+'</div>'));
+      list.forEach(function(b){ listWrap.appendChild(bkStaffCard(b)); });
+      state.page=pg.page||1;
+      pageInfo.textContent=(ES?'Página ':'Page ')+(pg.page||1)+' / '+(pg.totalPages||1)+' · '+(pg.total||0)+(ES?' reservas':' bookings');
+      prevBtn.disabled=(pg.page||1)<=1; nextBtn.disabled=(pg.page||1)>=(pg.totalPages||1);
+    }).catch(function(){
+      state.loading=false; applyBtn.disabled=false;
+      listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:#ffb3a3">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</div>';
+    });
+  }
+  applyBtn.addEventListener('click',function(){ state.page=1; load(); });
+  searchInput.addEventListener('keydown',function(e){ if(e.key==='Enter'){ state.page=1; load(); } });
+  [fromF.input,toF.input].forEach(function(i){ i.addEventListener('change',function(){ state.page=1; load(); }); });
+  prevBtn.addEventListener('click',function(){ if(state.page>1){ state.page--; load(); } });
+  nextBtn.addEventListener('click',function(){ state.page++; load(); });
+  load();
+  return p;
+}
+
+/* Los paneles se CONSTRUYEN según el rol: para staff el array contiene una sola
+   entrada, así los paneles de contenido nunca se invocan ni entran al DOM. */
+function panelsFor(role){
+  if(role==='staff'){
+    return [{id:'schedule', label:(ES?'Agenda de reservas':'Booking schedule'), build:panelStaffSchedule}];
+  }
+  return [
+    {id:'bookings',label:(ES?'Reservas':'Bookings'), build:panelBookings},
+    {id:'site',  label:'Site & Contact', build:panelSite},
+    {id:'hero',  label:'Home Hero',      build:panelHero},
+    {id:'packages',label:'Packages',     build:panelPackages},
+    {id:'tours', label:'Tours',          build:panelTours},
+    {id:'fishing',label:'Sport Fishing', build:panelFishing},
+    {id:'story', label:'About & Conservation', build:panelStory},
+  ];
+}
 
 /* ============ ADMIN SHELL ============ */
-function showAdmin(){
+function showAdmin(user){
+  user=user||{};
+  const isStaff = user.role==='staff';
+  const PANELS = panelsFor(user.role);
+  const who = escapeHtml(user.full_name||'') + (user.role?(' · '+roleLabel(user.role)):'');
   shell.innerHTML=
    '<div class="admin-top">'
      +'<div class="brand-mini"><img src="assets/img/logo.png"><b>Hook Admin</b></div>'
      +'<div class="actions">'
-       +'<span class="save-state" id="saveState"></span>'
+       +'<span style="color:rgba(255,255,255,.72);font-size:12.5px;font-weight:600">'+who+'</span>'
+       // Los controles del editor de contenido NO se generan para staff.
+       +(isStaff?'':'<span class="save-state" id="saveState"></span>')
        +'<a class="mini-btn" href="index.html" target="_blank">'+I.eye+' View site</a>'
-       +'<button class="mini-btn" id="resetBtn">Reset all</button>'
+       +(isStaff?'':'<button class="mini-btn" id="resetBtn">Reset all</button>')
        +'<button class="mini-btn" id="logoutBtn">'+I.out+' Log out</button>'
-       +'<button class="btn btn-gold btn-sm" id="saveBtn">'+I.save+' Save changes</button>'
+       +(isStaff?'':'<button class="btn btn-gold btn-sm" id="saveBtn">'+I.save+' Save changes</button>')
      +'</div>'
    +'</div>'
    +'<div class="admin-body">'
@@ -465,7 +573,6 @@ function showAdmin(){
 
   const nav=document.getElementById('adminNav');
   const main=document.getElementById('adminMain');
-  let cache={};
   function open(id){
     nav.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
     main.innerHTML='';
@@ -480,20 +587,22 @@ function showAdmin(){
     const b=el('<button data-id="'+def.id+'" style="display:flex;align-items:center">'+def.label+'</button>');
     b.addEventListener('click',()=>open(def.id)); nav.appendChild(b);
   });
-  open('bookings');
+  open(PANELS[0].id);
 
-  document.getElementById('saveBtn').addEventListener('click',()=>{
-    try{ localStorage.setItem(CKEY, JSON.stringify(W)); }
-    catch(e){ alert('Could not save — uploaded photos may be too large for browser storage. Try using image paths/URLs instead of uploads, or fewer uploads.'); return; }
-    dirty=false; const s=document.getElementById('saveState'); s.textContent='✓ Saved'; s.classList.add('show');
-    setTimeout(()=>s.classList.remove('show'),2600);
-  });
-  document.getElementById('resetBtn').addEventListener('click',()=>{
-    if(confirm('Reset ALL content back to the original defaults? This cannot be undone.')){
-      localStorage.removeItem(CKEY); W=loadWorking(); open('site');
-      const s=document.getElementById('saveState'); s.textContent='Reset to defaults'; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2600);
-    }
-  });
+  if(!isStaff){
+    document.getElementById('saveBtn').addEventListener('click',()=>{
+      try{ localStorage.setItem(CKEY, JSON.stringify(W)); }
+      catch(e){ alert('Could not save — uploaded photos may be too large for browser storage. Try using image paths/URLs instead of uploads, or fewer uploads.'); return; }
+      dirty=false; const s=document.getElementById('saveState'); s.textContent='✓ Saved'; s.classList.add('show');
+      setTimeout(()=>s.classList.remove('show'),2600);
+    });
+    document.getElementById('resetBtn').addEventListener('click',()=>{
+      if(confirm('Reset ALL content back to the original defaults? This cannot be undone.')){
+        localStorage.removeItem(CKEY); W=loadWorking(); open('site');
+        const s=document.getElementById('saveState'); s.textContent='Reset to defaults'; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2600);
+      }
+    });
+  }
   document.getElementById('logoutBtn').addEventListener('click',()=>{
     if(dirty && !confirm('You have unsaved changes. Log out anyway?')) return;
     apiPost('/api/admin-logout',{}).then(function(){ showLogin(); }).catch(function(){ showLogin(); });
@@ -502,5 +611,8 @@ function showAdmin(){
 }
 
 /* ============ boot ============ */
-apiGet('/api/admin-session').then(function(r){ if(r.ok && r.data && r.data.authenticated) showAdmin(); else showLogin(); }).catch(function(){ showLogin(); });
+apiGet('/api/admin-session').then(function(r){
+  if(r.ok && r.data && r.data.authenticated) showAdmin(r.data.user);
+  else showLogin();
+}).catch(function(){ showLogin(); });
 })();
