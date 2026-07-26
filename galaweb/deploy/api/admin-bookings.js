@@ -26,7 +26,8 @@ const { requireAdmin } = require('./_lib/admin-auth');
    client_request_id ni metadata. */
 const ADMIN_FIELDS = 'id,booking_code,request_type,tour_id,tour_name,unit,booking_date,guests,' +
   'customer_name,customer_email,customer_phone,notes,amount_cents,currency,' +
-  'payment_status,booking_status,paid_at,created_at,updated_at';
+  'payment_status,booking_status,paid_at,created_at,updated_at,' +
+  'sales_channel,payment_method,created_by_name,sold_at';
 
 /* Campos operativos (staff). Sin datos financieros ni internos.
    La restricción va en el SELECT: esos campos NO salen de la base de datos. */
@@ -37,6 +38,8 @@ const REQUEST_TYPES = ['booking', 'quote'];
 const PAYMENT_STATUSES = ['not_required', 'pending', 'processing', 'paid', 'failed', 'refunded'];
 const BOOKING_STATUSES = ['new', 'pending_payment', 'confirmed', 'cancelled', 'completed', 'failed'];
 const SORTS = ['newest', 'oldest', 'booking_date_asc', 'booking_date_desc'];
+const SALES_CHANNELS = ['web', 'agency'];
+const PAYMENT_METHODS = ['stripe', 'cash', 'card', 'bank_transfer', 'zelle', 'other'];
 const MAX_LIMIT = 100;
 const MAX_SEARCH = 100;
 
@@ -83,6 +86,12 @@ module.exports = async function handler(req, res) {
   if (booking_status && BOOKING_STATUSES.indexOf(booking_status) === -1) return sendError(res, 400, 'INVALID_FILTER', 'Invalid booking_status');
   if (SORTS.indexOf(sort) === -1) return sendError(res, 400, 'INVALID_FILTER', 'Invalid sort');
 
+  /* Filtros administrativos de canal. Se ignoran para staff, que nunca ve
+     canal, método de pago ni quién registró la venta. */
+  const sales_channel = q.sales_channel, payment_method = q.payment_method, created_by = q.created_by;
+  if (sales_channel && SALES_CHANNELS.indexOf(sales_channel) === -1) return sendError(res, 400, 'INVALID_FILTER', 'Invalid sales_channel');
+  if (payment_method && PAYMENT_METHODS.indexOf(payment_method) === -1) return sendError(res, 400, 'INVALID_FILTER', 'Invalid payment_method');
+
   // fechas
   const date_from = q.date_from, date_to = q.date_to;
   if (date_from && !isRealYmd(date_from)) return sendError(res, 400, 'INVALID_FILTER', 'Invalid date_from');
@@ -110,6 +119,9 @@ module.exports = async function handler(req, res) {
       if (booking_status) query = query.eq('booking_status', booking_status);
       if (date_from) query = query.gte('booking_date', date_from);
       if (date_to) query = query.lte('booking_date', date_to);
+      if (sales_channel) query = query.eq('sales_channel', sales_channel);
+      if (payment_method) query = query.eq('payment_method', payment_method);
+      if (created_by) query = query.eq('created_by_user_id', created_by);
     }
 
     if (search) {

@@ -97,6 +97,51 @@ Contiene únicamente `user_id`, `email`, `full_name`, `role`, `tenant_id`, marca
 tiempo y un nonce. **No** contiene contraseñas, hashes, `access_token` ni `refresh_token`.
 El navegador **nunca** habla directamente con Supabase.
 
+## Ventas directas (agencia / teléfono / presencial)
+
+Los **tres roles** pueden registrar una venta que no pasó por Stripe, con
+**Añadir venta directa** (`POST /api/admin-agency-booking-create`).
+
+El usuario introduce: cliente, teléfono, email (opcional), tour o destino,
+fecha del tour, viajeros, importe cobrado, método de pago y notas.
+El **servidor** fija, sin que el navegador pueda alterarlos:
+
+`sales_channel='agency'` · `request_type='booking'` · `payment_status='paid'` ·
+`booking_status='confirmed'` · `currency='usd'` · `tenant_id` ·
+`created_by_user_id` y `created_by_name` (de la sesión) · `sold_at` y `paid_at`
+(reloj del servidor) · `booking_code`. Nunca hay `stripe_payment_intent_id`.
+
+Enviar cualquiera de esos campos desde el navegador devuelve **400**. La operación
+es idempotente por `request_id`: un doble clic no crea dos ventas.
+
+Límites: viajeros 1–50 · importe 1–100 000 000 centavos ($1 000 000) ·
+`booking_date` entre 365 días atrás y 730 adelante.
+
+**Qué ve staff después:** la reserva aparece en su agenda (queda paid + confirmed)
+con fecha, código, destino, cliente, teléfono, viajeros y notas. **No** ve importe,
+método de pago, canal ni quién registró la venta.
+
+### Correcciones (limitación conocida de esta versión)
+
+Una venta directa **no se puede editar** después de crearla. Si hay un error,
+owner/admin cancelan la reserva (`booking_status='cancelled'`) y registran una nueva.
+
+Mejora pendiente para una fase posterior: endpoint de corrección exclusivo de
+owner/admin con historial de auditoría (motivo del cambio, valores anteriores y
+nuevos, autor y fecha).
+
+## Resumen financiero
+
+`GET /api/admin-finance-summary` — **solo owner y admin**; staff recibe **403**.
+
+Agrupa por **`sold_at` (fecha de caja: cuándo entró el dinero)**, nunca por
+`booking_date` (fecha del tour). `date_from` / `date_to` son fechas de venta y se
+convierten a instantes con la zona horaria de Galápagos (UTC−6). Cuenta solo
+`request_type='booking'` y `payment_status='paid'`: quedan fuera pending,
+processing, failed, refunded y las cotizaciones.
+
+La suma se hace **en el servidor**; al navegador solo viajan los totales.
+
 ## Notas
 
 - Cambiar `booking_status` a `cancelled` **no** reembolsa en Stripe ni altera

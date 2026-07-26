@@ -310,7 +310,38 @@ function panelStory(){
   return p;
 }
 
-/* ============ BOOKINGS (fuente de verdad: Supabase vía /api) ============ */
+/* ============ RESERVAS · calendario + tabla + detalle ============
+   Fuente de verdad: Supabase vía /api/admin-bookings.
+   Los permisos los impone SIEMPRE el servidor; aquí solo se adapta la UI. */
+
+/* ---- fechas (siempre en horario local, sin desfase de zona) ---- */
+function bkPad(n){ return String(n).padStart(2,'0'); }
+function bkYmd(d){ return d.getFullYear()+'-'+bkPad(d.getMonth()+1)+'-'+bkPad(d.getDate()); }
+function bkParseYmd(s){ const p=String(s||'').split('-'); return new Date(+p[0],(+p[1]||1)-1,(+p[2]||1)); }
+function bkToday(){ return bkYmd(new Date()); }
+function bkMonthBounds(y,m){ return [bkYmd(new Date(y,m,1)), bkYmd(new Date(y,m+1,0))]; }
+function bkMonthLabel(y,m){
+  try{ return bkParseYmd(bkYmd(new Date(y,m,1))).toLocaleDateString(ES?'es-ES':'en-US',{month:'long',year:'numeric'}); }
+  catch(e){ return (m+1)+'/'+y; }
+}
+function bkDayLabel(s){
+  try{ return bkParseYmd(s).toLocaleDateString(ES?'es-ES':'en-US',{day:'numeric',month:'long'}); }
+  catch(e){ return s; }
+}
+function bkFmtDate(s){ if(!s) return '—'; try{ return bkParseYmd(s).toLocaleDateString(ES?'es-ES':'en-US',{day:'2-digit',month:'short'}); }catch(e){ return escapeHtml(s); } }
+function bkFmtDT(s){ if(!s) return '—'; try{ return new Date(s).toLocaleString(ES?'es-ES':'en-US'); }catch(e){ return escapeHtml(s); } }
+function bkMoney(cents, cur){
+  if(cents==null) return '—';
+  try{ return new Intl.NumberFormat('en-US',{style:'currency',currency:String(cur||'usd').toUpperCase()}).format(cents/100); }
+  catch(e){ return '$'+(cents/100); }
+}
+
+/* ---- badges compactos (color + texto siempre visible) ---- */
+const BK_PAY_KIND ={paid:'ok',pending:'warn',processing:'warn',failed:'bad',refunded:'muted',not_required:'info'};
+const BK_BOOK_KIND={confirmed:'ok',pending_payment:'warn',new:'info',cancelled:'bad',completed:'muted',failed:'bad'};
+function bkBadge(txt,kind){ return '<span class="bdg bdg-'+(kind||'muted')+'">'+escapeHtml(txt||'')+'</span>'; }
+
+/* ---- campos de filtro ---- */
 function bkSelectField(label, options){
   const wrap=el('<div class="ed-field"><label>'+label+'</label></div>');
   const s=document.createElement('select');
@@ -321,214 +352,476 @@ function bkDateField(label){
   const wrap=el('<div class="ed-field"><label>'+label+'</label></div>');
   const i=document.createElement('input'); i.type='date'; wrap.appendChild(i); return {wrap:wrap, input:i};
 }
-function bkRow(label,val){ return '<div><span style="opacity:.55">'+label+':</span> '+val+'</div>'; }
-function bkFmtDT(s){ if(!s) return '—'; try{ return new Date(s).toLocaleString(ES?'es-ES':'en-US'); }catch(e){ return escapeHtml(s); } }
-function bkFmtMoney(b){
-  if(b.amount_cents==null || b.request_type==='quote') return ES?'Cotización':'Quote';
-  try{ return new Intl.NumberFormat('en-US',{style:'currency',currency:String(b.currency||'usd').toUpperCase()}).format(b.amount_cents/100); }
-  catch(e){ return '$'+(b.amount_cents/100); }
+
+/* ---- consultas ---- */
+function bkQS(o){
+  const q=[];
+  Object.keys(o).forEach(function(k){ const v=o[k]; if(v!==''&&v!=null) q.push(k+'='+encodeURIComponent(v)); });
+  return q.join('&');
 }
-function bkPill(text,bg,color){ return '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:4px 10px;border-radius:30px;background:'+bg+';color:'+color+'">'+escapeHtml(text)+'</span>'; }
-function bkPayBadge(s){
-  const m={ paid:['#1f8a5b','#fff'], pending:['rgba(207,159,84,.25)','#e4c98c'], processing:['rgba(207,159,84,.25)','#e4c98c'], failed:['rgba(200,70,50,.25)','#ffb3a3'], refunded:['rgba(120,120,200,.28)','#c7c9ff'], not_required:['rgba(255,255,255,.12)','rgba(255,255,255,.75)'] };
-  const c=m[s]||['rgba(255,255,255,.12)','#fff']; return '<span style="opacity:.55;font-size:11px">'+(ES?'Pago':'Payment')+'</span> '+bkPill(s,c[0],c[1]);
+/* Descarga el rango completo (paginando) para agregar el calendario. */
+function bkFetchAll(params, maxPages){
+  const out=[]; const max=maxPages||6; let page=1;
+  function step(){
+    return apiGet('/api/admin-bookings?'+bkQS(Object.assign({},params,{page:page,limit:100}))).then(function(r){
+      if(r.status===401){ onUnauthorized(); return null; }
+      if(!r.ok) throw new Error('load');
+      const list=(r.data&&r.data.bookings)||[]; const pg=(r.data&&r.data.pagination)||{};
+      out.push.apply(out,list);
+      if(page<(pg.totalPages||1) && page<max){ page++; return step(); }
+      return {rows:out, truncated:(pg.totalPages||1)>max};
+    });
+  }
+  return step();
 }
-function bkBookBadge(s){
-  const m={ confirmed:['#1f8a5b','#fff'], completed:['rgba(90,160,120,.30)','#bfe8cf'], new:['rgba(255,255,255,.12)','rgba(255,255,255,.8)'], pending_payment:['rgba(207,159,84,.25)','#e4c98c'], cancelled:['rgba(200,70,50,.25)','#ffb3a3'], failed:['rgba(200,70,50,.25)','#ffb3a3'] };
-  const c=m[s]||['rgba(255,255,255,.12)','#fff']; return '<span style="opacity:.55;font-size:11px">'+(ES?'Reserva':'Booking')+'</span> '+bkPill(s,c[0],c[1]);
+
+/* ---- detalle (modal compacto) ---- */
+function bkModal(){
+  let m=document.getElementById('bkDetail');
+  if(!m){
+    m=el('<div class="bk-modal" id="bkDetail"><div class="bk-modal-card" role="dialog" aria-modal="true">'
+      +'<button class="bk-modal-x" type="button" aria-label="Close">&times;</button>'
+      +'<div class="bk-modal-body"></div></div></div>');
+    document.body.appendChild(m);
+    m.addEventListener('click',function(e){ if(e.target===m) bkCloseModal(); });
+    m.querySelector('.bk-modal-x').addEventListener('click',bkCloseModal);
+    document.addEventListener('keydown',function(e){ if(e.key==='Escape') bkCloseModal(); });
+  }
+  return m;
 }
-function bkBookingCard(b){
-  const c=el('<div class="ed-card"></div>');
-  const isQuote=b.request_type==='quote';
-  c.innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">'
-      +'<div><div style="font-family:var(--body);font-weight:800;letter-spacing:.04em;color:#e4c98c;font-size:13px">'+escapeHtml(b.booking_code||'')+'</div>'
-        +'<div style="font-family:var(--display);font-weight:700;font-size:18px;color:var(--paper);margin-top:4px">'+escapeHtml(b.tour_name||'—')+'</div>'
-        +'<div style="margin-top:9px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">'+bkPayBadge(b.payment_status)+bkBookBadge(b.booking_status)+'</div></div>'
-      +'<div style="text-align:right;color:#e4c98c;font-weight:800;font-size:18px">'+bkFmtMoney(b)+'</div>'
-    +'</div>'
-    +'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px 18px;margin-top:16px;font-size:14px;color:rgba(255,255,255,.85)">'
-      +bkRow(ES?'Tipo':'Type', isQuote?(ES?'Cotización':'Quote request'):(ES?'Reserva':'Booking'))
-      +bkRow(ES?'Cliente':'Customer', escapeHtml(b.customer_name))
-      +bkRow('Email','<a href="mailto:'+escapeHtml(b.customer_email)+'" style="color:#e4c98c">'+escapeHtml(b.customer_email)+'</a>')
-      +(b.customer_phone?bkRow(ES?'Teléfono':'Phone', escapeHtml(b.customer_phone)):'')
-      +bkRow(ES?'Fecha de viaje':'Travel date', escapeHtml(b.booking_date))
-      +bkRow('Guests', escapeHtml(b.guests))
-      +bkRow(ES?'Creada':'Created', bkFmtDT(b.created_at))
-      +(b.paid_at?bkRow(ES?'Pagada':'Paid at', bkFmtDT(b.paid_at)):'')
-      +(b.notes?'<div style="grid-column:1/3">'+bkRow(ES?'Notas':'Notes', escapeHtml(b.notes))+'</div>':'')
+function bkCloseModal(){ const m=document.getElementById('bkDetail'); if(m) m.classList.remove('open'); }
+function bkDl(label,val){ return '<div class="bk-dl"><span>'+label+'</span><b>'+val+'</b></div>'; }
+function bkMailTo(v){ return v?('<a href="mailto:'+escapeHtml(v)+'">'+escapeHtml(v)+'</a>'):'—'; }
+function bkTelTo(v){ return v?('<a href="tel:'+escapeHtml(v)+'">'+escapeHtml(v)+'</a>'):'—'; }
+
+/* Detalle de STAFF: solo lectura, sin datos financieros y SIN controles. */
+function bkStaffDetail(b){
+  const m=bkModal(), body=m.querySelector('.bk-modal-body');
+  body.innerHTML='<h3>'+escapeHtml(b.booking_code||'')+'</h3>'
+    +'<div class="bk-dls">'
+      +bkDl('Tour', escapeHtml(b.tour_name||'—'))
+      +bkDl(ES?'Fecha':'Date', escapeHtml(b.booking_date||'—'))
+      +bkDl(ES?'Viajeros':'Guests', escapeHtml(b.guests))
+      +bkDl(ES?'Cliente':'Customer', escapeHtml(b.customer_name||'—'))
+      +bkDl('Email', bkMailTo(b.customer_email))
+      +bkDl(ES?'Teléfono':'Phone', bkTelTo(b.customer_phone))
+      +(b.notes?bkDl(ES?'Notas':'Notes', escapeHtml(b.notes)):'')
     +'</div>';
-  const ctrl=el('<div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"></div>');
-  const sel=document.createElement('select'); sel.style.cssText='padding:9px 12px;border-radius:7px;background:rgba(255,255,255,.07);color:var(--paper);border:1.5px solid var(--line-on-dark);font-family:var(--body)';
-  ['new','pending_payment','confirmed','cancelled','completed','failed'].forEach(function(s){ const o=document.createElement('option'); o.value=s; o.textContent=s; if(b.booking_status===s)o.selected=true; sel.appendChild(o); });
-  const upd=el('<button class="mini-btn" type="button">'+(ES?'Actualizar estado':'Update status')+'</button>');
-  upd.addEventListener('click',function(){
-    const ns=sel.value; if(ns===b.booking_status) return;
+  m.classList.add('open');
+}
+/* Detalle de OWNER/ADMIN: información completa + cambio de booking_status. */
+function bkAdminDetail(b, onUpdated){
+  const m=bkModal(), body=m.querySelector('.bk-modal-body');
+  const isQuote=b.request_type==='quote';
+  body.innerHTML='<h3>'+escapeHtml(b.booking_code||'')+'</h3>'
+    +'<div class="bk-dls">'
+      +bkDl('Tour', escapeHtml(b.tour_name||'—'))
+      +bkDl(ES?'Tipo':'Type', isQuote?(ES?'Cotización':'Quote request'):(ES?'Reserva':'Booking'))
+      +bkDl(ES?'Fecha':'Date', escapeHtml(b.booking_date||'—'))
+      +bkDl(ES?'Viajeros':'Guests', escapeHtml(b.guests))
+      +bkDl(ES?'Cliente':'Customer', escapeHtml(b.customer_name||'—'))
+      +bkDl('Email', bkMailTo(b.customer_email))
+      +bkDl(ES?'Teléfono':'Phone', bkTelTo(b.customer_phone))
+      +bkDl(ES?'Importe':'Amount', isQuote?(ES?'Cotización':'Quote'):bkMoney(b.amount_cents,b.currency))
+      +bkDl(ES?'Pago':'Payment', bkBadge(b.payment_status, BK_PAY_KIND[b.payment_status]))
+      +bkDl(ES?'Reserva':'Booking', bkBadge(b.booking_status, BK_BOOK_KIND[b.booking_status]))
+      +bkDl(ES?'Canal':'Channel', b.sales_channel==='agency'?(ES?'Agencia (venta directa)':'Agency (direct sale)'):'Web (Stripe)')
+      +(b.payment_method?bkDl(ES?'Método de pago':'Payment method', escapeHtml(b.payment_method)):'')
+      +(b.created_by_name?bkDl(ES?'Registró':'Recorded by', escapeHtml(b.created_by_name)):'')
+      +(b.sold_at?bkDl(ES?'Fecha de venta':'Sold at', bkFmtDT(b.sold_at)):'')
+      +bkDl(ES?'Pagada':'Paid at', bkFmtDT(b.paid_at))
+      +bkDl(ES?'Creada':'Created', bkFmtDT(b.created_at))
+      +(b.notes?bkDl(ES?'Notas':'Notes', escapeHtml(b.notes)):'')
+    +'</div>';
+  const ctrl=el('<div class="bk-modal-actions"></div>');
+  const sel=document.createElement('select');
+  ['new','pending_payment','confirmed','cancelled','completed','failed'].forEach(function(s){
+    const o=document.createElement('option'); o.value=s; o.textContent=s; if(b.booking_status===s)o.selected=true; sel.appendChild(o);
+  });
+  const btn=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Actualizar estado':'Update status')+'</button>');
+  btn.addEventListener('click',function(){
+    const ns=sel.value; if(ns===b.booking_status){ bkCloseModal(); return; }
     if(b.payment_status==='paid' && ns==='cancelled'){
       if(!confirm(ES?'Cancelar esta reserva no reembolsará el pago de Stripe. ¿Deseas continuar?':'Canceling this booking will not refund the Stripe payment. Continue?')){ sel.value=b.booking_status; return; }
     }
-    upd.disabled=true; const lbl=upd.textContent; upd.textContent=ES?'Guardando…':'Saving…';
+    btn.disabled=true; const lbl=btn.textContent; btn.textContent=ES?'Guardando…':'Saving…';
     apiPost('/api/admin-booking-update',{booking_id:b.id,booking_status:ns}).then(function(r){
       if(r.status===401){ onUnauthorized(); return; }
-      if(!r.ok || !r.data || !r.data.booking){ upd.disabled=false; upd.textContent=lbl; adminToast(ES?'No se pudo actualizar. Inténtalo nuevamente.':'Could not update. Please try again.'); return; }
-      c.replaceWith(bkBookingCard(r.data.booking)); adminToast(ES?'Reserva actualizada':'Booking updated');
-    }).catch(function(){ upd.disabled=false; upd.textContent=lbl; adminToast(ES?'No se pudo actualizar. Inténtalo nuevamente.':'Could not update. Please try again.'); });
+      if(!r.ok || !r.data || !r.data.booking){ btn.disabled=false; btn.textContent=lbl; adminToast(ES?'No se pudo actualizar. Inténtalo nuevamente.':'Could not update. Please try again.'); return; }
+      adminToast(ES?'Reserva actualizada':'Booking updated');
+      bkCloseModal(); if(onUpdated) onUpdated(r.data.booking);
+    }).catch(function(){ btn.disabled=false; btn.textContent=lbl; adminToast(ES?'No se pudo actualizar. Inténtalo nuevamente.':'Could not update. Please try again.'); });
   });
-  ctrl.appendChild(sel); ctrl.appendChild(upd); c.appendChild(ctrl);
-  return c;
+  ctrl.appendChild(sel); ctrl.appendChild(btn); body.appendChild(ctrl);
+  m.classList.add('open');
 }
-function panelBookings(){
-  const p=el('<div></div>');
-  const state={ page:1, limit:25, loading:false };
 
-  const fcard=card('', '');
-  const r1=el('<div class="ed-row"></div>');
-  const searchWrap=el('<div class="ed-field"><label>'+(ES?'Buscar':'Search')+'</label></div>');
-  const searchInput=document.createElement('input'); searchInput.maxLength=100; searchInput.placeholder=ES?'Código, nombre, correo o tour':'Code, name, email or tour'; searchWrap.appendChild(searchInput);
-  const typeF=bkSelectField(ES?'Tipo':'Type',[['',ES?'Todos':'All'],['booking',ES?'Reserva':'Booking'],['quote',ES?'Cotización':'Quote']]);
-  r1.appendChild(searchWrap); r1.appendChild(typeF.wrap);
-  const r2=el('<div class="ed-row"></div>');
-  const payF=bkSelectField(ES?'Estado de pago':'Payment status',[['',ES?'Todos':'All'],['not_required','not_required'],['pending','pending'],['processing','processing'],['paid','paid'],['failed','failed'],['refunded','refunded']]);
-  const bookF=bkSelectField(ES?'Estado de reserva':'Booking status',[['',ES?'Todos':'All'],['new','new'],['pending_payment','pending_payment'],['confirmed','confirmed'],['cancelled','cancelled'],['completed','completed'],['failed','failed']]);
-  r2.appendChild(payF.wrap); r2.appendChild(bookF.wrap);
-  const r3=el('<div class="ed-row"></div>');
-  const fromF=bkDateField(ES?'Desde':'From'); const toF=bkDateField(ES?'Hasta':'To');
-  r3.appendChild(fromF.wrap); r3.appendChild(toF.wrap);
-  const r4=el('<div class="ed-row"></div>');
-  const sortF=bkSelectField(ES?'Orden':'Sort',[['newest',ES?'Más recientes':'Newest'],['oldest',ES?'Más antiguas':'Oldest'],['booking_date_asc',ES?'Fecha viaje ↑':'Travel date ↑'],['booking_date_desc',ES?'Fecha viaje ↓':'Travel date ↓']]);
-  const applyWrap=el('<div class="ed-field" style="display:flex;align-items:flex-end"></div>');
-  const applyBtn=el('<button class="btn btn-gold btn-sm" type="button" style="width:100%">'+(ES?'Aplicar filtros':'Apply filters')+'</button>');
-  applyWrap.appendChild(applyBtn); r4.appendChild(sortF.wrap); r4.appendChild(applyWrap);
-  fcard.appendChild(r1); fcard.appendChild(r2); fcard.appendChild(r3); fcard.appendChild(r4);
-  p.appendChild(fcard);
+/* ---- venta directa (agencia / teléfono / presencial) ----
+   Disponible para owner, admin y staff. El servidor fija vendedor,
+   fecha contable, canal y estados: aquí solo se capturan los datos. */
+const BK_METHODS=[['cash',ES?'Efectivo':'Cash'],['card',ES?'Tarjeta':'Card'],['bank_transfer',ES?'Transferencia':'Bank transfer'],['zelle','Zelle'],['other',ES?'Otro':'Other']];
+function bkAgencyForm(onCreated){
+  const m=bkModal(), body=m.querySelector('.bk-modal-body');
+  const rid=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now())+'-'+Math.random().toString(16).slice(2);
+  function fld(label,input){ const w=el('<div class="ed-field"><label>'+label+'</label></div>'); w.appendChild(input); return w; }
+  function inp(type,attrs){ const i=document.createElement('input'); i.type=type||'text'; Object.keys(attrs||{}).forEach(function(k){ i[k]=attrs[k]; }); return i; }
 
-  const listWrap=el('<div></div>'); p.appendChild(listWrap);
-  const pager=el('<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 2px 0;color:rgba(255,255,255,.7);font-size:13px"></div>');
-  const prevBtn=el('<button class="mini-btn" type="button">'+(ES?'‹ Anterior':'‹ Prev')+'</button>');
-  const nextBtn=el('<button class="mini-btn" type="button">'+(ES?'Siguiente ›':'Next ›')+'</button>');
-  const pageInfo=el('<span></span>');
-  pager.appendChild(prevBtn); pager.appendChild(pageInfo); pager.appendChild(nextBtn); p.appendChild(pager);
+  body.innerHTML='<h3>'+(ES?'Añadir venta directa':'Add agency booking')+'</h3>';
+  const name=inp('text',{maxLength:120}), phone=inp('tel',{maxLength:40}), mail=inp('email',{maxLength:254});
+  const tourSel=document.createElement('select');
+  const optCustom=document.createElement('option'); optCustom.value='custom'; optCustom.textContent=ES?'Otro destino (escribir)':'Other destination (type it)';
+  tourSel.appendChild(optCustom);
+  (window.GHA_DEFAULT?[].concat(GHA_DEFAULT.packages||[],GHA_DEFAULT.tours||[],(GHA_DEFAULT.fishing&&GHA_DEFAULT.fishing.trips)||[]):[]).forEach(function(t){
+    if(!t||!t.id) return; const o=document.createElement('option'); o.value=t.id;
+    o.textContent=(t.name&&(t.name.en||t.name.es))||t.id; tourSel.appendChild(o);
+  });
+  const tourFree=inp('text',{maxLength:160, placeholder:ES?'Destino personalizado':'Custom destination'});
+  const date=inp('date'), guests=inp('number',{min:1,max:50,value:2});
+  const amount=inp('number',{min:0,step:'0.01',placeholder:'0.00'});
+  const method=document.createElement('select');
+  BK_METHODS.forEach(function(x){ const o=document.createElement('option'); o.value=x[0]; o.textContent=x[1]; method.appendChild(o); });
+  const notes=document.createElement('textarea'); notes.maxLength=1000; notes.style.minHeight='64px';
 
-  function buildQS(){
-    const q=['page='+state.page,'limit='+state.limit];
-    const s=searchInput.value.trim().slice(0,100); if(s) q.push('search='+encodeURIComponent(s));
-    if(typeF.select.value) q.push('request_type='+typeF.select.value);
-    if(payF.select.value) q.push('payment_status='+payF.select.value);
-    if(bookF.select.value) q.push('booking_status='+bookF.select.value);
-    if(fromF.input.value) q.push('date_from='+fromF.input.value);
-    if(toF.input.value) q.push('date_to='+toF.input.value);
-    if(sortF.select.value) q.push('sort='+sortF.select.value);
-    return q.join('&');
-  }
-  function load(){
-    if(state.loading) return; state.loading=true; applyBtn.disabled=true; prevBtn.disabled=true; nextBtn.disabled=true;
-    listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:rgba(255,255,255,.5)">'+(ES?'Cargando…':'Loading…')+'</div>';
-    apiGet('/api/admin-bookings?'+buildQS()).then(function(r){
-      state.loading=false; applyBtn.disabled=false;
+  const g=el('<div class="bk-dls"></div>');
+  g.appendChild(fld((ES?'Cliente':'Customer')+' *',name));
+  g.appendChild(fld((ES?'Teléfono':'Phone')+' *',phone));
+  g.appendChild(fld('Email ('+(ES?'opcional':'optional')+')',mail));
+  g.appendChild(fld((ES?'Tour / destino':'Tour / destination')+' *',tourSel));
+  g.appendChild(fld(ES?'Destino personalizado':'Custom destination',tourFree));
+  g.appendChild(fld((ES?'Fecha del tour':'Tour date')+' *',date));
+  g.appendChild(fld((ES?'Viajeros':'Guests')+' *',guests));
+  g.appendChild(fld((ES?'Importe cobrado (USD)':'Amount received (USD)')+' *',amount));
+  g.appendChild(fld((ES?'Método de pago':'Payment method')+' *',method));
+  body.appendChild(g);
+  const nw=fld(ES?'Notas':'Notes',notes); nw.style.marginTop='10px'; body.appendChild(nw);
+
+  function syncTour(){ tourFree.parentNode.style.display = (tourSel.value==='custom')?'':'none'; }
+  tourSel.addEventListener('change',syncTour); syncTour();
+
+  const acts=el('<div class="bk-modal-actions"></div>');
+  const err=el('<span class="bk-form-err"></span>');
+  const save=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Registrar venta':'Record booking')+'</button>');
+  save.addEventListener('click',function(){
+    err.textContent='';
+    const cents=Math.round(parseFloat(amount.value||'0')*100);
+    if(!name.value.trim()||name.value.trim().length<2){ err.textContent=ES?'Indica el nombre del cliente.':'Customer name is required.'; return; }
+    if(!phone.value.trim()||phone.value.trim().length<5){ err.textContent=ES?'Indica el teléfono.':'Phone is required.'; return; }
+    if(tourSel.value==='custom' && tourFree.value.trim().length<2){ err.textContent=ES?'Indica el destino.':'Destination is required.'; return; }
+    if(!date.value){ err.textContent=ES?'Indica la fecha del tour.':'Tour date is required.'; return; }
+    const gN=parseInt(guests.value||'0',10);
+    if(!(gN>=1&&gN<=50)){ err.textContent=ES?'Viajeros entre 1 y 50.':'Guests must be between 1 and 50.'; return; }
+    if(!(cents>=1&&cents<=100000000)){ err.textContent=ES?'Importe inválido.':'Invalid amount.'; return; }
+
+    // Solo campos autorizados: los estados, el vendedor y la fecha contable los pone el servidor.
+    const payload={ request_id:rid, customer_name:name.value.trim(), customer_phone:phone.value.trim(),
+      booking_date:date.value, guests:gN, amount_cents:cents, payment_method:method.value };
+    if(mail.value.trim()) payload.customer_email=mail.value.trim();
+    if(notes.value.trim()) payload.notes=notes.value.trim();
+    if(tourSel.value==='custom'){ payload.tour_id='custom'; payload.tour_name=tourFree.value.trim(); }
+    else { payload.tour_id=tourSel.value; }
+
+    save.disabled=true; const lbl=save.textContent; save.textContent=ES?'Guardando…':'Saving…';
+    apiPost('/api/admin-agency-booking-create',payload).then(function(r){
       if(r.status===401){ onUnauthorized(); return; }
-      if(!r.ok){ listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:#ffb3a3">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</div>'; return; }
-      const list=(r.data&&r.data.bookings)||[]; const pg=(r.data&&r.data.pagination)||{page:1,totalPages:1,total:0};
-      listWrap.innerHTML='';
-      if(!list.length) listWrap.appendChild(el('<div class="ed-card" style="text-align:center;color:rgba(255,255,255,.5)">'+(ES?'No hay reservas para estos filtros.':'No bookings for these filters.')+'</div>'));
-      list.forEach(function(b){ listWrap.appendChild(bkBookingCard(b)); });
-      state.page=pg.page||1;
-      pageInfo.textContent=(ES?'Página ':'Page ')+(pg.page||1)+' / '+(pg.totalPages||1)+' · '+(pg.total||0)+(ES?' registros':' records');
-      prevBtn.disabled=(pg.page||1)<=1; nextBtn.disabled=(pg.page||1)>=(pg.totalPages||1);
+      if(!r.ok||!r.data||!r.data.booking){
+        save.disabled=false; save.textContent=lbl;
+        err.textContent=ES?'No se pudo registrar la venta. Revisa los datos.':'Could not record the booking. Please check the details.';
+        return;
+      }
+      const code=r.data.booking.booking_code||'';
+      adminToast((ES?'Venta registrada correctamente. Código de reserva: ':'Agency booking recorded successfully. Booking code: ')+code);
+      bkCloseModal(); if(onCreated) onCreated();
     }).catch(function(){
-      state.loading=false; applyBtn.disabled=false;
-      listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:#ffb3a3">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</div>';
+      save.disabled=false; save.textContent=lbl;
+      err.textContent=ES?'Error de conexión. Inténtalo nuevamente.':'Connection error. Please try again.';
     });
-  }
-  applyBtn.addEventListener('click',function(){ state.page=1; load(); });
-  searchInput.addEventListener('keydown',function(e){ if(e.key==='Enter'){ state.page=1; load(); } });
-  prevBtn.addEventListener('click',function(){ if(state.page>1){ state.page--; load(); } });
-  nextBtn.addEventListener('click',function(){ state.page++; load(); });
-  load();
-  return p;
+  });
+  acts.appendChild(save); acts.appendChild(err); body.appendChild(acts);
+  m.classList.add('open');
+  setTimeout(function(){ name.focus(); },80);
 }
 
-/* ============ AGENDA DE STAFF (solo lectura) ============
-   Tarjeta sin <select> ni botones: staff no puede modificar nada.
-   No contiene ninguna referencia a /api/admin-booking-update. */
-function bkStaffCard(b){
-  const c=el('<div class="ed-card"></div>');
-  c.innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">'
-      +'<div><div style="font-family:var(--body);font-weight:800;letter-spacing:.04em;color:#e4c98c;font-size:13px">'+escapeHtml(b.booking_code||'')+'</div>'
-        +'<div style="font-family:var(--display);font-weight:700;font-size:18px;color:var(--paper);margin-top:4px">'+escapeHtml(b.tour_name||'—')+'</div></div>'
-      +'<div style="text-align:right"><div style="color:#e4c98c;font-weight:800;font-size:16px">'+escapeHtml(b.booking_date||'')+'</div>'
-        +'<div style="color:rgba(255,255,255,.6);font-size:13px;margin-top:2px">'+(ES?'Viajeros: ':'Guests: ')+escapeHtml(b.guests)+'</div></div>'
-    +'</div>'
-    +'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px 18px;margin-top:16px;font-size:14px;color:rgba(255,255,255,.85)">'
-      +bkRow(ES?'Cliente':'Customer', escapeHtml(b.customer_name))
-      +(b.customer_phone?bkRow(ES?'Teléfono':'Phone','<a href="tel:'+escapeHtml(b.customer_phone)+'" style="color:#e4c98c">'+escapeHtml(b.customer_phone)+'</a>'):'')
-      +bkRow('Email','<a href="mailto:'+escapeHtml(b.customer_email)+'" style="color:#e4c98c">'+escapeHtml(b.customer_email)+'</a>')
-      +(b.notes?'<div style="grid-column:1/3">'+bkRow(ES?'Notas':'Notes', escapeHtml(b.notes))+'</div>':'')
-    +'</div>';
-  return c;
+/* ---- filas de la tabla (una fila por reserva, sin tarjetas) ---- */
+function bkAdminRow(b, open){
+  const tr=document.createElement('tr');
+  const isQuote=b.request_type==='quote';
+  tr.innerHTML='<td>'+bkFmtDate(b.booking_date)+'</td>'
+    +'<td class="mono">'+escapeHtml(b.booking_code||'')+'</td>'
+    +'<td class="ell">'+escapeHtml(b.tour_name||'')+'</td>'
+    +'<td class="ell">'+escapeHtml(b.customer_name||'')+'</td>'
+    +'<td>'+escapeHtml(b.customer_phone||'—')+'</td>'
+    +'<td class="num">'+escapeHtml(b.guests)+'</td>'
+    +'<td class="num">'+(isQuote?(ES?'Cotización':'Quote'):bkMoney(b.amount_cents,b.currency))+'</td>'
+    +'<td>'+bkBadge(b.payment_status, BK_PAY_KIND[b.payment_status])+'</td>'
+    +'<td>'+bkBadge(b.booking_status, BK_BOOK_KIND[b.booking_status])+'</td>'
+    +'<td>'+(b.sales_channel==='agency'
+        ? bkBadge(ES?'agencia':'agency','info')+(b.payment_method?' <small class="bk-meth">'+escapeHtml(b.payment_method)+'</small>':'')
+        : bkBadge('web','muted'))+'</td>';
+  const td=document.createElement('td');
+  const btn=el('<button class="mini-btn" type="button">'+(ES?'Ver':'View')+'</button>');
+  btn.addEventListener('click',function(e){ e.stopPropagation(); open(b); });
+  td.appendChild(btn); tr.appendChild(td);
+  tr.addEventListener('dblclick',function(){ open(b); });
+  return tr;
 }
-function panelStaffSchedule(){
-  const p=el('<div></div>');
-  const state={ page:1, limit:25, loading:false };
+/* Fila de STAFF: sin columnas financieras y SIN botones ni selects. */
+function bkStaffRow(b, open){
+  const tr=document.createElement('tr');
+  tr.innerHTML='<td>'+bkFmtDate(b.booking_date)+'</td>'
+    +'<td class="mono">'+escapeHtml(b.booking_code||'')+'</td>'
+    +'<td class="ell">'+escapeHtml(b.tour_name||'')+'</td>'
+    +'<td class="ell">'+escapeHtml(b.customer_name||'')+'</td>'
+    +'<td>'+escapeHtml(b.customer_phone||'—')+'</td>'
+    +'<td class="num">'+escapeHtml(b.guests)+'</td>'
+    +'<td class="ell">'+escapeHtml(b.notes||'')+'</td>';
+  tr.addEventListener('dblclick',function(){ open(b); });
+  return tr;
+}
 
-  const fcard=card('', ES?'Reservas confirmadas y pagadas. Por defecto se muestran las de hoy en adelante.'
-                       :'Confirmed and paid bookings. Today onward by default.');
-  const r1=el('<div class="ed-row"></div>');
+/* ---- pantalla completa: resumen + calendario + filtros + tabla ---- */
+function bkScreen(o){
+  const isStaff=!!o.isStaff;
+  const p=el('<div class="bk-screen"></div>');
+  const now=new Date();
+  const state={ y:now.getFullYear(), m:now.getMonth(), selected:null, page:1, limit:25, monthRows:[], busyCal:false, busyTbl:false };
+  const weekStart=ES?1:0;
+  const DOW=ES?['Do','Lu','Ma','Mi','Ju','Vi','Sá']:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  /* --- resumen del mes --- */
+  const summary=el('<div class="bk-sum"></div>');
+  const finance=el('<div class="bk-sum bk-fin"></div>');   // vacío para staff: nunca se rellena
+  function chip(label,val){ return '<span class="bk-chip"><i>'+label+'</i><b>'+val+'</b></span>'; }
+
+  /* --- calendario --- */
+  const monthTitle=el('<b class="bk-cal-title"></b>');
+  const prevB=el('<button class="mini-btn" type="button" aria-label="'+(ES?'Mes anterior':'Previous month')+'">‹</button>');
+  const todayB=el('<button class="mini-btn" type="button">'+(ES?'Hoy':'Today')+'</button>');
+  const nextB=el('<button class="mini-btn" type="button" aria-label="'+(ES?'Mes siguiente':'Next month')+'">›</button>');
+  const calHead=el('<div class="bk-cal-head"></div>');
+  const navL=el('<div class="bk-cal-nav"></div>'); navL.appendChild(prevB); navL.appendChild(todayB); navL.appendChild(nextB);
+  calHead.appendChild(monthTitle); calHead.appendChild(navL);
+  const calDow=el('<div class="bk-cal-dow"></div>');
+  for(let i=0;i<7;i++) calDow.appendChild(el('<span>'+DOW[(weekStart+i)%7]+'</span>'));
+  const calGrid=el('<div class="bk-cal-grid"></div>');
+  const cal=el('<div class="bk-cal"></div>'); cal.appendChild(calHead); cal.appendChild(calDow); cal.appendChild(calGrid);
+  p.appendChild(summary); if(!isStaff) p.appendChild(finance); p.appendChild(cal);
+
+  /* --- filtros --- */
+  const fcard=el('<div class="bk-filters"></div>');
   const searchWrap=el('<div class="ed-field"><label>'+(ES?'Buscar':'Search')+'</label></div>');
   const searchInput=document.createElement('input'); searchInput.maxLength=100;
   searchInput.placeholder=ES?'Código, cliente o tour':'Code, customer or tour'; searchWrap.appendChild(searchInput);
-  const applyWrap=el('<div class="ed-field" style="display:flex;align-items:flex-end"></div>');
-  const applyBtn=el('<button class="btn btn-gold btn-sm" type="button" style="width:100%">'+(ES?'Buscar':'Search')+'</button>');
-  applyWrap.appendChild(applyBtn);
-  r1.appendChild(searchWrap); r1.appendChild(applyWrap);
-  const r2=el('<div class="ed-row"></div>');
-  const fromF=bkDateField(ES?'Desde':'From'); const toF=bkDateField(ES?'Hasta':'To');
-  r2.appendChild(fromF.wrap); r2.appendChild(toF.wrap);
-  fcard.appendChild(r1); fcard.appendChild(r2);
+  const fromF=bkDateField(ES?'Desde':'From'), toF=bkDateField(ES?'Hasta':'To');
+  let typeF=null, payF=null, bookF=null, sortF=null, chanF=null, methF=null;
+  const row1=el('<div class="bk-frow"></div>'); row1.appendChild(searchWrap); row1.appendChild(fromF.wrap); row1.appendChild(toF.wrap);
+  fcard.appendChild(row1);
+  if(!isStaff){
+    typeF=bkSelectField(ES?'Tipo':'Type',[['',ES?'Todos':'All'],['booking',ES?'Reserva':'Booking'],['quote',ES?'Cotización':'Quote']]);
+    payF =bkSelectField(ES?'Estado de pago':'Payment status',[['',ES?'Todos':'All'],['not_required','not_required'],['pending','pending'],['processing','processing'],['paid','paid'],['failed','failed'],['refunded','refunded']]);
+    bookF=bkSelectField(ES?'Estado de reserva':'Booking status',[['',ES?'Todos':'All'],['new','new'],['pending_payment','pending_payment'],['confirmed','confirmed'],['cancelled','cancelled'],['completed','completed'],['failed','failed']]);
+    sortF=bkSelectField(ES?'Orden':'Sort',[['newest',ES?'Más recientes':'Newest'],['oldest',ES?'Más antiguas':'Oldest'],['booking_date_asc',ES?'Fecha viaje ↑':'Travel date ↑'],['booking_date_desc',ES?'Fecha viaje ↓':'Travel date ↓']]);
+    chanF=bkSelectField(ES?'Canal':'Channel',[['',ES?'Todos':'All'],['web','web'],['agency',ES?'agencia':'agency']]);
+    methF=bkSelectField(ES?'Método de pago':'Payment method',[['',ES?'Todos':'All'],['stripe','stripe'],['cash','cash'],['card','card'],['bank_transfer','bank_transfer'],['zelle','zelle'],['other','other']]);
+    const row2=el('<div class="bk-frow"></div>');
+    row2.appendChild(typeF.wrap); row2.appendChild(payF.wrap); row2.appendChild(bookF.wrap); row2.appendChild(sortF.wrap);
+    const row3=el('<div class="bk-frow"></div>');
+    row3.appendChild(chanF.wrap); row3.appendChild(methF.wrap);
+    fcard.appendChild(row2); fcard.appendChild(row3);
+  }
+  const btns=el('<div class="bk-fbtns"></div>');
+  const applyB=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Aplicar':'Apply')+'</button>');
+  const dayB  =el('<button class="mini-btn" type="button">'+(ES?'Hoy':'Today')+'</button>');
+  const monthB=el('<button class="mini-btn" type="button">'+(ES?'Este mes':'This month')+'</button>');
+  const allB  =el('<button class="mini-btn" type="button">'+(ES?'Ver todo':'View all')+'</button>');
+  btns.appendChild(applyB); btns.appendChild(dayB); btns.appendChild(monthB); btns.appendChild(allB);
+  /* Venta directa: disponible para los tres roles. */
+  const agencyB=el('<button class="btn btn-gold btn-sm" type="button">+ '+(ES?'Añadir venta directa':'Add agency booking')+'</button>');
+  agencyB.style.marginLeft='auto';
+  agencyB.addEventListener('click',function(){ bkAgencyForm(function(){ loadCal(); loadTable(); loadFinance(); }); });
+  btns.appendChild(agencyB);
+  fcard.appendChild(btns);
   p.appendChild(fcard);
 
-  const listWrap=el('<div></div>'); p.appendChild(listWrap);
-  const pager=el('<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 2px 0;color:rgba(255,255,255,.7);font-size:13px"></div>');
-  const prevBtn=el('<button class="mini-btn" type="button">'+(ES?'‹ Anterior':'‹ Prev')+'</button>');
-  const nextBtn=el('<button class="mini-btn" type="button">'+(ES?'Siguiente ›':'Next ›')+'</button>');
-  const pageInfo=el('<span></span>');
-  pager.appendChild(prevBtn); pager.appendChild(pageInfo); pager.appendChild(nextBtn); p.appendChild(pager);
+  /* --- tabla --- */
+  const tblTitle=el('<div class="bk-tbl-title"></div>');
+  const COLS = isStaff
+    ? [ES?'Fecha':'Date', ES?'Código':'Code', 'Tour', ES?'Cliente':'Customer', ES?'Teléfono':'Phone', ES?'Viajeros':'Guests', ES?'Notas':'Notes']
+    : [ES?'Fecha':'Date', ES?'Código':'Code', 'Tour', ES?'Cliente':'Customer', ES?'Teléfono':'Phone', ES?'Viajeros':'Guests', 'Total', ES?'Pago':'Payment', ES?'Reserva':'Booking', ES?'Canal':'Channel', ES?'Acciones':'Actions'];
+  const wrap=el('<div class="bk-table-wrap"></div>');
+  const table=el('<table class="bk-table"><thead><tr>'+COLS.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody></tbody></table>');
+  const tbody=table.querySelector('tbody');
+  wrap.appendChild(table);
+  p.appendChild(tblTitle); p.appendChild(wrap);
 
-  function buildQS(){
-    // El servidor fuerza booking+paid+confirmed; aquí solo fecha, búsqueda y orden.
-    const q=['page='+state.page,'limit='+state.limit,'sort=booking_date_asc'];
-    const s=searchInput.value.trim().slice(0,100); if(s) q.push('search='+encodeURIComponent(s));
-    if(fromF.input.value) q.push('date_from='+fromF.input.value);
-    if(toF.input.value) q.push('date_to='+toF.input.value);
-    return q.join('&');
+  const pager=el('<div class="bk-pager"></div>');
+  const prevP=el('<button class="mini-btn" type="button">'+(ES?'‹ Anterior':'‹ Prev')+'</button>');
+  const nextP=el('<button class="mini-btn" type="button">'+(ES?'Siguiente ›':'Next ›')+'</button>');
+  const pageInfo=el('<span></span>');
+  pager.appendChild(prevP); pager.appendChild(pageInfo); pager.appendChild(nextP);
+  p.appendChild(pager);
+
+  /* --- estado → parámetros --- */
+  function baseParams(){
+    const q={};
+    const s=searchInput.value.trim().slice(0,100); if(s) q.search=s;
+    if(!isStaff){
+      if(typeF.select.value) q.request_type=typeF.select.value;
+      if(payF.select.value)  q.payment_status=payF.select.value;
+      if(bookF.select.value) q.booking_status=bookF.select.value;
+      if(chanF.select.value) q.sales_channel=chanF.select.value;
+      if(methF.select.value) q.payment_method=methF.select.value;
+    }
+    return q;
   }
-  function load(){
-    if(state.loading) return; state.loading=true; applyBtn.disabled=true; prevBtn.disabled=true; nextBtn.disabled=true;
-    listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:rgba(255,255,255,.5)">'+(ES?'Cargando…':'Loading…')+'</div>';
-    apiGet('/api/admin-bookings?'+buildQS()).then(function(r){
-      state.loading=false; applyBtn.disabled=false;
+  function tableParams(){
+    const q=baseParams();
+    q.page=state.page; q.limit=state.limit;
+    q.sort = isStaff ? 'booking_date_asc' : (sortF.select.value||'newest');
+    if(state.selected){ q.date_from=state.selected; q.date_to=state.selected; }
+    else { if(fromF.input.value) q.date_from=fromF.input.value; if(toF.input.value) q.date_to=toF.input.value; }
+    return q;
+  }
+
+  /* --- render del calendario + resumen --- */
+  function renderCal(){
+    monthTitle.textContent=bkMonthLabel(state.y,state.m);
+    const agg={};
+    state.monthRows.forEach(function(b){
+      const k=b.booking_date; if(!k) return;
+      const a=agg[k]||(agg[k]={n:0,g:0,q:0});
+      if(b.request_type==='quote') a.q++; else { a.n++; a.g+=(+b.guests||0); }
+    });
+    const first=new Date(state.y,state.m,1);
+    const offset=(first.getDay()-weekStart+7)%7;
+    const start=new Date(state.y,state.m,1-offset);
+    const today=bkToday();
+    calGrid.innerHTML='';
+    for(let i=0;i<42;i++){
+      const d=new Date(start.getFullYear(),start.getMonth(),start.getDate()+i);
+      const key=bkYmd(d), out=d.getMonth()!==state.m, a=agg[key];
+      const cell=el('<button type="button" class="bk-cal-day'+(out?' out':'')+(key===today?' today':'')+(state.selected===key?' sel':'')+'"></button>');
+      let h='<span class="d">'+d.getDate()+'</span>';
+      if(a&&a.n){ h+='<span class="c">'+a.n+' '+(ES?(a.n===1?'reserva':'reservas'):(a.n===1?'booking':'bookings'))+'</span>'
+                   +'<span class="c">'+a.g+' '+(ES?'personas':'guests')+'</span>'; }
+      if(!isStaff&&a&&a.q) h+='<span class="c q">'+a.q+' '+(ES?'cotiz.':'quotes')+'</span>';
+      cell.innerHTML=h;
+      cell.addEventListener('click',function(){ toggleDay(key); });
+      calGrid.appendChild(cell);
+    }
+    renderSummary();
+  }
+  function renderSummary(){
+    const rows=state.monthRows;
+    if(isStaff){
+      const g=rows.reduce(function(s,b){ return s+(+b.guests||0); },0);
+      summary.innerHTML=chip(ES?'Reservas confirmadas':'Confirmed bookings',rows.length)+chip(ES?'Personas':'Guests',g);
+      return;
+    }
+    // Conteos operativos (no financieros) del mes visible.
+    const books=rows.filter(function(b){ return b.request_type!=='quote'; });
+    const quotes=rows.length-books.length;
+    const conf=books.filter(function(b){ return b.booking_status==='confirmed'; }).length;
+    const pend=books.filter(function(b){ return b.payment_status==='pending'||b.payment_status==='processing'; }).length;
+    summary.innerHTML=chip(ES?'Reservas':'Bookings',books.length)+chip(ES?'Confirmadas':'Confirmed',conf)
+      +chip(ES?'Pendientes':'Pending',pend)+chip(ES?'Cotizaciones':'Quotes',quotes);
+  }
+  /* Importes SIEMPRE del servidor (/api/admin-finance-summary), agregados por
+     sold_at = fecha de caja. El navegador nunca suma reservas. */
+  function loadFinance(){
+    if(isStaff) return;                       // staff no accede a información financiera
+    const b=bkMonthBounds(state.y,state.m);
+    const q={ date_from: fromF.input.value || b[0], date_to: toF.input.value || b[1] };
+    if(chanF.select.value) q.channel=chanF.select.value;
+    if(methF.select.value) q.payment_method=methF.select.value;
+    apiGet('/api/admin-finance-summary?'+bkQS(q)).then(function(r){
       if(r.status===401){ onUnauthorized(); return; }
-      if(!r.ok){ listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:#ffb3a3">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</div>'; return; }
+      if(!r.ok||!r.data||!r.data.revenue){ finance.innerHTML=''; return; }
+      const d=r.data, m=d.by_method||{};
+      function meth(k,label){ const v=m[k]||{amount_cents:0,count:0}; return v.count?chip(label,bkMoney(v.amount_cents,'usd')):''; }
+      finance.innerHTML='<span class="bk-fin-lab">'+(ES?'Caja del período (por fecha de venta)':'Period revenue (by sale date)')+'</span>'
+        +chip(ES?'Web':'Web',bkMoney(d.revenue.web,'usd'))
+        +chip(ES?'Agencia':'Agency',bkMoney(d.revenue.agency,'usd'))
+        +chip(ES?'Total':'Total',bkMoney(d.revenue.total,'usd'))
+        +chip(ES?'Ventas':'Sales',d.counts.total)
+        +meth('cash',ES?'Efectivo':'Cash')+meth('card',ES?'Tarjeta':'Card')
+        +meth('bank_transfer',ES?'Transferencia':'Transfer')+meth('zelle','Zelle')+meth('other',ES?'Otro':'Other');
+    }).catch(function(){ finance.innerHTML=''; });
+  }
+
+  /* --- carga --- */
+  function loadCal(){
+    if(state.busyCal) return; state.busyCal=true;
+    const b=bkMonthBounds(state.y,state.m);
+    const q=baseParams(); q.date_from=b[0]; q.date_to=b[1]; q.sort='booking_date_asc';
+    bkFetchAll(q,6).then(function(res){
+      state.busyCal=false; if(!res) return;
+      state.monthRows=res.rows; renderCal();
+    }).catch(function(){ state.busyCal=false; state.monthRows=[]; renderCal(); });
+  }
+  function openDetail(b){ if(isStaff) bkStaffDetail(b); else bkAdminDetail(b,function(){ loadTable(); loadCal(); }); }
+  function loadTable(){
+    if(state.busyTbl) return; state.busyTbl=true;
+    applyB.disabled=true; prevP.disabled=true; nextP.disabled=true;
+    tblTitle.textContent = state.selected
+      ? (ES?('Reservas del '+bkDayLabel(state.selected)):('Bookings for '+bkDayLabel(state.selected)))
+      : (ES?'Todas las reservas':'All bookings');
+    tbody.innerHTML='<tr><td class="bk-empty" colspan="'+COLS.length+'">'+(ES?'Cargando…':'Loading…')+'</td></tr>';
+    apiGet('/api/admin-bookings?'+bkQS(tableParams())).then(function(r){
+      state.busyTbl=false; applyB.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok){ tbody.innerHTML='<tr><td class="bk-empty err" colspan="'+COLS.length+'">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</td></tr>'; return; }
       const list=(r.data&&r.data.bookings)||[]; const pg=(r.data&&r.data.pagination)||{page:1,totalPages:1,total:0};
-      listWrap.innerHTML='';
-      if(!list.length) listWrap.appendChild(el('<div class="ed-card" style="text-align:center;color:rgba(255,255,255,.5)">'+(ES?'No hay reservas para estas fechas.':'No bookings for these dates.')+'</div>'));
-      list.forEach(function(b){ listWrap.appendChild(bkStaffCard(b)); });
+      tbody.innerHTML='';
+      if(!list.length){ tbody.innerHTML='<tr><td class="bk-empty" colspan="'+COLS.length+'">'+(ES?'Sin reservas para estos filtros.':'No bookings for these filters.')+'</td></tr>'; }
+      else list.forEach(function(b){ tbody.appendChild(isStaff?bkStaffRow(b,openDetail):bkAdminRow(b,openDetail)); });
       state.page=pg.page||1;
-      pageInfo.textContent=(ES?'Página ':'Page ')+(pg.page||1)+' / '+(pg.totalPages||1)+' · '+(pg.total||0)+(ES?' reservas':' bookings');
-      prevBtn.disabled=(pg.page||1)<=1; nextBtn.disabled=(pg.page||1)>=(pg.totalPages||1);
+      pageInfo.textContent=(ES?'Página ':'Page ')+(pg.page||1)+' / '+(pg.totalPages||1)+' · '+(pg.total||0)+(ES?' registros':' records');
+      prevP.disabled=(pg.page||1)<=1; nextP.disabled=(pg.page||1)>=(pg.totalPages||1);
     }).catch(function(){
-      state.loading=false; applyBtn.disabled=false;
-      listWrap.innerHTML='<div class="ed-card" style="text-align:center;color:#ffb3a3">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</div>';
+      state.busyTbl=false; applyB.disabled=false;
+      tbody.innerHTML='<tr><td class="bk-empty err" colspan="'+COLS.length+'">'+(ES?'No pudimos cargar las reservas. Inténtalo nuevamente.':'We could not load the bookings. Please try again.')+'</td></tr>';
     });
   }
-  applyBtn.addEventListener('click',function(){ state.page=1; load(); });
-  searchInput.addEventListener('keydown',function(e){ if(e.key==='Enter'){ state.page=1; load(); } });
-  [fromF.input,toF.input].forEach(function(i){ i.addEventListener('change',function(){ state.page=1; load(); }); });
-  prevBtn.addEventListener('click',function(){ if(state.page>1){ state.page--; load(); } });
-  nextBtn.addEventListener('click',function(){ state.page++; load(); });
-  load();
+
+  /* --- interacción --- */
+  function toggleDay(key){
+    state.selected = (state.selected===key) ? null : key;   // segundo clic quita el filtro
+    if(state.selected){ fromF.input.value=state.selected; toF.input.value=state.selected; }
+    else { const b=bkMonthBounds(state.y,state.m); fromF.input.value=b[0]; toF.input.value=b[1]; }
+    state.page=1; renderCal(); loadTable();
+  }
+  function goMonth(y,m){
+    state.y=y; state.m=m; state.selected=null; state.page=1;
+    const b=bkMonthBounds(y,m); fromF.input.value=b[0]; toF.input.value=b[1];
+    loadCal(); loadTable(); loadFinance();
+  }
+  prevB.addEventListener('click',function(){ const d=new Date(state.y,state.m-1,1); goMonth(d.getFullYear(),d.getMonth()); });
+  nextB.addEventListener('click',function(){ const d=new Date(state.y,state.m+1,1); goMonth(d.getFullYear(),d.getMonth()); });
+  todayB.addEventListener('click',function(){ const d=new Date(); goMonth(d.getFullYear(),d.getMonth()); });
+  monthB.addEventListener('click',function(){ const d=new Date(); goMonth(d.getFullYear(),d.getMonth()); });
+  dayB.addEventListener('click',function(){
+    const d=new Date(); state.y=d.getFullYear(); state.m=d.getMonth(); state.selected=bkToday();
+    fromF.input.value=state.selected; toF.input.value=state.selected; state.page=1;
+    loadCal(); loadTable(); loadFinance();
+  });
+  allB.addEventListener('click',function(){
+    state.selected=null; fromF.input.value=''; toF.input.value=''; state.page=1;
+    renderCal(); loadTable(); loadFinance();
+  });
+  applyB.addEventListener('click',function(){ state.selected=null; state.page=1; loadCal(); loadTable(); loadFinance(); });
+  searchInput.addEventListener('keydown',function(e){ if(e.key==='Enter'){ state.selected=null; state.page=1; loadCal(); loadTable(); loadFinance(); } });
+  [fromF.input,toF.input].forEach(function(i){ i.addEventListener('change',function(){ state.selected=null; state.page=1; loadTable(); loadFinance(); }); });
+  prevP.addEventListener('click',function(){ if(state.page>1){ state.page--; loadTable(); } });
+  nextP.addEventListener('click',function(){ state.page++; loadTable(); });
+
+  /* --- arranque: mes actual --- */
+  (function(){ const b=bkMonthBounds(state.y,state.m); fromF.input.value=b[0]; toF.input.value=b[1]; })();
+  loadCal(); loadTable(); loadFinance();
   return p;
 }
+
+function panelBookings(){ return bkScreen({isStaff:false}); }
+function panelStaffSchedule(){ return bkScreen({isStaff:true}); }
 
 /* Los paneles se CONSTRUYEN según el rol: para staff el array contiene una sola
    entrada, así los paneles de contenido nunca se invocan ni entran al DOM. */
