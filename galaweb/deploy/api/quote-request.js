@@ -4,9 +4,10 @@
    POST /api/quote-request
    ---------------------------------------------------------
    Solo para experiencias de cotización (requiresQuote === true):
-   Private Boat Charter y Multi-Day Expedition. No crea PaymentIntent.
-   Guarda la solicitud como request_type='quote'. Idempotente por
-   (tenant_id, client_request_id).
+   toda la pesca deportiva (half, full, expedition), el Private Boat
+   Charter y cualquier otra experiencia sin precio de catálogo.
+   No crea PaymentIntent. Guarda la solicitud como request_type='quote'.
+   Idempotente por (tenant_id, client_request_id).
    ========================================================= */
 
 const crypto = require('crypto');
