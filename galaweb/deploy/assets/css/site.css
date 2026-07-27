@@ -278,6 +278,8 @@ ul{margin:0;padding:0;list-style:none;}
 .pkg-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;align-items:stretch;}
 .pkg{
   background:var(--paper);border-radius:var(--radius-lg);overflow:hidden;
+  color:var(--ink);   /* tarjeta SIEMPRE crema → texto oscuro, aunque la sección sea .teal/.dark
+                         (si no, el título .days heredaba el color claro de la sección y quedaba invisible) */
   border:1px solid var(--line);display:flex;flex-direction:column;position:relative;
   transition:transform .5s var(--ease),box-shadow .5s;
 }
