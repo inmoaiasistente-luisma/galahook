@@ -365,6 +365,22 @@ ul{margin:0;padding:0;list-style:none;}
 }
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--sea);box-shadow:0 0 0 3px rgba(28,122,130,.16);}
 .field textarea{resize:vertical;min-height:120px;}
+
+/* ---- Contraste de <select> / <option> (Chrome y Edge en Windows) ----
+   El popup de opciones toma el fondo del <select>; con un fondo TRANSLÚCIDO
+   (rgba blanca) Windows lo pinta casi blanco y el texto claro desaparecía.
+   Se fuerzan fondo OPACO y color explícitos en el control y en cada option,
+   con la seleccionada claramente distinguible. Vale en claro y en oscuro. */
+select option,
+select optgroup{ background-color:#0c2a28; color:#fbf8f1; }
+select option:checked{ background-color:#20514c; color:#ffffff; font-weight:700; }
+select option:disabled{ color:rgba(251,248,241,.5); }
+/* Selects sobre fondo oscuro (modal de reserva y similares): control OPACO,
+   texto claro, borde visible; el foco resalta en dorado. */
+.dark .field select,.teal .field select{ background-color:#0c2a28; color:var(--paper); border-color:var(--line-on-dark); }
+.dark .field select:focus,.teal .field select:focus{ border-color:var(--gold); }
+.dark .field select:disabled,.teal .field select:disabled{ opacity:.72; color:var(--paper); }
+.dark .field ::placeholder,.teal .field ::placeholder{ color:rgba(251,248,241,.62); }
 /* Stripe Elements — contenedores calcados EXACTAMENTE a .field input.
    Stripe añade la clase .StripeElement (y --focus/--invalid) al mismo nodo. */
 .field .stripe-field,

@@ -49,7 +49,13 @@
   .ed-field{margin-bottom:14px;}
   .ed-field label{display:block;font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:6px;}
   .ed-field input,.ed-field textarea,.ed-field select{width:100%;padding:11px 13px;border:1.5px solid var(--line-on-dark);border-radius:7px;background:rgba(255,255,255,.07);color:var(--paper);font-family:var(--body);font-size:14.5px;}
-  .ed-field input:focus,.ed-field textarea:focus{outline:none;border-color:var(--gold);}
+  /* Los <select> van con fondo OPACO oscuro: en Windows el popup translúcido
+     salía blanco sobre blanco. El option/checked/disabled se estilan en site.css. */
+  .ed-field select{background-color:#0c2a28;background-image:none;}
+  .ed-field input:focus,.ed-field textarea:focus,.ed-field select:focus{outline:none;border-color:var(--gold);}
+  .ed-field select:disabled{opacity:.72;color:var(--paper);}
+  .ed-field select option{background-color:#0c2a28;color:var(--paper);}
+  .ed-field ::placeholder{color:rgba(251,248,241,.6);}
   .ed-field textarea{resize:vertical;min-height:72px;}
   .price-in{display:flex;align-items:center;gap:8px;}
   .price-in span{color:var(--gold-soft);font-weight:700;}
@@ -157,8 +163,12 @@
   .bk-dl b{font-weight:600;font-size:13.5px;color:rgba(255,255,255,.9);word-break:break-word;}
   .bk-dl a{color:#e4c98c;}
   .bk-modal-actions{display:flex;gap:10px;align-items:center;margin-top:22px;padding-top:16px;border-top:1px solid var(--line-on-dark);flex-wrap:wrap;}
-  .bk-modal-actions select{padding:9px 12px;border-radius:7px;background:rgba(255,255,255,.07);color:var(--paper);
+  .bk-modal-actions select{padding:9px 12px;border-radius:7px;background-color:#0c2a28;color:var(--paper);
     border:1.5px solid var(--line-on-dark);font-family:var(--body);}
+  /* Dropdown de booking_status: opción legible y seleccionada distinguible. */
+  .bk-modal-actions select:focus{outline:none;border-color:var(--gold);}
+  .bk-modal-actions select option{background-color:#0c2a28;color:var(--paper);}
+  .bk-modal-actions select option:checked{background-color:#20514c;color:#fff;}
   @media(max-width:980px){
     .bk-frow,.bk-frow:first-child{grid-template-columns:1fr 1fr;}
     .bk-cal-day{min-height:58px;}

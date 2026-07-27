@@ -37,10 +37,14 @@ const TOURS = {
   espanola:     { name: 'Española Day Trip',          priceCents: 31500, unit: 'person', minGuests: 1, requiresQuote: false, type: 'tour' },
   private:      { name: 'Private Boat Charter',       priceCents: null,  unit: 'boat',   minGuests: 1, requiresQuote: true,  type: 'tour' },
 
-  // ---- Pesca deportiva (boat, mínimo 1) ----
-  half:       { name: 'Half-Day Charter',     priceCents: 219900, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
-  full:       { name: 'Full-Day Charter',     priceCents: 289900, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
-  expedition: { name: 'Multi-Day Expedition', priceCents: null,   unit: 'boat', minGuests: 1, requiresQuote: true,  type: 'fishing' }
+  // ---- Pesca deportiva (boat) — DECISIÓN COMERCIAL: todo por cotización ----
+  // Sin precio público ni cobro por Stripe. El servidor NO puede cobrar
+  // estos ids: priceCents=null + requiresQuote=true fuerzan el flujo de
+  // /api/quote-request. (Las reservas históricas conservan su importe;
+  // esto solo cambia el catálogo vigente.)
+  half:       { name: 'Half-Day Charter',     priceCents: null, unit: 'boat', minGuests: 1, requiresQuote: true, type: 'fishing' },
+  full:       { name: 'Full-Day Charter',     priceCents: null, unit: 'boat', minGuests: 1, requiresQuote: true, type: 'fishing' },
+  expedition: { name: 'Multi-Day Expedition', priceCents: null, unit: 'boat', minGuests: 1, requiresQuote: true, type: 'fishing' }
 };
 
 /** Devuelve una copia inmutable del tour (con su id) o null si no existe. */

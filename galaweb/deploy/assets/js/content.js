@@ -302,9 +302,13 @@ window.GHA_DEFAULT = {
       { en: "Yellowtail", es: "Jurel" }
     ],
     tripCarousel: ["assets/img/fishing-c1.jpg","assets/img/fishing-c2.jpg","assets/img/fishing-c3.jpg"],
+    /* DECISIÓN COMERCIAL: toda la pesca deportiva es SOLO por cotización.
+       price:0 hace que el frontend las trate como cotización (sin precio
+       público, sin Stripe). El precio real de cobro nunca vive aquí:
+       el catálogo del servidor (server/lib/tour-catalog.js) es la fuente. */
     trips: [
-      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 2199 },
-      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 2899 },
+      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 0 },
+      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 0 },
       { id: "expedition", name: { en: "Multi-Day Expedition", es: "Expedición de Varios Días" }, duration: { en: "Custom · per boat", es: "Personalizado · por bote" }, price: 0 }
     ],
     /* peak = best fishing months, good = decent */
