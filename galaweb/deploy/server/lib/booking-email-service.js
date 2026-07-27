@@ -30,6 +30,36 @@ const QR_CID = 'booking-qr';
 
 function sanitize(msg) { return String(msg == null ? '' : msg).replace(/\s+/g, ' ').slice(0, 300); }
 
+/* Convierte el error del SDK de Resend en un texto ÚTIL y seguro.
+   Resend devuelve { name, message, statusCode }. Con solo `.message`
+   se perdía el tipo/código, que es justo lo que explica el fallo
+   (p. ej. "validation_error · HTTP 403 · The <dominio> domain is not
+   verified"). Nunca incluye la API key ni el cuerpo del correo. */
+function describeResendError(error) {
+  if (!error) return '';
+  if (typeof error === 'string') return sanitize(error);
+  const parts = [];
+  if (error.name) parts.push(String(error.name));
+  if (error.statusCode != null) parts.push('HTTP ' + error.statusCode);
+  if (error.message) parts.push(String(error.message));
+  return sanitize(parts.join(' · ')) || 'resend error';
+}
+
+/* Diagnóstico server-side SEGURO: solo metadatos de entrega. NUNCA la
+   API key, el cuerpo del correo, el adjunto ni el token del QR. Aparece
+   en los logs de Vercel para ver de un vistazo por qué falló un envío. */
+function emailDiag(booking, type, status, extra) {
+  extra = extra || {};
+  const info = {
+    booking_code: (booking && booking.booking_code) || '(sin codigo)',
+    notification_type: type || '(sin tipo)',
+    status: status,
+    provider_id: extra.hasId ? 'yes' : 'no'
+  };
+  if (extra.error) info.error = sanitize(extra.error).slice(0, 180);
+  logServer('email-service', 'diag ' + JSON.stringify(info));
+}
+
 /**
  * @param {object} o { booking, type, recipient }
  * @returns {Promise<{sent?:boolean, duplicate?:boolean, skipped?:boolean, failed?:boolean, reason?:string}>}
@@ -101,19 +131,23 @@ async function sendBookingEmail(o) {
     if (cfg.replyTo) payload.replyTo = cfg.replyTo;
     if (attachments.length) payload.attachments = attachments;
 
-    const sent = await getResend().emails.send(payload);
-    if (sent && sent.error) throw new Error(sent.error.message || 'resend error');
-    const messageId = (sent && sent.data && sent.data.id) || null;
+    const resp = await getResend().emails.send(payload);
+    /* Éxito SOLO si hay data válida. Un error, o una respuesta vacía, se
+       tratan como fallo con un mensaje útil — nunca como envío correcto. */
+    if (!resp || resp.error) throw new Error(describeResendError(resp && resp.error) || 'resend error');
+    if (!resp.data || !resp.data.id) throw new Error('resend: respuesta sin id de mensaje');
+    const messageId = resp.data.id;
 
     await supabase.from('email_notifications').update({
       status: 'sent', provider_message_id: messageId,
       sent_at: new Date().toISOString(), last_error: null
     }).eq('id', row.id);
 
-    return { sent: true, notificationId: row.id };
+    emailDiag(booking, type, 'sent', { hasId: true });
+    return { sent: true, notificationId: row.id, providerMessageId: messageId };
   } catch (err) {
     const msg = sanitize(err && err.message);
-    logServer('email-service', type + ': ' + msg);
+    emailDiag(booking, type, 'failed', { error: msg });
     try {
       const supabase = getSupabase();
       const found = await supabase.from('email_notifications').select('id')

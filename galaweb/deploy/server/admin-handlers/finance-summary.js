@@ -5,10 +5,18 @@
    ---------------------------------------------------------
    Resumen de ingresos. SOLO owner y admin — staff recibe 403.
 
-   FECHA CONTABLE: filtra y agrupa por `sold_at` (el momento en que
-   entró el dinero), NUNCA por booking_date (la fecha del tour).
-   Los parámetros date_from / date_to son FECHAS DE VENTA (caja) y se
-   convierten a instantes usando la zona horaria de Galápagos (UTC-6).
+   FECHA CONTABLE: filtra y agrupa por la fecha de caja = coalesce(sold_at,
+   paid_at), NUNCA por booking_date (la fecha del tour). Los parámetros
+   date_from / date_to son FECHAS DE VENTA y se convierten a instantes con
+   la zona horaria de Galápagos (UTC-6).
+
+   POR QUÉ coalesce y no solo sold_at: toda reserva pagada tiene paid_at
+   (lo escribe el webhook de Stripe y las ventas de agencia). sold_at se
+   deriva de paid_at mediante el trigger de la migración 0006, pero las
+   reservas web pagadas ANTES de esa migración tienen sold_at = null.
+   Filtrar solo por sold_at descartaba esas filas con gte/lt y el resumen
+   salía en $0 pese a existir reservas web pagadas. Usando coalesce esas
+   ventas vuelven a contar sin tocar la base de datos ni el webhook.
 
    Cuenta únicamente request_type='booking' y payment_status='paid':
    quedan fuera pending, processing, failed, refunded y las cotizaciones.
@@ -42,6 +50,18 @@ function getQuery(req) {
   catch (e) { return {}; }
 }
 
+/* Método de pago para el desglose. NO modifica la fila: solo clasifica.
+   · Canal web = Stripe SIEMPRE (el histórico puede tener payment_method
+     null porque el webhook no lo escribía; sigue siendo un cobro Stripe).
+   · Cualquier fila con stripe_payment_intent_id = Stripe.
+   · Ventas de agencia: su método declarado si es válido; 'other' solo
+     cuando de verdad es 'other' o falta de forma legítima. */
+function classifyMethod(r) {
+  if (r.sales_channel === 'web') return 'stripe';
+  if (r.stripe_payment_intent_id) return 'stripe';
+  return METHODS.indexOf(r.payment_method) !== -1 ? r.payment_method : 'other';
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only GET is allowed'); }
 
@@ -65,26 +85,34 @@ module.exports = async function handler(req, res) {
     const supabase = getSupabase();
     const rows = [];
 
+    /* Cota del rango sobre paid_at, que SIEMPRE está presente en las
+       reservas pagadas (lo escribe el webhook y las ventas de agencia).
+       Acota la consulta e incluye las filas con sold_at nulo. El filtro
+       fino se aplica en el servidor con coalesce(sold_at, paid_at). */
+    const startFrom = date_from ? startInstant(date_from) : null;
+    const endTo = date_to ? endInstantExclusive(date_to) : null;
+
     for (let page = 0; page < MAX_PAGES; page++) {
       let query = supabase.from('bookings')
-        .select('amount_cents,sales_channel,payment_method')     // solo lo necesario para sumar
+        .select('amount_cents,sales_channel,payment_method,sold_at,paid_at,stripe_payment_intent_id')  // + fechas y PI para clasificar
         .eq('tenant_id', tenant)
         .eq('request_type', 'booking')
         .eq('payment_status', 'paid');
 
-      if (date_from) query = query.gte('sold_at', startInstant(date_from));
-      if (date_to) query = query.lt('sold_at', endInstantExclusive(date_to));
+      if (startFrom) query = query.gte('paid_at', startFrom);
+      if (endTo) query = query.lt('paid_at', endTo);
       if (q.channel) query = query.eq('sales_channel', q.channel);
       if (q.payment_method) query = query.eq('payment_method', q.payment_method);
       if (q.created_by) query = query.eq('created_by_user_id', q.created_by);
 
-      query = query.order('sold_at', { ascending: true }).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+      query = query.order('paid_at', { ascending: true }).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
       const { data, error } = await query;
       if (error) { logServer('finance-summary', error.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to build the summary'); }
       const batch = data || [];
       rows.push.apply(rows, batch);
       if (batch.length < PAGE_SIZE) break;
+      if (page === MAX_PAGES - 1) logServer('finance-summary', 'cap alcanzado (' + (MAX_PAGES * PAGE_SIZE) + ' filas); el total podría estar recortado');
     }
 
     const revenue = { web: 0, agency: 0, total: 0 };
@@ -93,16 +121,21 @@ module.exports = async function handler(req, res) {
     METHODS.forEach(function (m) { by_method[m] = { amount_cents: 0, count: 0 }; });
 
     rows.forEach(function (r) {
+      /* Fecha contable robusta: sold_at si existe, si no paid_at. */
+      const acct = r.sold_at || r.paid_at;
+      if (!acct) return;                                    // sin fecha de caja → no computa
+      if (startFrom && acct < startFrom) return;
+      if (endTo && acct >= endTo) return;
       const amt = Number(r.amount_cents) || 0;
       const ch = r.sales_channel === 'agency' ? 'agency' : 'web';
       revenue[ch] += amt; revenue.total += amt;
       counts[ch] += 1; counts.total += 1;
-      const m = METHODS.indexOf(r.payment_method) !== -1 ? r.payment_method : 'other';
+      const m = classifyMethod(r);
       by_method[m].amount_cents += amt; by_method[m].count += 1;
     });
 
     return sendJson(res, 200, {
-      basis: 'sold_at',                       // fecha de venta/caja, no del tour
+      basis: 'sold_at|paid_at',               // fecha de caja (coalesce), no del tour
       range: { date_from: date_from || null, date_to: date_to || null },
       currency: 'usd',
       revenue: revenue,
