@@ -9,12 +9,12 @@
    Precios en CENTAVOS de USD. Nombres canónicos en inglés
    (se guardan tal cual en Supabase como tour_name).
 
-   Reglas replicadas de assets/js/app.js (bkTotal):
+   Cálculo del BRUTO (calculateGrossCents):
      - unit 'person': gross = price * guests
      - unit 'boat'  : gross = price (plano; guests no multiplica)
-     - descuento de grupo: paquetes (person, minGuests>=2) con 3+
-       viajeros → 20% off, redondeado a DÓLAR ENTERO antes de
-       convertir a centavos.
+   Los DESCUENTOS ya no viven aquí: los aplica pricing-engine.js con
+   reglas configurables (public.discount_rules). El antiguo −20 % fijo
+   por grupo se retiró; sin regla activa, el bruto es el total.
    ========================================================= */
 
 const CURRENCY = 'usd';
@@ -53,26 +53,22 @@ function getTour(tourId) {
   return Object.assign({ id: tourId }, TOURS[tourId]);
 }
 
-/** Descuento de grupo: paquetes (person, min>=2) con 3 o más viajeros. */
-function isGroupDiscountEligible(tour, guests) {
-  return tour.unit === 'person' && tour.minGuests >= 2 && guests >= 3;
-}
-
 /**
- * Calcula amount_cents en el servidor. Solo para tours pagables.
- * Replica EXACTAMENTE assets/js/app.js:bkTotal (redondeo a dólar entero).
+ * Precio BRUTO en centavos (sin descuentos). Solo para tours pagables.
+ * Los descuentos ya NO viven aquí: los aplica server/lib/pricing-engine.js
+ * con las reglas configurables (public.discount_rules). El antiguo −20 %
+ * fijo por grupo se retiró: sin regla activa, el bruto es el total.
  * @param {object} tour   objeto devuelto por getTour()
  * @param {number} guests entero positivo
- * @returns {number} total en centavos
+ * @returns {number} bruto en centavos (entero exacto)
  */
-function calculateAmountCents(tour, guests) {
+function calculateGrossCents(tour, guests) {
   if (tour.requiresQuote || tour.priceCents == null) {
-    throw new Error('calculateAmountCents called on a quote-only tour');
+    throw new Error('calculateGrossCents called on a quote-only tour');
   }
   const priceUsd = tour.priceCents / 100;                 // los precios son dólares enteros
   const grossUsd = tour.unit === 'person' ? priceUsd * guests : priceUsd;
-  const totalUsd = isGroupDiscountEligible(tour, guests) ? Math.round(grossUsd * 0.8) : grossUsd;
-  return Math.round(totalUsd * 100);                      // a centavos (entero exacto)
+  return Math.round(grossUsd * 100);                      // a centavos (entero exacto)
 }
 
-module.exports = { TOURS, CURRENCY, getTour, isGroupDiscountEligible, calculateAmountCents };
+module.exports = { TOURS, CURRENCY, getTour, calculateGrossCents };

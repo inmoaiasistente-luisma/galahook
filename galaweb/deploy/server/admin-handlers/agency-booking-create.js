@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const { getSupabase } = require('../lib/supabase');
 const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
 const { notifyBooking } = require('../lib/booking-email-service');
+const { computeAgencyCost } = require('../lib/pricing-engine');
 const catalog = require('../lib/tour-catalog');
 const {
   sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys,
@@ -140,6 +141,15 @@ module.exports = async function handler(req, res) {
     const soldAt = new Date().toISOString();          // reloj del servidor, nunca del cliente
     const year = today.slice(0, 4);
 
+    /* Costo: si el tour de catálogo tiene configuración activa se calcula;
+       si es custom o no hay config, queda null ("Costo pendiente"). Las
+       ventas de agencia NO llevan descuentos web: gross = amount, disc = 0. */
+    const { costCents, costSettings } = await computeAgencyCost(tenant, tourId, b.guests);
+    const agencySnapshot = {
+      channel: 'agency', unit: unit, guests: b.guests,
+      cost_settings: costSettings, calculated_at: soldAt
+    };
+
     for (let attempt = 0; attempt < MAX_CODE_TRIES; attempt++) {
       const row = {
         booking_code: genBookingCode(year),
@@ -157,6 +167,11 @@ module.exports = async function handler(req, res) {
         customer_phone: String(b.customer_phone).trim(),
         notes: (b.notes && b.notes.trim()) ? b.notes.trim() : null,
         amount_cents: b.amount_cents,
+        gross_amount_cents: b.amount_cents,   // agencia: sin descuento web
+        discount_cents: 0,
+        discount_rule_id: null,
+        cost_cents: costCents,                // null si custom o sin config
+        pricing_snapshot: agencySnapshot,
         currency: 'usd',
         payment_method: b.payment_method,
         payment_status: 'paid',

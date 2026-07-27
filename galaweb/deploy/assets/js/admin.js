@@ -924,6 +924,236 @@ function bkScreen(o){
 function panelBookings(){ return bkScreen({isStaff:false}); }
 function panelStaffSchedule(){ return bkScreen({isStaff:true}); }
 
+/* ============ FINANZAS (owner/admin) ============
+   owner puede gestionar costos y descuentos; admin solo consulta. El
+   servidor es la autoridad: aquí solo se muestran totales y se envían
+   configuraciones (nunca se recalcula dinero en el navegador). */
+function fin$(c){ return bkMoney(c,'usd'); }
+function panelFinance(role){
+  const canEdit = role==='owner' || role==='admin';
+  const wrap=el('<div class="fin-wrap"></div>');
+
+  /* ---- filtros ---- */
+  const filters=el('<div class="ed-row fin-filters"></div>');
+  const fromF=bkDateField(ES?'Desde (venta)':'From (sale)');
+  const toF=bkDateField(ES?'Hasta (venta)':'To (sale)');
+  const tourF=bkSelectField('Tour',[['',ES?'Todos':'All']]);
+  const chanF=bkSelectField(ES?'Canal':'Channel',[['',ES?'Todos':'All'],['web','web'],['agency',ES?'Agencia':'Agency']]);
+  const methF=bkSelectField(ES?'Método':'Method',[['',ES?'Todos':'All'],['stripe','stripe'],['cash','cash'],['card','card'],['bank_transfer','bank_transfer'],['zelle','zelle'],['other','other']]);
+  [fromF,toF,tourF,chanF,methF].forEach(function(f){ filters.appendChild(f.wrap); });
+  wrap.appendChild(filters);
+
+  /* ---- KPIs + tabla por tour ---- */
+  const tiles=el('<div class="fin-tiles"></div>');
+  const partial=el('<div class="fin-partial" style="display:none"></div>');
+  const tourWrap=el('<div class="bk-table-wrap fin-tourtable"></div>');
+  wrap.appendChild(tiles); wrap.appendChild(partial); wrap.appendChild(tourWrap);
+
+  function tile(lab,val,cls){ return '<div class="fin-tile'+(cls?' '+cls:'')+'"><span>'+lab+'</span><b>'+val+'</b></div>'; }
+  function loadSummary(){
+    const q={};
+    if(fromF.input.value) q.date_from=fromF.input.value;
+    if(toF.input.value) q.date_to=toF.input.value;
+    if(tourF.select.value) q.tour_id=tourF.select.value;
+    if(chanF.select.value) q.channel=chanF.select.value;
+    if(methF.select.value) q.payment_method=methF.select.value;
+    tiles.innerHTML='<div class="bk-sub-hint">'+(ES?'Cargando…':'Loading…')+'</div>';
+    apiGet('/api/admin-finance-summary?'+bkQS(q)).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.status===403){ tiles.innerHTML='<div class="bk-sub-hint">'+(ES?'Sin acceso.':'No access.')+'</div>'; return; }
+      if(!r.ok||!r.data){ tiles.innerHTML=''; return; }
+      const d=r.data;
+      tiles.innerHTML=
+        tile(ES?'Ingresos brutos':'Gross revenue', fin$(d.gross_revenue_cents))
+       +tile(ES?'Descuentos':'Discounts', '−'+fin$(d.discounts_cents))
+       +tile(ES?'Ingresos netos':'Net revenue', fin$(d.net_revenue_cents),'strong')
+       +tile(ES?'Costos conocidos':'Known costs', fin$(d.known_costs_cents))
+       +tile(ES?'Utilidad conocida':'Known profit', fin$(d.gross_profit_cents),'strong')
+       +tile(ES?'Margen':'Margin', (d.margin_percent!=null?d.margin_percent+'%':'—'))
+       +tile(ES?'Ventas':'Sales', d.total_sales)
+       +tile('Pax', d.total_pax)
+       +tile(ES?'Ingreso por pax':'Revenue / pax', fin$(d.revenue_per_pax_cents))
+       +tile(ES?'Costo por pax':'Cost / pax', fin$(d.known_cost_per_pax_cents))
+       +tile(ES?'Utilidad por pax':'Profit / pax', fin$(d.known_profit_per_pax_cents))
+       +tile(ES?'Ventas sin costo':'Sales missing cost', d.missing_cost_sales_count, d.missing_cost_sales_count>0?'warn':'');
+      partial.style.display=d.profit_is_partial?'':'none';
+      partial.textContent=d.profit_is_partial
+        ? (ES?'Utilidad PARCIAL: '+d.missing_cost_sales_count+' venta(s) sin costo configurado no se descuentan.'
+             :'Profit is PARTIAL: '+d.missing_cost_sales_count+' sale(s) without a configured cost are not deducted.')
+        : '';
+      /* tabla por tour */
+      const rows=(d.by_tour||[]).map(function(t){
+        return '<tr><td>'+escapeHtml(t.tour_name)+'</td><td class="num">'+t.sales+'</td><td class="num">'+t.pax+'</td>'
+          +'<td class="num">'+fin$(t.gross_revenue_cents)+'</td><td class="num">−'+fin$(t.discounts_cents)+'</td>'
+          +'<td class="num">'+fin$(t.net_revenue_cents)+'</td><td class="num">'+fin$(t.known_costs_cents)+'</td>'
+          +'<td class="num">'+fin$(t.known_profit_cents)+'</td>'
+          +'<td class="num">'+(t.missing_cost_sales_count>0?('<span class="bdg bdg-warn">'+t.missing_cost_sales_count+'</span>'):'0')+'</td></tr>';
+      }).join('');
+      tourWrap.innerHTML='<table class="bk-table"><thead><tr>'
+        +'<th>Tour</th><th>'+(ES?'Ventas':'Sales')+'</th><th>Pax</th><th>'+(ES?'Bruto':'Gross')+'</th><th>'+(ES?'Desc.':'Disc.')+'</th>'
+        +'<th>'+(ES?'Neto':'Net')+'</th><th>'+(ES?'Costo':'Cost')+'</th><th>'+(ES?'Utilidad':'Profit')+'</th><th>'+(ES?'Sin costo':'No cost')+'</th></tr></thead>'
+        +'<tbody>'+(rows||'<tr><td colspan="9" class="bk-sub-hint">'+(ES?'Sin ventas en el período.':'No sales in range.')+'</td></tr>')+'</tbody></table>';
+    }).catch(function(){ tiles.innerHTML=''; });
+  }
+  [fromF.input,toF.input].forEach(function(i){ i.addEventListener('change',loadSummary); });
+  [tourF.select,chanF.select,methF.select].forEach(function(s){ s.addEventListener('change',loadSummary); });
+
+  /* ---- COSTOS por tour ---- */
+  const costSec=el('<div class="fin-sec"><h3>'+(ES?'Costos por tour':'Costs per tour')+'</h3>'
+    +'<p class="bk-sub-hint">'+(canEdit?(ES?'Cambiar un costo NO altera reservas ya creadas; solo afecta a las nuevas.':'Changing a cost does NOT alter existing bookings; only new ones.')
+                                        :(ES?'Solo lectura.':'Read-only.'))+'</p></div>');
+  const costWrap=el('<div class="bk-table-wrap"></div>'); costSec.appendChild(costWrap);
+  wrap.appendChild(costSec);
+
+  function loadTours(){
+    apiGet('/api/admin-finance-settings').then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data){ costWrap.innerHTML=''; return; }
+      const list=r.data.settings||[];
+      /* filtro y select de descuentos usan estos tours */
+      const opts=list.map(function(t){ return [t.tour_id, (t.tour_name&&(t.tour_name.en||t.tour_name.es||t.tour_name))||t.tour_id]; });
+      const cur=tourF.select.value;
+      tourF.select.innerHTML=''; [['',ES?'Todos':'All']].concat(opts).forEach(function(o){ const op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; tourF.select.appendChild(op); });
+      tourF.select.value=cur;
+      if(discTourSel){ const dc=discTourSel.value; discTourSel.innerHTML=''; [['',ES?'Todos los tours':'All tours']].concat(opts).forEach(function(o){ const op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; discTourSel.appendChild(op); }); discTourSel.value=dc; }
+      const head='<table class="bk-table"><thead><tr><th>Tour</th><th>'+(ES?'Costo fijo':'Fixed cost')+'</th><th>'+(ES?'Costo/pax':'Cost/pax')+'</th><th>'+(ES?'Activo':'Active')+'</th>'+(canEdit?'<th></th>':'')+'</tr></thead><tbody></tbody></table>';
+      costWrap.innerHTML=head;
+      const tbody=costWrap.querySelector('tbody');
+      list.forEach(function(t){
+        const name=(t.tour_name&&(t.tour_name.en||t.tour_name.es||t.tour_name))||t.tour_id;
+        const tr=document.createElement('tr');
+        if(canEdit){
+          const fixed=el('<input type="number" min="0" step="1" style="width:110px" value="'+(t.fixed_cost_cents/100)+'">');
+          const perp=el('<input type="number" min="0" step="1" style="width:110px" value="'+(t.cost_per_pax_cents/100)+'">');
+          const act=el('<input type="checkbox" '+(t.active?'checked':'')+'>');
+          const save=el('<button class="mini-btn" type="button">'+(ES?'Guardar':'Save')+'</button>');
+          save.addEventListener('click',function(){
+            save.disabled=true;
+            apiPost('/api/admin-finance-settings-save',{tour_id:t.tour_id, fixed_cost_cents:Math.round((parseFloat(fixed.value)||0)*100), cost_per_pax_cents:Math.round((parseFloat(perp.value)||0)*100), active:act.checked}).then(function(rr){
+              save.disabled=false;
+              if(rr.status===401){ onUnauthorized(); return; }
+              if(!rr.ok){ adminToast(ES?'No se pudo guardar.':'Could not save.'); return; }
+              adminToast(ES?'Costo guardado':'Cost saved'); loadSummary();
+            }).catch(function(){ save.disabled=false; adminToast(ES?'Error de conexión.':'Connection error.'); });
+          });
+          const td1=document.createElement('td'); td1.textContent=name;
+          const td2=document.createElement('td'); td2.appendChild(fixed);
+          const td3=document.createElement('td'); td3.appendChild(perp);
+          const td4=document.createElement('td'); td4.appendChild(act);
+          const td5=document.createElement('td'); td5.appendChild(save);
+          tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5);
+        } else {
+          tr.innerHTML='<td>'+escapeHtml(name)+'</td><td>'+fin$(t.fixed_cost_cents)+'</td><td>'+fin$(t.cost_per_pax_cents)+'</td><td>'+(t.active?(ES?'Sí':'Yes'):'—')+'</td>';
+        }
+        tbody.appendChild(tr);
+      });
+    }).catch(function(){ costWrap.innerHTML=''; });
+  }
+
+  /* ---- DESCUENTOS ---- */
+  let discTourSel=null;
+  const discSec=el('<div class="fin-sec"><h3>'+(ES?'Reglas de descuento':'Discount rules')+'</h3>'
+    +'<p class="bk-sub-hint">'+(ES?'El servidor aplica UNA regla por reserva (nunca acumula). No se borran: se activan o desactivan.'
+                                  :'The server applies ONE rule per booking (never stacked). Rules are not deleted: toggle active.')+'</p></div>');
+  const discList=el('<div class="bk-table-wrap"></div>'); discSec.appendChild(discList);
+  wrap.appendChild(discSec);
+
+  function loadDiscounts(){
+    apiGet('/api/admin-discount-rules').then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data){ discList.innerHTML=''; return; }
+      const rules=r.data.rules||[];
+      const head='<table class="bk-table"><thead><tr><th>'+(ES?'Nombre':'Name')+'</th><th>Tour</th><th>'+(ES?'Tipo':'Type')+'</th><th>'+(ES?'Valor':'Value')+'</th><th>Pax</th><th>'+(ES?'Prio':'Prio')+'</th><th>'+(ES?'Activa':'Active')+'</th>'+(canEdit?'<th></th>':'')+'</tr></thead><tbody></tbody></table>';
+      discList.innerHTML=head;
+      const tbody=discList.querySelector('tbody');
+      if(!rules.length){ tbody.innerHTML='<tr><td colspan="'+(canEdit?8:7)+'" class="bk-sub-hint">'+(ES?'Sin reglas. '+(canEdit?'Crea una abajo.':''):'No rules. '+(canEdit?'Create one below.':''))+'</td></tr>'; return; }
+      rules.forEach(function(rule){
+        const val= rule.discount_type==='percentage' ? (rule.percentage_bps/100)+'%' : fin$(rule.amount_cents)+(rule.discount_type==='fixed_per_pax'?'/pax':'');
+        const pax= rule.min_guests+(rule.max_guests?('–'+rule.max_guests):'+');
+        const tr=document.createElement('tr');
+        tr.innerHTML='<td>'+escapeHtml(rule.name)+'</td><td>'+escapeHtml(rule.tour_id||(ES?'Todos':'All'))+'</td><td>'+rule.discount_type+'</td><td>'+val+'</td><td>'+pax+'</td><td class="num">'+rule.priority+'</td>'
+          +'<td>'+(rule.active?'<span class="bdg bdg-ok">'+(ES?'Sí':'Yes')+'</span>':'<span class="bdg bdg-muted">'+(ES?'No':'No')+'</span>')+'</td>';
+        if(canEdit){
+          const td=document.createElement('td');
+          const tg=el('<button class="mini-btn" type="button">'+(rule.active?(ES?'Desactivar':'Disable'):(ES?'Activar':'Enable'))+'</button>');
+          tg.addEventListener('click',function(){
+            tg.disabled=true;
+            apiPost('/api/admin-discount-rule-toggle',{id:rule.id, active:!rule.active}).then(function(rr){
+              tg.disabled=false;
+              if(rr.status===401){ onUnauthorized(); return; }
+              if(!rr.ok){ adminToast(ES?'No se pudo cambiar.':'Could not change.'); return; }
+              adminToast(ES?'Regla actualizada':'Rule updated'); loadDiscounts(); loadSummary();
+            }).catch(function(){ tg.disabled=false; });
+          });
+          td.appendChild(tg); tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      });
+    }).catch(function(){ discList.innerHTML=''; });
+  }
+
+  /* owner: formulario de nueva regla + probar precio */
+  if(canEdit){
+    const form=el('<div class="fin-sec fin-discform"><h4>'+(ES?'Nueva regla':'New rule')+'</h4></div>');
+    const row1=el('<div class="ed-row"></div>');
+    const nameF=el('<div class="ed-field"><label>'+(ES?'Nombre':'Name')+'</label><input type="text" maxlength="120"></div>');
+    const dsel=bkSelectField('Tour',[['',ES?'Todos los tours':'All tours']]); discTourSel=dsel.select;
+    const typeF=bkSelectField(ES?'Tipo':'Type',[['percentage',ES?'Porcentaje':'Percentage'],['fixed_total',ES?'Monto fijo total':'Fixed total'],['fixed_per_pax',ES?'Monto fijo por pax':'Fixed per pax']]);
+    row1.appendChild(nameF); row1.appendChild(dsel.wrap); row1.appendChild(typeF.wrap);
+    const row2=el('<div class="ed-row"></div>');
+    const valF=el('<div class="ed-field"><label>'+(ES?'Valor (% o $)':'Value (% or $)')+'</label><input type="number" min="0" step="0.01"></div>');
+    const minF=el('<div class="ed-field"><label>'+(ES?'Pax mín':'Min pax')+'</label><input type="number" min="1" value="1"></div>');
+    const maxF=el('<div class="ed-field"><label>'+(ES?'Pax máx (opcional)':'Max pax (optional)')+'</label><input type="number" min="1"></div>');
+    row2.appendChild(valF); row2.appendChild(minF); row2.appendChild(maxF);
+    const row3=el('<div class="ed-row"></div>');
+    const startF=bkDateField(ES?'Inicio (opcional)':'Start (optional)');
+    const endF=bkDateField(ES?'Fin (opcional)':'End (optional)');
+    const prioF=el('<div class="ed-field"><label>'+(ES?'Prioridad':'Priority')+'</label><input type="number" min="0" value="0"></div>');
+    row3.appendChild(startF.wrap); row3.appendChild(endF.wrap); row3.appendChild(prioF);
+    const saveBtn=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Crear regla':'Create rule')+'</button>');
+    saveBtn.addEventListener('click',function(){
+      const type=typeF.select.value; const raw=parseFloat(valF.querySelector('input').value)||0;
+      const payload={ name:(nameF.querySelector('input').value||'').trim(), tour_id:discTourSel.value||null, discount_type:type,
+        min_guests:parseInt(minF.querySelector('input').value||'1',10), active:true, priority:parseInt(prioF.querySelector('input').value||'0',10) };
+      if(type==='percentage'){ payload.percentage_bps=Math.round(raw*100); } else { payload.amount_cents=Math.round(raw*100); }
+      const mx=maxF.querySelector('input').value; if(mx) payload.max_guests=parseInt(mx,10);
+      if(startF.input.value) payload.starts_at=new Date(startF.input.value+'T00:00:00Z').toISOString();
+      if(endF.input.value) payload.ends_at=new Date(endF.input.value+'T00:00:00Z').toISOString();
+      saveBtn.disabled=true;
+      apiPost('/api/admin-discount-rule-save',payload).then(function(rr){
+        saveBtn.disabled=false;
+        if(rr.status===401){ onUnauthorized(); return; }
+        if(!rr.ok){ adminToast(ES?'Revisa los campos de la regla.':'Check the rule fields.'); return; }
+        adminToast(ES?'Regla creada':'Rule created'); nameF.querySelector('input').value=''; valF.querySelector('input').value=''; loadDiscounts(); loadSummary();
+      }).catch(function(){ saveBtn.disabled=false; });
+    });
+    form.appendChild(row1); form.appendChild(row2); form.appendChild(row3); form.appendChild(saveBtn);
+
+    /* probar precio (usa el motor del servidor: refleja las reglas activas) */
+    const test=el('<div class="fin-sec"><h4>'+(ES?'Probar precio':'Test price')+'</h4></div>');
+    const trow=el('<div class="ed-row"></div>');
+    const tSel=bkSelectField('Tour',[]); const tG=el('<div class="ed-field"><label>Pax</label><input type="number" min="1" value="4"></div>');
+    const tBtn=el('<button class="mini-btn" type="button">'+(ES?'Calcular':'Calculate')+'</button>');
+    const tOut=el('<div class="bk-sub-hint" style="align-self:center"></div>');
+    trow.appendChild(tSel.wrap); trow.appendChild(tG); const tbw=el('<div class="ed-field"><label>&nbsp;</label></div>'); tbw.appendChild(tBtn); trow.appendChild(tbw); trow.appendChild(tOut);
+    tBtn.addEventListener('click',function(){
+      const g=parseInt(tG.querySelector('input').value||'1',10);
+      apiPost('/api/pricing-preview',{tour_id:tSel.select.value, guests:g}).then(function(rr){
+        if(rr.ok&&rr.data){ tOut.innerHTML=(ES?'Bruto ':'Gross ')+fin$(rr.data.grossAmountCents)+' · '+(ES?'Desc ':'Disc ')+'−'+fin$(rr.data.discountCents)+' · '+(ES?'Final ':'Final ')+'<b>'+fin$(rr.data.amountCents)+'</b>'+(rr.data.discountLabel?(' ('+escapeHtml(rr.data.discountLabel)+')'):''); }
+        else { tOut.textContent=ES?'No se pudo calcular.':'Could not calculate.'; }
+      }).catch(function(){ tOut.textContent=ES?'Error.':'Error.'; });
+    });
+    test.appendChild(trow);
+    /* poblar el select de "probar" con los tours pagables al cargar */
+    const origLoadTours=loadTours;
+    loadTours=function(){ origLoadTours(); apiGet('/api/admin-finance-settings').then(function(r){ if(r.ok&&r.data){ tSel.select.innerHTML=''; (r.data.settings||[]).forEach(function(t){ const op=document.createElement('option'); op.value=t.tour_id; op.textContent=(t.tour_name&&(t.tour_name.en||t.tour_name.es||t.tour_name))||t.tour_id; tSel.select.appendChild(op); }); } }); };
+    discSec.appendChild(form); discSec.appendChild(test);
+  }
+
+  loadSummary(); loadTours(); loadDiscounts();
+  return wrap;
+}
+
 /* Los paneles se CONSTRUYEN según el rol: para staff el array contiene una sola
    entrada, así los paneles de contenido nunca se invocan ni entran al DOM. */
 function panelsFor(role){
@@ -932,6 +1162,7 @@ function panelsFor(role){
   }
   return [
     {id:'bookings',label:(ES?'Reservas':'Bookings'), build:panelBookings},
+    {id:'finance', label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinance(role); }},
     {id:'site',  label:'Site & Contact', build:panelSite},
     {id:'hero',  label:'Home Hero',      build:panelHero},
     {id:'packages',label:'Packages',     build:panelPackages},
@@ -952,6 +1183,10 @@ function showAdmin(user){
      +'<div class="brand-mini"><img src="assets/img/logo.png"><b>Hook Admin</b></div>'
      +'<div class="actions">'
        +'<span style="color:rgba(255,255,255,.72);font-size:12.5px;font-weight:600">'+who+'</span>'
+       +'<div class="lang-mini" id="langToggle" title="'+(ES?'Idioma':'Language')+'">'
+          +'<button type="button" data-lang="en" class="'+(ES?'':'on')+'">EN</button>'
+          +'<button type="button" data-lang="es" class="'+(ES?'on':'')+'">ES</button>'
+        +'</div>'
        // Los controles del editor de contenido NO se generan para staff.
        +(isStaff?'':'<span class="save-state" id="saveState"></span>')
        +'<a class="mini-btn" href="index.html" target="_blank">'+I.eye+' View site</a>'
@@ -995,6 +1230,19 @@ function showAdmin(user){
         localStorage.removeItem(CKEY); W=loadWorking(); open('site');
         const s=document.getElementById('saveState'); s.textContent='Reset to defaults'; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2600);
       }
+    });
+  }
+  const langTog=document.getElementById('langToggle');
+  if(langTog){
+    langTog.querySelectorAll('button[data-lang]').forEach(function(b){
+      b.addEventListener('click',function(){
+        const want=b.dataset.lang;                 // 'en' | 'es'
+        if((want==='es')===ES) return;             // ya está en ese idioma
+        if(dirty && !confirm(ES?'Tienes cambios sin guardar. ¿Cambiar de idioma de todos modos?':'You have unsaved changes. Switch language anyway?')) return;
+        try{ localStorage.setItem('GHA_LANG', want); }catch(e){}
+        dirty=false;                               // evita el aviso beforeunload al recargar
+        location.reload();
+      });
     });
   }
   document.getElementById('logoutBtn').addEventListener('click',()=>{

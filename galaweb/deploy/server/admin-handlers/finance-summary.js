@@ -80,6 +80,7 @@ module.exports = async function handler(req, res) {
   if (q.channel && CHANNELS.indexOf(q.channel) === -1) return sendError(res, 400, 'INVALID_FILTER', 'Invalid channel');
   if (q.payment_method && METHODS.indexOf(q.payment_method) === -1) return sendError(res, 400, 'INVALID_FILTER', 'Invalid payment_method');
   if (q.created_by && typeof q.created_by !== 'string') return sendError(res, 400, 'INVALID_FILTER', 'Invalid created_by');
+  if (q.tour_id && typeof q.tour_id !== 'string') return sendError(res, 400, 'INVALID_FILTER', 'Invalid tour_id');
 
   try {
     const supabase = getSupabase();
@@ -94,7 +95,7 @@ module.exports = async function handler(req, res) {
 
     for (let page = 0; page < MAX_PAGES; page++) {
       let query = supabase.from('bookings')
-        .select('amount_cents,sales_channel,payment_method,sold_at,paid_at,stripe_payment_intent_id')  // + fechas y PI para clasificar
+        .select('amount_cents,gross_amount_cents,discount_cents,cost_cents,guests,tour_id,tour_name,sales_channel,payment_method,sold_at,paid_at,stripe_payment_intent_id')
         .eq('tenant_id', tenant)
         .eq('request_type', 'booking')
         .eq('payment_status', 'paid');
@@ -104,6 +105,7 @@ module.exports = async function handler(req, res) {
       if (q.channel) query = query.eq('sales_channel', q.channel);
       if (q.payment_method) query = query.eq('payment_method', q.payment_method);
       if (q.created_by) query = query.eq('created_by_user_id', q.created_by);
+      if (q.tour_id) query = query.eq('tour_id', q.tour_id);
 
       query = query.order('paid_at', { ascending: true }).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
@@ -120,27 +122,79 @@ module.exports = async function handler(req, res) {
     const by_method = {};
     METHODS.forEach(function (m) { by_method[m] = { amount_cents: 0, count: 0 }; });
 
+    /* Acumuladores financieros. gross/discount/net a nivel global y por tour;
+       el costo solo se suma cuando cost_cents NO es null (no se finge 0). */
+    const agg = { gross: 0, discount: 0, net: 0, knownCost: 0, pax: 0, missingCost: 0 };
+    const tours = {};   // tour_id → acumulador
+
     rows.forEach(function (r) {
       /* Fecha contable robusta: sold_at si existe, si no paid_at. */
       const acct = r.sold_at || r.paid_at;
       if (!acct) return;                                    // sin fecha de caja → no computa
       if (startFrom && acct < startFrom) return;
       if (endTo && acct >= endTo) return;
-      const amt = Number(r.amount_cents) || 0;
+
+      const net = Number(r.amount_cents) || 0;                          // lo cobrado
+      const gross = r.gross_amount_cents != null ? Number(r.gross_amount_cents) : net;
+      const disc = Number(r.discount_cents) || 0;
+      const pax = Number(r.guests) || 0;
+      const hasCost = r.cost_cents != null;
+      const cost = hasCost ? Number(r.cost_cents) : 0;
       const ch = r.sales_channel === 'agency' ? 'agency' : 'web';
-      revenue[ch] += amt; revenue.total += amt;
+
+      revenue[ch] += net; revenue.total += net;
       counts[ch] += 1; counts.total += 1;
       const m = classifyMethod(r);
-      by_method[m].amount_cents += amt; by_method[m].count += 1;
+      by_method[m].amount_cents += net; by_method[m].count += 1;
+
+      agg.gross += gross; agg.discount += disc; agg.net += net; agg.pax += pax;
+      if (hasCost) agg.knownCost += cost; else agg.missingCost += 1;
+
+      const tid = r.tour_id || 'unknown';
+      const t = tours[tid] || (tours[tid] = { tour_id: tid, tour_name: r.tour_name || tid,
+        sales: 0, pax: 0, gross: 0, discount: 0, net: 0, knownCost: 0, missingCost: 0 });
+      t.sales += 1; t.pax += pax; t.gross += gross; t.discount += disc; t.net += net;
+      if (hasCost) t.knownCost += cost; else t.missingCost += 1;
     });
+
+    function perPax(total, pax) { return pax > 0 ? Math.round(total / pax) : 0; }
+    const grossProfit = agg.net - agg.knownCost;          // parcial si hay missingCost
+    const marginPercent = agg.net > 0 ? Math.round((grossProfit / agg.net) * 1000) / 10 : 0;
+
+    const by_tour = Object.keys(tours).map(function (id) {
+      const t = tours[id];
+      const profit = t.net - t.knownCost;
+      return {
+        tour_id: t.tour_id, tour_name: t.tour_name, sales: t.sales, pax: t.pax,
+        gross_revenue_cents: t.gross, discounts_cents: t.discount, net_revenue_cents: t.net,
+        known_costs_cents: t.knownCost, known_profit_cents: profit, missing_cost_sales_count: t.missingCost,
+        revenue_per_pax_cents: perPax(t.net, t.pax),
+        cost_per_pax_cents: perPax(t.knownCost, t.pax),
+        profit_per_pax_cents: perPax(profit, t.pax)
+      };
+    }).sort(function (a, b) { return b.net_revenue_cents - a.net_revenue_cents; });
 
     return sendJson(res, 200, {
       basis: 'sold_at|paid_at',               // fecha de caja (coalesce), no del tour
       range: { date_from: date_from || null, date_to: date_to || null },
       currency: 'usd',
-      revenue: revenue,
+      revenue: revenue,                       // compat: web/agency/total (neto)
       counts: counts,
-      by_method: by_method
+      by_method: by_method,
+      gross_revenue_cents: agg.gross,
+      discounts_cents: agg.discount,
+      net_revenue_cents: agg.net,
+      known_costs_cents: agg.knownCost,
+      gross_profit_cents: grossProfit,
+      margin_percent: marginPercent,
+      total_sales: counts.total,
+      total_pax: agg.pax,
+      revenue_per_pax_cents: perPax(agg.net, agg.pax),
+      known_cost_per_pax_cents: perPax(agg.knownCost, agg.pax),
+      known_profit_per_pax_cents: perPax(grossProfit, agg.pax),
+      missing_cost_sales_count: agg.missingCost,
+      profit_is_partial: agg.missingCost > 0,
+      by_tour: by_tour
     });
   } catch (err) {
     logServer('finance-summary', err && err.message);

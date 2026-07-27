@@ -44,6 +44,11 @@ ROUTES['qr-rotate'] = require('../server/admin-handlers/qr-rotate');
 ROUTES['qr-revoke'] = require('../server/admin-handlers/qr-revoke');
 ROUTES['booking-notifications'] = require('../server/admin-handlers/booking-notifications');
 ROUTES['email-retry'] = require('../server/admin-handlers/email-retry');
+ROUTES['finance-settings-list'] = require('../server/admin-handlers/finance-settings-list');
+ROUTES['finance-settings-save'] = require('../server/admin-handlers/finance-settings-save');
+ROUTES['discount-rules-list'] = require('../server/admin-handlers/discount-rules-list');
+ROUTES['discount-rule-save'] = require('../server/admin-handlers/discount-rule-save');
+ROUTES['discount-rule-toggle'] = require('../server/admin-handlers/discount-rule-toggle');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */
