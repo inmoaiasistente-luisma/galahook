@@ -272,6 +272,10 @@ function bookables(){
   return out;
 }
 let bkState={tourId:'',name:'',price:0,unit:'person',min:1,requiresQuote:false};
+/* Precio del servidor (pricing-preview). El navegador NUNCA decide el total:
+   muestra una estimación local (bruto) al instante y la reemplaza por el
+   total del servidor cuando llega. `seq` descarta respuestas fuera de orden. */
+let bkPricing={seq:0, applied:null, pending:false};
 /* ---- idempotencia del formulario (Fase 3) ---- */
 let bkRequestId=null, bkFingerprint=null, bkSubmitting=false;
 function bkUuid(){
@@ -312,7 +316,7 @@ function buildBookingModal(){
        +'<div class="bk-line"><span id="bkL1">Travel date</span><b id="bkSumDate">—</b></div>'
        +'<div class="bk-line" id="bkSumGuestsRow"><span id="bkL2">Guests</span><b id="bkSumGuests">—</b></div>'
        +'<div class="bk-line"><span id="bkL3">Price</span><b id="bkSumPrice">—</b></div>'
-       +'<div class="bk-line bk-promo" id="bkPromoRow" style="display:none"><span id="bkPromoLab">Group promo −20%</span><b id="bkSumPromo">—</b></div>'
+       +'<div class="bk-line bk-promo" id="bkPromoRow" style="display:none"><span id="bkPromoLab">Discount</span><b id="bkSumPromo">—</b></div>'
        +'<div class="bk-total"><span id="bkL4">Total</span><b id="bkSumTotal">—</b></div>'
        +'<ul class="bk-trust">'
          +'<li>'+svg('shield')+'<span id="bkT1">Secure checkout</span></li>'
@@ -360,7 +364,7 @@ function buildBookingModal(){
   d.addEventListener('click',e=>{ if(e.target===d) closeBooking(); });
   d.querySelector('#bkClose').addEventListener('click',closeBooking);
   d.querySelector('#bkDone').addEventListener('click',closeBooking);
-  d.querySelector('#bkGuests').addEventListener('input',updateBkSummary);
+  d.querySelector('#bkGuests').addEventListener('input',function(){ updateBkSummary(); refreshPricing(); });
   d.querySelector('#bkDate').addEventListener('change',updateBkSummary);
   // Los campos de tarjeta son Stripe Elements — formateo/validación los maneja Stripe (ver setupPaymentFields).
   d.querySelector('#bkForm').addEventListener('submit',e=>{ e.preventDefault(); submitBooking(); });
@@ -385,37 +389,60 @@ function updateBkSummary(){
   const guests=Math.max(bkState.min||1, parseInt((document.getElementById('bkGuests').value||'1'),10));
   const request=!(bkState.price>0);
   const tot=bkTotal(guests);
-  const total=tot.total;
   const gi=document.getElementById('bkGuests'); if(document.activeElement!==gi && parseInt(gi.value||'0',10)!==guests) gi.value=guests;
   document.getElementById('bkSumName').textContent=bkState.name||'—';
   document.getElementById('bkSumDate').textContent=fmtDate(document.getElementById('bkDate').value);
   document.getElementById('bkSumGuests').textContent=guests;
   document.getElementById('bkSumPrice').textContent= request?(es?'A cotizar':'Custom quote'):(money2(bkState.price)+(bkState.unit==='person'?(es?' /persona':' /person'):(es?' /bote':' /boat')));
+  /* Total del servidor si ya llegó y coincide con tour+pax; si no, estimación
+     local (bruto). El descuento y su etiqueta vienen del servidor. */
+  const sp=(bkPricing.applied&&bkPricing.applied.tourId===bkState.tourId&&bkPricing.applied.guests===guests)?bkPricing.applied:null;
+  const amount= request?0:(sp?sp.amount:tot.gross);
+  const discount= sp?sp.discount:0;
   const promoRow=document.getElementById('bkPromoRow');
   if(promoRow){
-    const show=!request&&tot.eligible;
+    const show=!request&&discount>0;
     promoRow.style.display=show?'':'none';
-    if(show) document.getElementById('bkSumPromo').textContent='−'+money2(tot.gross-tot.total);
+    if(show){ document.getElementById('bkSumPromo').textContent='−'+money2(discount); const lab=document.getElementById('bkPromoLab'); if(lab) lab.textContent=(sp&&sp.label)?sp.label:(es?'Descuento':'Discount'); }
   }
-  document.getElementById('bkSumTotal').textContent= request?'—':money2(total);
+  document.getElementById('bkSumTotal').textContent= request?'—':money2(amount);
   document.getElementById('bkPay').style.display=request?'none':'';
   document.getElementById('bkMsgWrap').style.display=request?'':'none';
   document.getElementById('bkSecure').style.display=request?'none':'';
   document.getElementById('bkSumGuestsRow').style.display=bkState.unit==='boat'?'none':'';
   const pb=document.getElementById('bkPayBtn'); pb.disabled=false; if(pb.dataset.idle) delete pb.dataset.idle;
-  pb.textContent= request?(es?'Enviar solicitud':'Send request'):((es?'Pagar ':'Pay ')+money2(total));
+  pb.textContent= request?(es?'Enviar solicitud':'Send request'):((es?'Pagar ':'Pay ')+money2(amount));
 }
-/* Group promo: packages (person-unit, min ≥ 2) get 20% off the whole group when 3+ travelers book */
+/* Bruto local para la estimación inmediata (base × pax). Los descuentos ya
+   NO viven en el frontend: los calcula el servidor con reglas configurables
+   (/api/pricing-preview). El antiguo −20 % fijo se retiró. */
 function bkTotal(guests){
   const gross=bkState.unit==='person'?bkState.price*guests:bkState.price;
-  const eligible=bkState.unit==='person'&&(bkState.min||1)>=2&&guests>2;
-  return { gross:gross, eligible:eligible, total: eligible?Math.round(gross*0.8):gross };
+  return { gross:gross };
+}
+/* Pide el precio autorizado al servidor. Descarta respuestas viejas (seq) y,
+   si falla la red, deja la estimación local (el cobro real lo fija igualmente
+   create-payment-intent en el servidor). */
+function refreshPricing(){
+  if(bkState.requiresQuote){ bkPricing.applied=null; bkPricing.pending=false; updateBkSummary(); return; }
+  const guests=Math.max(bkState.min||1, parseInt(((document.getElementById('bkGuests')||{}).value||'1'),10));
+  const tourId=bkState.tourId; const mySeq=++bkPricing.seq;
+  bkPricing.pending=true;
+  bkPost('/api/pricing-preview',{tour_id:tourId, guests:guests}).then(function(r){
+    if(mySeq!==bkPricing.seq) return;                 // respuesta fuera de orden → ignorar
+    bkPricing.pending=false;
+    if(r&&r.ok&&r.data&&typeof r.data.amountCents==='number'){
+      bkPricing.applied={tourId:tourId, guests:guests, gross:r.data.grossAmountCents, discount:r.data.discountCents, amount:r.data.amountCents, label:r.data.discountLabel};
+    } else { bkPricing.applied=null; }
+    updateBkSummary();
+  }).catch(function(){ if(mySeq!==bkPricing.seq) return; bkPricing.pending=false; bkPricing.applied=null; updateBkSummary(); });
 }
 function openBooking(opts){
   buildBookingModal();
   const general=!opts.name;
   bkSubmitting=false; bkResetRequestId();
   if(window.GHAPayments) GHAPayments.unmount();   // re-montaje limpio en cada apertura (sin duplicados)
+  bkPricing.applied=null; bkPricing.pending=false;
   bkState={tourId:opts.tourId||'', name:opts.name||'', price:+opts.price||0, unit:opts.unit||'person', min:+opts.min||1, requiresQuote:!(+opts.price>0)};
   document.getElementById('bkSuccess').classList.remove('show');
   document.getElementById('bkGrid').style.display='';
@@ -428,12 +455,12 @@ function openBooking(opts){
     sel.innerHTML=html; selWrap.style.display='';
     const first=items[0];
     if(first) bkState={tourId:first.tourId, name:first.label, price:first.price, unit:first.unit, min:first.min||1, requiresQuote:false};
-    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={tourId:o.dataset.tourId, name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1, requiresQuote:!(+o.dataset.price>0)}; bkResetRequestId(); syncGuestsMin(); updateBkSummary(); setupPaymentFields(); };
+    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={tourId:o.dataset.tourId, name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1, requiresQuote:!(+o.dataset.price>0)}; bkPricing.applied=null; bkResetRequestId(); syncGuestsMin(); updateBkSummary(); setupPaymentFields(); refreshPricing(); };
   } else { selWrap.style.display='none'; }
   const dt=document.getElementById('bkDate'); dt.min=new Date().toISOString().slice(0,10); dt.value='';
   syncGuestsMin();
   document.getElementById('bkForm').reset(); dt.value=''; syncGuestsMin();
-  applyBookingLang(); updateBkSummary(); setupPaymentFields();
+  applyBookingLang(); updateBkSummary(); setupPaymentFields(); refreshPricing();
   document.getElementById('bkDrop').classList.add('open');
   document.documentElement.style.overflow='hidden';
   setTimeout(()=>{ const f=document.getElementById('bkTravName'); f&&f.focus(); },200);

@@ -11,6 +11,11 @@
     { "source": "/api/admin-booking-qr-rotate", "destination": "/api/admin-router?action=qr-rotate" },
     { "source": "/api/admin-booking-qr-revoke", "destination": "/api/admin-router?action=qr-revoke" },
     { "source": "/api/admin-booking-notifications", "destination": "/api/admin-router?action=booking-notifications" },
-    { "source": "/api/admin-email-retry", "destination": "/api/admin-router?action=email-retry" }
+    { "source": "/api/admin-email-retry", "destination": "/api/admin-router?action=email-retry" },
+    { "source": "/api/admin-finance-settings", "destination": "/api/admin-router?action=finance-settings-list" },
+    { "source": "/api/admin-finance-settings-save", "destination": "/api/admin-router?action=finance-settings-save" },
+    { "source": "/api/admin-discount-rules", "destination": "/api/admin-router?action=discount-rules-list" },
+    { "source": "/api/admin-discount-rule-save", "destination": "/api/admin-router?action=discount-rule-save" },
+    { "source": "/api/admin-discount-rule-toggle", "destination": "/api/admin-router?action=discount-rule-toggle" }
   ]
 }

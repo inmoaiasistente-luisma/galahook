@@ -159,6 +159,51 @@ Mejora pendiente para una fase posterior: endpoint de corrección exclusivo de
 owner/admin con historial de auditoría (motivo del cambio, valores anteriores y
 nuevos, autor y fecha).
 
+## Motor de precios y descuentos configurables (Lote 3)
+
+El importe de una reserva **web** lo calcula un motor único en el servidor
+(`server/lib/pricing-engine.js`). El navegador nunca envía ni decide el total:
+manda `tour_id` + `guests`, y `/api/pricing-preview` (POST, público) devuelve
+solo lo visible — bruto, descuento, total, moneda y etiqueta —, **nunca costos
+ni utilidad**. `create-payment-intent` usa el mismo motor y guarda una fotografía
+en la reserva: `gross_amount_cents`, `discount_cents`, `discount_rule_id`,
+`cost_cents` y `pricing_snapshot`. Cambiar reglas o costos **no** reescribe
+reservas ya creadas; reutilizar el mismo `request_id` conserva el snapshot
+original (no recalcula con una regla nueva).
+
+**El descuento fijo del 20 % se retiró.** Sin regla activa no hay descuento y
+Stripe cobra el bruto. Los descuentos son ahora reglas configurables
+(`public.discount_rules`), y el servidor aplica **UNA** por reserva (nunca
+acumula), eligiéndola así: tour específico antes que global → mayor `priority`
+→ mayor `min_guests` → `created_at` más reciente. Tipos: `percentage` (bps),
+`fixed_total`, `fixed_per_pax`. El descuento se clampa para que el total nunca
+baje de 1 centavo.
+
+**Costos** (`public.tour_financial_settings`): `fixed_cost_cents +
+cost_per_pax_cents × guests`. Si un tour no tiene configuración activa,
+`cost_cents = null` — nunca se asume costo 0.
+
+## Módulo Finanzas y permisos (Lote 3)
+
+`admin.html` tiene una sección **Finanzas / Finance** visible para **owner y
+admin** (staff no la ve en el DOM y recibe **403** en todos los endpoints
+financieros). Muestra ingresos brutos, descuentos, netos, costos conocidos,
+utilidad conocida, margen, ventas, pax, métricas por pax, ventas sin costo, y
+una **tabla por tour**. Cuando hay ventas sin costo configurado, la utilidad se
+marca **parcial** y se informa `missing_cost_sales_count` (no se finge costo 0).
+
+| | Ver Finanzas | Costos | Descuentos |
+|---|:--:|:--:|:--:|
+| **owner** | sí | crear/editar | crear/editar/activar |
+| **admin** | sí | solo ver | solo ver |
+| **staff** | no (403) | no (403) | no (403) |
+
+Endpoints (vía `admin-router`, sin sumar funciones Vercel): `finance-settings-list`
+(GET owner/admin), `finance-settings-save` (POST **owner**), `discount-rules-list`
+(GET owner/admin), `discount-rule-save` (POST **owner**), `discount-rule-toggle`
+(POST **owner**). Las reglas **no se borran**: se activan/desactivan con `active`.
+`payment_status` lo sigue moviendo solo Stripe/webhook.
+
 ## Resumen financiero
 
 `GET /api/admin-finance-summary` — **solo owner y admin**; staff recibe **403**.

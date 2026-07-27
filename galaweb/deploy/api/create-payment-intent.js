@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const { getStripe } = require('../server/lib/stripe');
 const { getSupabase } = require('../server/lib/supabase');
 const catalog = require('../server/lib/tour-catalog');
+const { computeWebPricing } = require('../server/lib/pricing-engine');
 const {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
   isUuid, isEmail, normalizeEmail, isNonEmptyString, isPositiveInt,
@@ -42,13 +43,17 @@ async function fetchByRequestId(supabase, tenant, requestId) {
   return data || null;
 }
 
+/* Detecta si el MISMO request_id se reutiliza con datos DISTINTOS. No
+   compara amount_cents a propósito: el importe se deriva de tour+guests,
+   y si una regla de descuento cambió entre intentos NO es "otro dato" —
+   es la misma solicitud. La reserva conserva su snapshot e importe
+   originales (no se recalcula con la regla nueva). */
 function bookingDataMismatch(row, exp) {
   return row.request_type !== 'booking'
     || row.tour_id !== exp.tour_id
     || String(row.booking_date) !== exp.booking_date
     || row.guests !== exp.guests
-    || row.customer_email !== exp.emailNorm
-    || row.amount_cents !== exp.amountCents;
+    || row.customer_email !== exp.emailNorm;
 }
 
 async function markFailed(supabase, id) {
@@ -99,11 +104,19 @@ module.exports = async function handler(req, res) {
     }
 
     const emailNorm = normalizeEmail(customer_email);
-    const amountCents = catalog.calculateAmountCents(tour, guests);
-    const expected = { tour_id, booking_date, guests, emailNorm, amountCents };
+    const expected = { tour_id, booking_date, guests, emailNorm };
 
     const supabase = getSupabase();
     const stripe = getStripe();
+
+    /* Precio SIEMPRE del motor único (bruto, descuento, total, costo,
+       snapshot). El navegador nunca envía importes. */
+    let pricing;
+    try { pricing = await computeWebPricing({ tenantId: tenant, tourId: tour.id, guests: guests }); }
+    catch (e) {
+      if (e && e.message === 'QUOTE_ONLY') return sendError(res, 400, 'QUOTE_REQUIRED', 'This experience requires a quote request');
+      logServer('pricing', e && e.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to price the booking');
+    }
 
     /* ---- idempotencia por (tenant_id, client_request_id) ---- */
     let row = await fetchByRequestId(supabase, tenant, request_id);
@@ -127,7 +140,12 @@ module.exports = async function handler(req, res) {
           customer_email: emailNorm,
           customer_phone: customer_phone || null,
           notes: notes || null,
-          amount_cents: amountCents,
+          amount_cents: pricing.amountCents,
+          gross_amount_cents: pricing.grossAmountCents,
+          discount_cents: pricing.discountCents,
+          discount_rule_id: pricing.appliedDiscount ? pricing.appliedDiscount.id : null,
+          cost_cents: pricing.costCents,
+          pricing_snapshot: pricing.pricingSnapshot,
           currency: catalog.CURRENCY,
           payment_status: 'pending',
           booking_status: 'pending_payment'
