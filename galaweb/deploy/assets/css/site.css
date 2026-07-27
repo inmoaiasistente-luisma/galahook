@@ -365,6 +365,18 @@ ul{margin:0;padding:0;list-style:none;}
 }
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--sea);box-shadow:0 0 0 3px rgba(28,122,130,.16);}
 .field textarea{resize:vertical;min-height:120px;}
+/* Stripe Elements — contenedores calcados EXACTAMENTE a .field input.
+   Stripe añade la clase .StripeElement (y --focus/--invalid) al mismo nodo. */
+.field .stripe-field,
+.field .StripeElement{
+  width:100%;padding:14px 16px;border:1.5px solid var(--line);border-radius:var(--radius);
+  background:var(--paper);min-height:49px;transition:border .3s,box-shadow .3s;
+}
+.field .StripeElement--focus{border-color:var(--sea);box-shadow:0 0 0 3px rgba(28,122,130,.16);}
+.field .StripeElement--invalid{border-color:#c0392b;}
+.field .StripeElement--webkit-autofill{background:var(--paper)!important;}
+/* Estado "procesando" del botón PAY: discreto, sin cambiar el diseño. */
+#bkPayBtn:disabled{opacity:.7;cursor:default;}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 
 .contact-grid{display:grid;grid-template-columns:1fr 1.05fr;gap:clamp(36px,5vw,72px);align-items:start;}
@@ -373,7 +385,7 @@ ul{margin:0;padding:0;list-style:none;}
 .contact-info li small{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.6;margin-bottom:3px;}
 .contact-info li span{font-size:16px;font-weight:600;}
 
-.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(120%);background:var(--ink);color:var(--paper);padding:15px 26px;border-radius:40px;font-weight:600;z-index:500;box-shadow:var(--shadow);transition:transform .5s var(--ease);}
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(120%);background:var(--ink);color:var(--paper);padding:15px 26px;border-radius:40px;font-weight:600;z-index:2000;box-shadow:var(--shadow);transition:transform .5s var(--ease);}
 .toast.show{transform:translateX(-50%) translateY(0);}
 
 /* ====================================================

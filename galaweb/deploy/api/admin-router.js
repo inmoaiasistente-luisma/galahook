@@ -1,0 +1,80 @@
+'use strict';
+
+/* =========================================================
+   LOAN-IX Booking Engine — router del panel administrativo
+   ---------------------------------------------------------
+   UNA sola Vercel Function para los 11 endpoints admin. Existe por el
+   límite de 12 funciones del plan Hobby: la lógica NO cambió, solo se
+   movió a ../server/admin-handlers/, fuera de /api, para que Vercel no
+   la cuente como funciones independientes.
+
+   Las URLs públicas NO cambian: vercel.json reescribe internamente
+   /api/admin-login → /api/admin-router?action=login, etc. El navegador
+   sigue llamando exactamente a las mismas rutas de siempre.
+
+   SEGURIDAD DEL DESPACHO
+   ----------------------
+   · La tabla ROUTES es ESTÁTICA: los require() son literales resueltos
+     al cargar el módulo. NUNCA se construye una ruta de fichero con
+     texto del navegador, así que no hay forma de cargar un módulo
+     arbitrario ni de escapar del directorio.
+   · Solo se acepta `action` de la query (la que pone el rewrite), y
+     únicamente si es una clave propia de la tabla. Cualquier otra cosa
+     → 404 genérico, sin pistas sobre qué acciones existen.
+   · El router NO autentica ni autoriza: delega req y res intactos al
+     handler, que conserva su propio requireAdmin, sameOrigin, control
+     de método HTTP, cookies y proyecciones por rol. El rol jamás sale
+     de la query: se relee de la base de datos en cada petición.
+   · Sin cabeceras CORS y sin stack traces hacia el cliente.
+   ========================================================= */
+
+const { sendError, logServer } = require('../server/lib/http');
+
+/* Tabla ESTÁTICA acción → handler. Object.create(null) evita que
+   `constructor`, `__proto__` o `toString` resuelvan por herencia. */
+const ROUTES = Object.create(null);
+ROUTES['login'] = require('../server/admin-handlers/login');
+ROUTES['logout'] = require('../server/admin-handlers/logout');
+ROUTES['session'] = require('../server/admin-handlers/session');
+ROUTES['bookings'] = require('../server/admin-handlers/bookings');
+ROUTES['booking-update'] = require('../server/admin-handlers/booking-update');
+ROUTES['agency-booking-create'] = require('../server/admin-handlers/agency-booking-create');
+ROUTES['finance-summary'] = require('../server/admin-handlers/finance-summary');
+ROUTES['qr-rotate'] = require('../server/admin-handlers/qr-rotate');
+ROUTES['qr-revoke'] = require('../server/admin-handlers/qr-revoke');
+ROUTES['booking-notifications'] = require('../server/admin-handlers/booking-notifications');
+ROUTES['email-retry'] = require('../server/admin-handlers/email-retry');
+
+/* Solo de la query. El cuerpo no decide el destino: así un POST no
+   puede apuntar a una acción distinta de la que autorizó el rewrite. */
+function readAction(req) {
+  if (req.query && typeof req.query === 'object' && typeof req.query.action === 'string') {
+    return req.query.action;
+  }
+  try {
+    return new URL(req.url, 'http://localhost').searchParams.get('action') || '';
+  } catch (e) { return ''; }
+}
+
+module.exports = async function handler(req, res) {
+  const action = readAction(req);
+
+  const known = typeof action === 'string' && action !== ''
+    && Object.prototype.hasOwnProperty.call(ROUTES, action);
+  if (!known) return sendError(res, 404, 'NOT_FOUND', 'Not found');
+
+  const target = ROUTES[action];
+  if (typeof target !== 'function') return sendError(res, 404, 'NOT_FOUND', 'Not found');
+
+  try {
+    /* req y res se pasan intactos: cookies, cabeceras, método y cuerpo
+       llegan al handler exactamente como llegaron al router. */
+    return await target(req, res);
+  } catch (err) {
+    logServer('admin-router:' + action, err && err.message);   // nunca el cuerpo
+    if (res.headersSent) return;
+    return sendError(res, 500, 'INTERNAL_ERROR', 'Server error');
+  }
+};
+
+module.exports.ROUTE_NAMES = Object.keys(ROUTES);   // solo para pruebas

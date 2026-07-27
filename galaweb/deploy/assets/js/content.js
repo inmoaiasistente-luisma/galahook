@@ -16,11 +16,18 @@ window.GHA_DEFAULT = {
     addressUs: { en: "12515 Lake Square Cir, Orlando, Florida 32821 · United States", es: "12515 Lake Square Cir, Orlando, Florida 32821 · Estados Unidos" },
     phoneUs: "+1 (407) 000-0000",
     hours: { en: "Mon – Sun · 7:00 AM – 7:00 PM", es: "Lun – Dom · 7:00 AM – 7:00 PM" },
-    /* ---- booking / payments config (see assets/js/payments-README) ---- */
-    notifyEmail: "galahookadventure@outlook.com",   /* where booking emails are sent */
-    stripeKey: "",        /* paste your Stripe publishable key (pk_live_… / pk_test_…) to enable card charges */
-    formEndpoint: "",     /* paste a Formspree endpoint (https://formspree.io/f/xxxx) to receive booking emails without a server */
-    cancelDays: 30        /* free cancellation window */
+    /* ---- LEGADO — NO USAR ----------------------------------------------
+       Los pagos y los correos los gestiona el SERVIDOR con variables de
+       entorno (Stripe, Supabase y Resend). Estos tres campos quedaron sin
+       uso y NO los lee ningún código.
+
+       NUNCA pegues aquí una clave de Stripe ni un endpoint externo: este
+       archivo se sirve al navegador y sería público.
+       -------------------------------------------------------------------- */
+    notifyEmail: "",      /* sin uso — el buzón interno es BOOKING_NOTIFICATION_EMAIL */
+    stripeKey: "",        /* sin uso — la clave publicable la sirve /api/stripe-config */
+    formEndpoint: "",     /* sin uso — los correos salen de Resend en el servidor */
+    cancelDays: 30        /* free cancellation window (sí se usa en los textos) */
   },
 
   hero: {
@@ -296,8 +303,8 @@ window.GHA_DEFAULT = {
     ],
     tripCarousel: ["assets/img/fishing-c1.jpg","assets/img/fishing-c2.jpg","assets/img/fishing-c3.jpg"],
     trips: [
-      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 680 },
-      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 1190 },
+      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 2199 },
+      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 2899 },
       { id: "expedition", name: { en: "Multi-Day Expedition", es: "Expedición de Varios Días" }, duration: { en: "Custom · per boat", es: "Personalizado · por bote" }, price: 0 }
     ],
     /* peak = best fishing months, good = decent */

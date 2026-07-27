@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script>(function(){if(localStorage.getItem('ghk_lock')!=='ok'){location.replace('lock.html?r='+encodeURIComponent(location.pathname.split('/').pop()||'index.html'));}})();</script>
+<!-- Sitio en produccion: sin gate de prelanzamiento. lock.html se conserva como respaldo pero ninguna pagina publica redirige a el. -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tours — Galápagos Hook Adventure</title>
 <meta name="description" content="Ocean tours and island adventures around San Cristóbal: Kicker Rock, 360° tour, diving, snorkeling, highlands and private charters.">
@@ -42,6 +42,8 @@
 <footer class="site-footer" id="site-footer"></footer>
 <script src="assets/js/content.js"></script>
 <script src="assets/js/details.js"></script>
+<script src="https://js.stripe.com/v3/"></script>
+<script src="assets/js/payments.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>

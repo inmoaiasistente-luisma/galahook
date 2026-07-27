@@ -248,7 +248,7 @@ function tourCard(tr){
             : '<small>'+ (L==='es'?'Desde':'From') +'</small><b>'+money(tr.price)+' <em>'+t(tr.priceLabel)+'</em></b>')+'</div>'
         +'<div class="tcard-btns">'
           +(hasDetail?detailBtn('tour', tr.id, 'btn btn-ghost btn-sm', (L==='es'?'Ver más':'More info')):'')
-          +bookBtn(t(tr.name), tr.price, 'person', 'btn '+(quote?'btn-ink':'btn-ink')+' btn-sm', quote?(L==='es'?'Cotizar':'Get Quote'):(L==='es'?'Reservar':'Book'))
+          +bookBtn(t(tr.name), tr.price, 'person', 'btn '+(quote?'btn-ink':'btn-ink')+' btn-sm', quote?(L==='es'?'Cotizar':'Get Quote'):(L==='es'?'Reservar':'Book'), 1, tr.id)
         +'</div>'
       +'</div>'
     +'</div>'
@@ -260,18 +260,42 @@ function bookMsg(name){ return (L==='es'?'¡Hola! Me interesa el tour "':'Hi! I\
    BOOKING / CHECKOUT  (choose dates + pay by card)
    ==================================================== */
 function esc(s){ return String(s==null?'':s).replace(/"/g,'&quot;'); }
-function bookBtn(name, price, unit, cls, label, min){
-  return '<button type="button" class="'+cls+' js-book" data-name="'+esc(name)+'" data-price="'+(price||0)+'" data-unit="'+unit+'" data-min="'+(min||1)+'">'+label+'</button>';
+function bookBtn(name, price, unit, cls, label, min, tourId){
+  return '<button type="button" class="'+cls+' js-book" data-name="'+esc(name)+'" data-price="'+(price||0)+'" data-unit="'+unit+'" data-min="'+(min||1)+'" data-tour-id="'+esc(tourId||'')+'">'+label+'</button>';
 }
 function bookables(){
   const PK=L==='es'?'Paquetes':'Packages', TO=L==='es'?'Tours':'Tours', FI=L==='es'?'Pesca deportiva':'Sport fishing';
   const out=[];
-  S.packages.forEach(p=>{ if(p.price) out.push({label:t(p.name)+' · '+t(p.days), price:p.price, unit:'person', min:(p.minGuests||2), group:PK}); });
-  S.tours.forEach(tr=>{ if(tr.price) out.push({label:t(tr.name), price:tr.price, unit:'person', min:1, group:TO}); });
-  S.fishing.trips.forEach(tr=>{ if(tr.price) out.push({label:t(tr.name), price:tr.price, unit:'boat', min:1, group:FI}); });
+  S.packages.forEach(p=>{ if(p.price) out.push({tourId:p.id, label:t(p.name)+' · '+t(p.days), price:p.price, unit:'person', min:(p.minGuests||2), requiresQuote:false, group:PK}); });
+  S.tours.forEach(tr=>{ if(tr.price) out.push({tourId:tr.id, label:t(tr.name), price:tr.price, unit:'person', min:1, requiresQuote:false, group:TO}); });
+  S.fishing.trips.forEach(tr=>{ if(tr.price) out.push({tourId:tr.id, label:t(tr.name), price:tr.price, unit:'boat', min:1, requiresQuote:false, group:FI}); });
   return out;
 }
-let bkState={name:'',price:0,unit:'person',min:1};
+let bkState={tourId:'',name:'',price:0,unit:'person',min:1,requiresQuote:false};
+/* ---- idempotencia del formulario (Fase 3) ---- */
+let bkRequestId=null, bkFingerprint=null, bkSubmitting=false;
+function bkUuid(){
+  try{ if(window.crypto && crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
+  const b=new Uint8Array(16);
+  try{ crypto.getRandomValues(b); }catch(e){ for(let i=0;i<16;i++) b[i]=Math.floor(Math.random()*256); }
+  b[6]=(b[6]&0x0f)|0x40; b[8]=(b[8]&0x3f)|0x80;
+  const h=[]; for(let i=0;i<16;i++) h.push(b[i].toString(16).padStart(2,'0'));
+  return h[0]+h[1]+h[2]+h[3]+'-'+h[4]+h[5]+'-'+h[6]+h[7]+'-'+h[8]+h[9]+'-'+h[10]+h[11]+h[12]+h[13]+h[14]+h[15];
+}
+function bkNormEmail(e){ return String(e||'').trim().toLowerCase(); }
+function bkComputeFingerprint(){
+  const dt=(document.getElementById('bkDate')||{}).value||'';
+  const guests=Math.max(bkState.min||1, parseInt(((document.getElementById('bkGuests')||{}).value||'1'),10));
+  const email=bkNormEmail((document.getElementById('bkTravEmail')||{}).value);
+  return [bkState.tourId||'', dt, guests, email].join('|');
+}
+/* Reutiliza el request_id salvo que cambien tour/fecha/guests/email → entonces genera uno nuevo */
+function bkEnsureRequestId(){
+  const fp=bkComputeFingerprint();
+  if(!bkRequestId || fp!==bkFingerprint){ bkRequestId=bkUuid(); bkFingerprint=fp; }
+  return bkRequestId;
+}
+function bkResetRequestId(){ bkRequestId=null; bkFingerprint=null; }
 function fmtDate(s){ if(!s) return '—'; const d=new Date(s+'T00:00'); return d.toLocaleDateString(L==='es'?'es-ES':'en-US',{weekday:'short',day:'numeric',month:'short',year:'numeric'}); }
 function money2(n){ return '$'+Number(n).toLocaleString('en-US'); }
 
@@ -309,13 +333,14 @@ function buildBookingModal(){
        +'<div class="bk-pay" id="bkPay">'
          +'<h4 id="bkPayTitle">'+svg('shield')+'Payment</h4>'
          +'<div class="bk-cards"><span>VISA</span><span>Mastercard</span><span>Amex</span></div>'
-         +'<div class="field"><label id="bkLabCardName">Cardholder name</label><input id="bkCardName"></div>'
-         +'<div class="field"><label id="bkLabCardNum">Card number</label><input id="bkCardNum" inputmode="numeric" autocomplete="cc-number" placeholder="1234 5678 9012 3456"></div>'
+         +'<div class="field"><label id="bkLabCardName">Cardholder name</label><input id="bkCardName" autocomplete="cc-name"></div>'
+         // Stripe Elements individuales (mismos huecos/estilo que los inputs). Los datos de tarjeta viven solo en los iframes de Stripe.
+         +'<div class="field"><label id="bkLabCardNum">Card number</label><div id="bkCardNumber" class="stripe-field"></div></div>'
          +'<div class="form-row">'
-           +'<div class="field"><label id="bkLabExp2">Expiry</label><input id="bkCardExp" inputmode="numeric" placeholder="MM/YY"></div>'
-           +'<div class="field"><label>CVC</label><input id="bkCardCvc" inputmode="numeric" placeholder="123"></div>'
+           +'<div class="field"><label id="bkLabExp2">Expiry</label><div id="bkCardExpiry" class="stripe-field"></div></div>'
+           +'<div class="field"><label>CVC</label><div id="bkCardCvc" class="stripe-field"></div></div>'
          +'</div>'
-         +'<div class="field"><label id="bkLabZip">Billing ZIP / Postal code</label><input id="bkZip"></div>'
+         +'<div class="field"><label id="bkLabZip">Billing ZIP / Postal code</label><input id="bkZip" autocomplete="postal-code"></div>'
        +'</div>'
        +'<div class="field" id="bkMsgWrap" style="display:none"><label id="bkLabMsg">Your message</label><textarea id="bkMsg"></textarea></div>'
        +'<button type="submit" class="btn btn-gold btn-block" id="bkPayBtn" style="margin-top:6px">Pay</button>'
@@ -337,11 +362,7 @@ function buildBookingModal(){
   d.querySelector('#bkDone').addEventListener('click',closeBooking);
   d.querySelector('#bkGuests').addEventListener('input',updateBkSummary);
   d.querySelector('#bkDate').addEventListener('change',updateBkSummary);
-  // card formatting
-  const num=d.querySelector('#bkCardNum'), exp=d.querySelector('#bkCardExp'), cvc=d.querySelector('#bkCardCvc');
-  num.addEventListener('input',()=>{ let v=num.value.replace(/\D/g,'').slice(0,16); num.value=v.replace(/(.{4})/g,'$1 ').trim(); });
-  exp.addEventListener('input',()=>{ let v=exp.value.replace(/\D/g,'').slice(0,4); if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2); exp.value=v; });
-  cvc.addEventListener('input',()=>{ cvc.value=cvc.value.replace(/\D/g,'').slice(0,4); });
+  // Los campos de tarjeta son Stripe Elements — formateo/validación los maneja Stripe (ver setupPaymentFields).
   d.querySelector('#bkForm').addEventListener('submit',e=>{ e.preventDefault(); submitBooking(); });
   document.addEventListener('keydown',e=>{ if(e.key==='Escape' && d.classList.contains('open')) closeBooking(); });
 }
@@ -356,7 +377,7 @@ function applyBookingLang(){
   set('bkLabCardName', es?'Nombre en la tarjeta':'Cardholder name'); set('bkLabCardNum', es?'Número de tarjeta':'Card number'); set('bkLabExp2', es?'Vencimiento':'Expiry'); set('bkLabZip', es?'Código postal de facturación':'Billing ZIP / Postal code');
   set('bkLabMsg', es?'Tu mensaje':'Your message');
   const pt=document.getElementById('bkPayTitle'); if(pt) pt.innerHTML=svg('shield')+(es?'Pago':'Payment');
-  set('bkSecure', es?'🔒 Pago seguro · demo — no se realiza ningún cargo real':'🔒 Secured checkout · demo — no real charge is made');
+  set('bkSecure', es?'🔒 Pago seguro · procesado por Stripe':'🔒 Secure checkout · powered by Stripe');
 }
 function updateBkSummary(){
   if(!document.getElementById('bkDrop')) return;
@@ -381,7 +402,8 @@ function updateBkSummary(){
   document.getElementById('bkMsgWrap').style.display=request?'':'none';
   document.getElementById('bkSecure').style.display=request?'none':'';
   document.getElementById('bkSumGuestsRow').style.display=bkState.unit==='boat'?'none':'';
-  document.getElementById('bkPayBtn').textContent= request?(es?'Enviar solicitud':'Send request'):((es?'Pagar ':'Pay ')+money2(total));
+  const pb=document.getElementById('bkPayBtn'); pb.disabled=false; if(pb.dataset.idle) delete pb.dataset.idle;
+  pb.textContent= request?(es?'Enviar solicitud':'Send request'):((es?'Pagar ':'Pay ')+money2(total));
 }
 /* Group promo: packages (person-unit, min ≥ 2) get 20% off the whole group when 3+ travelers book */
 function bkTotal(guests){
@@ -392,81 +414,174 @@ function bkTotal(guests){
 function openBooking(opts){
   buildBookingModal();
   const general=!opts.name;
-  bkState={name:opts.name||'', price:+opts.price||0, unit:opts.unit||'person', min:+opts.min||1};
+  bkSubmitting=false; bkResetRequestId();
+  if(window.GHAPayments) GHAPayments.unmount();   // re-montaje limpio en cada apertura (sin duplicados)
+  bkState={tourId:opts.tourId||'', name:opts.name||'', price:+opts.price||0, unit:opts.unit||'person', min:+opts.min||1, requiresQuote:!(+opts.price>0)};
   document.getElementById('bkSuccess').classList.remove('show');
   document.getElementById('bkGrid').style.display='';
   const selWrap=document.getElementById('bkSelectWrap'), sel=document.getElementById('bkSelect');
   if(general){
     const items=bookables();
     let html='', lastG=null;
-    items.forEach((it,i)=>{ if(it.group!==lastG){ if(lastG!==null)html+='</optgroup>'; html+='<optgroup label="'+it.group+'">'; lastG=it.group; } html+='<option value="'+i+'" data-price="'+it.price+'" data-unit="'+it.unit+'" data-min="'+(it.min||1)+'">'+it.label+' — '+money2(it.price)+'</option>'; });
+    items.forEach((it)=>{ if(it.group!==lastG){ if(lastG!==null)html+='</optgroup>'; html+='<optgroup label="'+it.group+'">'; lastG=it.group; } html+='<option value="'+esc(it.tourId)+'" data-tour-id="'+esc(it.tourId)+'" data-price="'+it.price+'" data-unit="'+it.unit+'" data-min="'+(it.min||1)+'">'+it.label+' — '+money2(it.price)+'</option>'; });
     if(lastG!==null)html+='</optgroup>';
     sel.innerHTML=html; selWrap.style.display='';
     const first=items[0];
-    if(first) bkState={name:first.label, price:first.price, unit:first.unit, min:first.min||1};
-    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1}; syncGuestsMin(); updateBkSummary(); };
+    if(first) bkState={tourId:first.tourId, name:first.label, price:first.price, unit:first.unit, min:first.min||1, requiresQuote:false};
+    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={tourId:o.dataset.tourId, name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1, requiresQuote:!(+o.dataset.price>0)}; bkResetRequestId(); syncGuestsMin(); updateBkSummary(); setupPaymentFields(); };
   } else { selWrap.style.display='none'; }
   const dt=document.getElementById('bkDate'); dt.min=new Date().toISOString().slice(0,10); dt.value='';
   syncGuestsMin();
   document.getElementById('bkForm').reset(); dt.value=''; syncGuestsMin();
-  applyBookingLang(); updateBkSummary();
+  applyBookingLang(); updateBkSummary(); setupPaymentFields();
   document.getElementById('bkDrop').classList.add('open');
   document.documentElement.style.overflow='hidden';
   setTimeout(()=>{ const f=document.getElementById('bkTravName'); f&&f.focus(); },200);
 }
-function closeBooking(){ const d=document.getElementById('bkDrop'); if(d) d.classList.remove('open'); document.documentElement.style.overflow=''; }
+/* Monta los Stripe Elements solo para experiencias pagables; los desmonta en cotizaciones. */
+function setupPaymentFields(){
+  const P=window.GHAPayments; if(!P) return;
+  if(bkState.requiresQuote){ P.unmount(); return; }
+  if(P.ready()) return;
+  P.mount({number:'bkCardNumber', expiry:'bkCardExpiry', cvc:'bkCardCvc'}).catch(function(){ /* sin exponer detalles */ });
+}
+function closeBooking(){ const d=document.getElementById('bkDrop'); if(d) d.classList.remove('open'); document.documentElement.style.overflow=''; bkSubmitting=false; if(window.GHAPayments) GHAPayments.unmount(); }
 function syncGuestsMin(){
   const g=document.getElementById('bkGuests'); if(!g) return;
   const min=bkState.min||1; g.min=min;
   let v=parseInt(g.value||'0',10); if(!v||v<min) v=Math.max(min,2); g.value=v;
 }
-/* Save every booking/request locally (Admin → Messages reads this) + optional email via Formspree */
-function recordBooking(data){
-  try{ const arr=JSON.parse(localStorage.getItem('GHA_MESSAGES')||'[]'); arr.unshift(data); localStorage.setItem('GHA_MESSAGES', JSON.stringify(arr.slice(0,300))); }catch(e){}
-  sendNotification(data);
+/* Las reservas viven ÚNICAMENTE en Supabase y los correos los envía el
+   servidor con Resend. Aquí ya no se guarda nada en localStorage ni se
+   envían datos del cliente a servicios de terceros desde el navegador.
+   (Las antiguas recordBooking/sendNotification —GHA_MESSAGES + Formspree—
+   quedaron sin uso al conectar el backend y se retiraron.) */
+/* ---- estado del botón PAY (procesando) ---- */
+function setPayBusy(busy){
+  const btn=document.getElementById('bkPayBtn'); if(!btn) return; const es=L==='es';
+  if(busy){ if(!btn.dataset.idle) btn.dataset.idle=btn.textContent; btn.disabled=true;
+    btn.textContent=bkState.requiresQuote?(es?'Enviando…':'Sending…'):(es?'Procesando el pago…':'Processing payment…'); }
+  else{ btn.disabled=false; if(btn.dataset.idle){ btn.textContent=btn.dataset.idle; delete btn.dataset.idle; } }
 }
-function sendNotification(data){
-  const ep=S.meta.formEndpoint; if(!ep) return; // paste a Formspree endpoint in Admin → Site to receive emails (no server needed)
-  const body={ _subject:'New '+data.type+' — Galápagos Hook Adventure', _replyto:data.email, recipient:S.meta.notifyEmail,
-    traveler:data.name, email:data.email, experience:data.experience, travel_date:data.date, guests:data.guests,
-    total:data.total?('$'+data.total):'Custom quote', status:data.status, card_last4:data.card||'', message:data.message||'' };
-  try{ fetch(ep,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)}); }catch(e){}
+function bkPost(url, payload){
+  return fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload)})
+    .then(function(res){ return res.json().catch(function(){return {};}).then(function(data){ return {ok:res.ok,status:res.status,data:data}; }); });
 }
-function submitBooking(){
+function bkErrorMessage(code, es){
+  switch(code){
+    case 'PAYMENT_ATTEMPT_CANCELED': return es?'Ese intento se canceló. Vuelve a intentarlo.':'That attempt was canceled. Please try again.';
+    case 'PAYMENT_ATTEMPT_FAILED':   return es?'El intento anterior falló. Vuelve a intentarlo.':'The previous attempt failed. Please try again.';
+    case 'REQUEST_ID_CONFLICT':      return es?'Los datos cambiaron. Vuelve a intentarlo.':'The details changed. Please try again.';
+    case 'INVALID_EMAIL':            return es?'Revisa el correo.':'Please check the email.';
+    case 'INVALID_DATE': case 'DATE_IN_PAST': return es?'Revisa la fecha del viaje.':'Please check the travel date.';
+    case 'GUESTS_BELOW_MIN':         return es?'No alcanza el mínimo de viajeros.':'Below the minimum number of travelers.';
+    case 'GUESTS_TOO_MANY':          return es?'Demasiados viajeros.':'Too many travelers.';
+    case 'QUOTE_REQUIRED':           return es?'Esta experiencia es por cotización.':'This experience is quote-only.';
+    case 'PAYMENT_REQUIRED':         return es?'Esta experiencia requiere pago.':'This experience requires payment.';
+    case 'INTERNAL_ERROR': case 'CONFIG_UNAVAILABLE': return normalizeStripeError({type:'api_error'}, es);
+    default:                         return es?'No se pudo completar. Intenta de nuevo.':'Could not complete. Please try again.';
+  }
+}
+function handleBkError(r, es){
+  const code=r.data && r.data.error;
+  if(code==='PAYMENT_ATTEMPT_FAILED'||code==='PAYMENT_ATTEMPT_CANCELED'||code==='REQUEST_ID_CONFLICT') bkResetRequestId();
+  GHA.toast(bkErrorMessage(code, es));
+}
+/* Normalización central de errores de Stripe → mensajes claros para el cliente.
+   Nunca expone error.message, códigos internos, ids, claves ni detalles técnicos. */
+function normalizeStripeError(err, es){
+  const M={
+    declined: es?'Tu tarjeta fue rechazada. Intenta con otra tarjeta.':'Your card was declined. Please try another card.',
+    invalid:  es?'Revisa la información de tu tarjeta.':'Please review your card information.',
+    funds:    es?'Tu tarjeta no tiene fondos suficientes. Intenta con otro método de pago.':'Your card has insufficient funds. Please try another payment method.',
+    network:  es?'No pudimos conectarnos con el servicio de pago. Inténtalo nuevamente.':'We could not connect to the payment service. Please try again.',
+    auth:     es?'No pudimos autenticar este pago. Inténtalo nuevamente.':'We could not authenticate this payment. Please try again.',
+    config:   es?'El servicio de pago no está disponible temporalmente. Inténtalo nuevamente en unos momentos.':'The payment service is temporarily unavailable. Please try again shortly.',
+    unknown:  es?'No pudimos procesar tu pago. Inténtalo nuevamente o utiliza otra tarjeta.':'We could not process your payment. Please try again or use another card.'
+  };
+  if(!err) return M.unknown;
+  const type=err.type||'', code=err.code||'', decline=err.declineCode||err.decline_code||'';
+  if(err.__network || type==='api_connection_error') return M.network;
+  if(decline==='insufficient_funds') return M.funds;
+  if(code==='card_declined') return M.declined;
+  if(type==='validation_error' || /incomplete|invalid_number|invalid_expiry|invalid_cvc|incomplete_zip/.test(code)) return M.invalid;
+  if(code==='payment_intent_authentication_failure' || /authentication/.test(code)) return M.auth;
+  if(type==='api_error' || type==='invalid_request_error') return M.config;
+  return M.unknown;
+}
+/* ---- pantallas de éxito (usan datos confirmados por el backend) ---- */
+function bkShowSuccessShell(){ document.getElementById('bkGrid').style.display='none'; document.getElementById('bkSuccess').classList.add('show'); const m=document.querySelector('.bkmodal'); if(m) m.scrollTop=0; }
+function bkRenderRecap(data, dt, guests, es, showAmount, amountLabel){
+  const code=data&&data.bookingCode?data.bookingCode:''; const tourName=data&&data.tourName?data.tourName:bkState.name;
+  let recap='<div><span>'+(es?'Código':'Code')+'</span><b>'+esc(code)+'</b></div>'
+    +'<div><span>'+(es?'Experiencia':'Experience')+'</span><b>'+esc(tourName)+'</b></div>'
+    +'<div><span>'+(es?'Fecha':'Date')+'</span><b>'+fmtDate(dt)+'</b></div>'
+    +(bkState.unit==='person'?'<div><span>'+(es?'Viajeros':'Guests')+'</span><b>'+guests+'</b></div>':'');
+  if(showAmount && data && typeof data.amountCents==='number') recap+='<div class="tot"><span>'+amountLabel+'</span><b>'+money2(Math.round(data.amountCents/100))+'</b></div>';
+  document.getElementById('bkRecap').innerHTML=recap;
+}
+function showPaidSuccess(data, name, email, dt, guests, es){
+  bkShowSuccessShell();
+  document.getElementById('bkSucTitle').textContent= es?'¡Reserva confirmada!':'Booking confirmed!';
+  document.getElementById('bkSucMsg').textContent= es?'Tu reserva está confirmada. Recibirás en breve un correo con tu código QR.':'Your booking is confirmed. A confirmation email with your QR code will arrive shortly.';
+  bkRenderRecap(data, dt, guests, es, true, es?'Pagado':'Paid');
+}
+function showProcessing(data, name, email, dt, guests, es){
+  bkShowSuccessShell();
+  document.getElementById('bkSucTitle').textContent= es?'Pago en procesamiento':'Payment processing';
+  document.getElementById('bkSucMsg').textContent= es?'Tu pago se está procesando. Guarda tu código de reserva; confirmaremos tu reserva en breve.':'Your payment is processing. Save your booking code — we\'ll confirm your booking shortly.';
+  bkRenderRecap(data, dt, guests, es, true, es?'Importe':'Amount');
+}
+function showQuoteSuccess(data, name, email, dt, guests, es){
+  bkShowSuccessShell();
+  document.getElementById('bkSucTitle').textContent= es?'¡Solicitud recibida!':'Request received!';
+  document.getElementById('bkSucMsg').textContent= es?'Recibimos tu solicitud. Recibirás un correo de confirmación en breve.':'We received your request. A confirmation email will arrive shortly.';
+  bkRenderRecap(data, dt, guests, es, false, '');
+}
+async function submitBooking(){
+  if(bkSubmitting) return;                       // evita doble clic / envíos concurrentes
   const es=L==='es';
   const name=document.getElementById('bkTravName').value.trim();
   const email=document.getElementById('bkTravEmail').value.trim();
   const dt=document.getElementById('bkDate').value;
   if(!name||!email||!dt){ GHA.toast(es?'Completa nombre, correo y fecha':'Please add name, email and date'); return; }
-  const request=!(bkState.price>0);
-  if(!request){
-    const num=document.getElementById('bkCardNum').value.replace(/\s/g,'');
-    const exp=document.getElementById('bkCardExp').value;
-    const cvc=document.getElementById('bkCardCvc').value;
-    if(num.length<13){ GHA.toast(es?'Revisa el número de tarjeta':'Check the card number'); return; }
-    if(!/^\d{2}\/\d{2}$/.test(exp)){ GHA.toast(es?'Revisa el vencimiento (MM/AA)':'Check the expiry (MM/YY)'); return; }
-    if(cvc.length<3){ GHA.toast(es?'Revisa el CVC':'Check the CVC'); return; }
-  }
   const guests=Math.max(bkState.min||1, parseInt((document.getElementById('bkGuests').value||'1'),10));
-  const total=bkTotal(guests).total;
-  document.getElementById('bkGrid').style.display='none';
-  const suc=document.getElementById('bkSuccess'); suc.classList.add('show');
-  document.getElementById('bkSucTitle').textContent= request?(es?'¡Solicitud recibida!':'Request received!'):(es?'¡Reserva confirmada!':'Booking confirmed!');
-  document.getElementById('bkSucMsg').textContent= request
-    ? (es?'Gracias, '+name+'. Te enviaremos una cotización personalizada a '+email+' muy pronto.':'Thanks, '+name+'. We\'ll email a custom quote to '+email+' shortly.')
-    : (es?'¡Gracias, '+name+'! Enviamos la confirmación a '+email+'. Nos vemos en San Cristóbal.':'Thank you, '+name+'! A confirmation is on its way to '+email+'. See you in San Cristóbal.');
-  let recap='<div><span>'+(es?'Experiencia':'Experience')+'</span><b>'+bkState.name+'</b></div>'
-    +'<div><span>'+(es?'Fecha':'Date')+'</span><b>'+fmtDate(dt)+'</b></div>'
-    +(bkState.unit==='person'?'<div><span>'+(es?'Viajeros':'Guests')+'</span><b>'+guests+'</b></div>':'');
-  if(!request) recap+='<div class="tot"><span>'+(es?'Pagado':'Paid')+'</span><b>'+money2(total)+'</b></div>';
-  document.getElementById('bkRecap').innerHTML=recap;
-  /* STRIPE: with S.meta.stripeKey + Stripe.js + a small backend to create a PaymentIntent,
-     replace this demo confirmation with a real charge. See assets/PAYMENTS-README.txt */
-  const last4=request?'':document.getElementById('bkCardNum').value.replace(/\D/g,'').slice(-4);
-  recordBooking({ ts:Date.now(), type:request?'request':'booking', status:request?'quote':'paid', name:name, email:email,
-    experience:bkState.name, date:dt, guests:(bkState.unit==='person'?guests:1), unit:bkState.unit,
-    total:request?0:total, card:last4, message:(document.getElementById('bkMsg')?document.getElementById('bkMsg').value.trim():'') });
-  document.querySelector('.bkmodal').scrollTop=0;
+  const notesEl=document.getElementById('bkMsg'); const notes=notesEl&&notesEl.value?notesEl.value.trim():'';
+
+  // Solo tour_id / fecha / guests / datos de contacto van al backend. NUNCA amount/price/total ni datos de tarjeta.
+  const payload={ request_id:bkEnsureRequestId(), tour_id:bkState.tourId, booking_date:dt, guests:guests, customer_name:name, customer_email:email };
+  if(notes) payload.notes=notes;
+
+  bkSubmitting=true; setPayBusy(true);
+
+  /* ---------- COTIZACIÓN (private / expedition) ---------- */
+  if(bkState.requiresQuote){
+    try{
+      const r=await bkPost('/api/quote-request', payload);
+      if(!r.ok){ handleBkError(r, es); bkSubmitting=false; setPayBusy(false); return; }
+      showQuoteSuccess(r.data, name, email, dt, guests, es); bkSubmitting=false;
+    }catch(e){ GHA.toast(normalizeStripeError({__network:true}, es)); bkSubmitting=false; setPayBusy(false); }
+    return;
+  }
+
+  /* ---------- PAGO (create-payment-intent + Stripe Elements) ---------- */
+  if(!(window.GHAPayments && GHAPayments.ready())){
+    GHA.toast(normalizeStripeError({type:'api_error'}, es)); bkSubmitting=false; setPayBusy(false); return;
+  }
+  try{
+    const r=await bkPost('/api/create-payment-intent', payload);
+    if(!r.ok){ handleBkError(r, es); bkSubmitting=false; setPayBusy(false); return; }
+    const data=r.data;
+    if(data.alreadyPaid){ showPaidSuccess(data, name, email, dt, guests, es); bkSubmitting=false; return; }  // ya pagado → no recobrar
+    if(!data.clientSecret){ GHA.toast(es?'Respuesta inválida del servidor.':'Invalid server response.'); bkSubmitting=false; setPayBusy(false); return; }
+    const billing={ name:(document.getElementById('bkCardName').value||name).trim(), email:email, address:{ postal_code:(document.getElementById('bkZip').value||'').trim()||undefined } };
+    const result=await GHAPayments.confirmCardPayment(data.clientSecret, billing);
+    if(result.error){ GHA.toast(normalizeStripeError(result.error, es)); bkSubmitting=false; setPayBusy(false); return; } // tarjeta rechazada → mismo request_id, PAY reactivado
+    const pi=result.paymentIntent;
+    if(pi && pi.status==='succeeded'){ showPaidSuccess(data, name, email, dt, guests, es); bkSubmitting=false; return; }
+    if(pi && pi.status==='processing'){ showProcessing(data, name, email, dt, guests, es); bkSubmitting=false; return; }
+    GHA.toast(es?'El pago no se completó.':'Payment was not completed.'); bkSubmitting=false; setPayBusy(false);
+  }catch(e){ GHA.toast(es?'Error de conexión. Intenta de nuevo.':'Connection error. Please try again.'); bkSubmitting=false; setPayBusy(false); }
 }
 
 /* ====================================================
@@ -531,7 +646,7 @@ function openDetail(type, id){
       +'<div class="dt-price'+(quote?' quote':'')+'">'+priceHTML+'</div>'
       +((type==='package'&&S.pkgPromo)?'<div class="dt-promo">'+svg('tag')+'<span>'+t(S.pkgPromo.line)+'</span></div>':'')
       +factsHTML
-      +bookBtn(t(src.name)+(type==='package'?' · '+t(src.days):''), src.price, type==='package'?'person':(quote?'boat':'person'), 'btn btn-gold btn-block', bookLabel, (type==='package'?(src.minGuests||2):1))
+      +bookBtn(t(src.name)+(type==='package'?' · '+t(src.days):''), src.price, type==='package'?'person':(quote?'boat':'person'), 'btn btn-gold btn-block', bookLabel, (type==='package'?(src.minGuests||2):1), src.id)
       +'<a class="btn btn-ghost btn-block" href="'+waHref+'" target="_blank" rel="noopener" style="margin-top:10px">'+svg('wa')+(es?'Preguntar por WhatsApp':'Ask on WhatsApp')+'</a>'
     +'</div></aside></div>';
   document.getElementById('dtDrop').classList.add('open');
@@ -577,7 +692,7 @@ function pkgCard(p){
     +'<ul class="pkg-includes">'+p.includes.map(i=>'<li>'+svg('check')+'<span>'+t(i)+'</span></li>').join('')+'</ul>'
     +'<div class="pkg-foot">'
       +(hasDetail?detailBtn('package', p.id, 'btn btn-ghost btn-block', (L==='es'?'Ver itinerario':'View itinerary')):'')
-      +bookBtn(t(p.name)+' · '+t(p.days), p.price, 'person', 'btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block', (onIndex?(L==='es'?'Consultar':'Enquire'):(L==='es'?'Reservar este viaje':'Book this journey')), (p.minGuests||2))
+      +bookBtn(t(p.name)+' · '+t(p.days), p.price, 'person', 'btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block', (onIndex?(L==='es'?'Consultar':'Enquire'):(L==='es'?'Reservar este viaje':'Book this journey')), (p.minGuests||2), p.id)
     +'</div>'
   +'</article>';
 }
@@ -600,8 +715,10 @@ function renderFishing(){
     const car=(f.tripCarousel&&f.tripCarousel.length)?f.tripCarousel:[];
     const carHTML=car.length?('<div class="trip-car" data-trip-car>'+car.map((src,k)=>'<div class="trip-car-slide'+(k===0?' on':'')+'" style="background-image:url('+src+')"></div>').join('')+'<div class="trip-car-dots">'+car.map((_,k)=>'<span class="'+(k===0?'on':'')+'"></span>').join('')+'</div></div>'):'';
     return '<article class="pkg reveal">'+carHTML+'<div class="pkg-head"><span class="days">'+t(tr.name)+'</span><div class="nights" style="margin-top:6px">'+t(tr.duration)+'</div></div>'
-      +'<div class="pkg-price quote"><small>'+(L==='es'?'Precio':'Price')+'</small><b style="font-size:18px">'+(L==='es'?'Pregunta por tu pesca':'Ask about your trip')+'</b></div>'
-      +'<div class="pkg-foot" style="padding-top:8px">'+bookBtn(t(tr.name), 0, 'boat', 'btn btn-gold btn-block', (L==='es'?'Pedir cotización':'Get Quote'))+'</div></article>';
+      +(tr.price
+          ? '<div class="pkg-price"><small>'+(L==='es'?'Desde':'From')+'</small><b>'+money(tr.price)+'</b><em>/ '+(L==='es'?'bote':'boat')+'</em></div>'
+          : '<div class="pkg-price quote"><small>'+(L==='es'?'Precio':'Price')+'</small><b style="font-size:18px">'+(L==='es'?'Pregunta por tu pesca':'Ask about your trip')+'</b></div>')
+      +'<div class="pkg-foot" style="padding-top:8px">'+bookBtn(t(tr.name), tr.price, 'boat', 'btn btn-gold btn-block', (tr.price?(L==='es'?'Reservar':'Book'):(L==='es'?'Pedir cotización':'Get Quote')), 1, tr.id)+'</div></article>';
   }).join('');
   initTripCarousels();
   const cal=document.getElementById('fishCalendar');
@@ -696,7 +813,8 @@ function initForms(){
 let toastTimer;
 function toast(msg){
   let el=document.querySelector('.toast');
-  if(!el){ el=document.createElement('div'); el.className='toast'; document.body.appendChild(el); }
+  // Se monta directamente en document.body (hermano del modal) para no quedar atrapado en su stacking context.
+  if(!el){ el=document.createElement('div'); el.className='toast'; el.setAttribute('role','alert'); el.setAttribute('aria-live','assertive'); document.body.appendChild(el); }
   el.textContent=msg; requestAnimationFrame(()=>el.classList.add('show'));
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),3200);
 }
@@ -742,7 +860,7 @@ function init(){
     const b=e.target.closest('.js-book'); if(!b) return;
     e.preventDefault();
     closeDetail();
-    openBooking({name:b.dataset.name, price:b.dataset.price, unit:b.dataset.unit, min:b.dataset.min});
+    openBooking({name:b.dataset.name, price:b.dataset.price, unit:b.dataset.unit, min:b.dataset.min, tourId:b.dataset.tourId});
   });
   // open the detail modal from any More-info button or card media
   document.addEventListener('click',e=>{
