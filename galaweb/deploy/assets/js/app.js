@@ -718,9 +718,13 @@ function renderFishing(){
        sin "/ bote". Se mantiene imagen, título y duración; una etiqueta
        compacta ocupa el lugar del precio para no dejar un hueco grande. */
     return '<article class="pkg reveal">'+carHTML+'<div class="pkg-head"><span class="days">'+t(tr.name)+'</span><div class="nights" style="margin-top:6px">'+t(tr.duration)+'</div></div>'
+      /* Mismo tratamiento OSCURO de alto contraste que las tarjetas con
+         precio (que se leen sin problema): eyebrow "PRECIO/PRICE" y valor
+         "Bajo cotización/On request" en el texto oscuro de la tarjeta.
+         Sin colores suaves (gold/teal) que quedaban poco legibles. */
       +'<div class="pkg-price quote">'
-        +'<small style="color:var(--gold-deep)">'+(L==='es'?'Precio':'Price')+'</small>'
-        +'<b style="font-size:21px;color:var(--sea-deep)">'+(L==='es'?'Bajo cotización':'On request')+'</b>'
+        +'<small style="color:var(--ink-soft)">'+(L==='es'?'Precio':'Price')+'</small>'
+        +'<b style="font-size:22px;color:var(--ink)">'+(L==='es'?'Bajo cotización':'On request')+'</b>'
       +'</div>'
       +'<div class="pkg-foot" style="padding-top:8px">'+bookBtn(t(tr.name), 0, 'boat', 'btn btn-gold btn-block', (L==='es'?'SOLICITAR COTIZACIÓN':'GET A QUOTE'), 1, tr.id)+'</div></article>';
   }).join('');
