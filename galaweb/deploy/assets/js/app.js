@@ -309,6 +309,11 @@ function buildBookingModal(){
   d.innerHTML=
    '<div class="bkmodal" role="dialog" aria-modal="true" aria-label="Booking">'
    +'<button class="bk-close" id="bkClose" aria-label="Close">&times;</button>'
+   // Marca oficial Hook Adventure: logo en la esquina superior izquierda +
+   // marca de agua de fondo. Ambos decorativos (aria-hidden) y sin capturar
+   // clics; la marca de agua va DETRÁS del contenido (z-index inferior).
+   +'<div class="brand-badge" aria-hidden="true"><img src="'+logoSrc()+'" alt=""></div>'
+   +'<div class="brand-watermark" aria-hidden="true"><img src="'+logoSrc()+'" alt=""></div>'
    +'<div class="bk-grid" id="bkGrid">'
      +'<aside class="bk-summary">'
        +'<p class="eyebrow" id="bkEyebrow">Your booking</p>'

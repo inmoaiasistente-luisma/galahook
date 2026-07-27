@@ -31,6 +31,10 @@ function methodLabel(m) {
 }
 function siteUrl() { return String(process.env.PUBLIC_SITE_URL || '').replace(/\/+$/, ''); }
 function replyTo() { return process.env.EMAIL_REPLY_TO || ''; }
+/* Logo oficial servido por URL pública ESTABLE (PUBLIC_SITE_URL): nunca base64
+   ni ruta local, y no se adjunta. En Production PUBLIC_SITE_URL debe ser el
+   dominio canónico, no una URL de Preview. El QR sigue yendo como adjunto. */
+function logoUrl() { const u = siteUrl(); return u ? (u + '/assets/img/logo.png') : ''; }
 
 /* ---------------- envoltorio HTML ---------------- */
 function shell(title, innerHtml) {
@@ -41,9 +45,23 @@ function shell(title, innerHtml) {
     + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + PAPER + ';padding:24px 12px;">'
     + '<tr><td align="center">'
     + '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid ' + LINE + ';border-radius:12px;overflow:hidden;font-family:Helvetica,Arial,sans-serif;">'
-    + '<tr><td style="background:' + INK + ';padding:22px 26px;">'
+    /* Encabezado en TABLA (no flex/background-image): logo por <img> real +
+       texto. El texto queda visible aunque la imagen no cargue; el alt lleva
+       la marca. Compatible con Outlook desktop y móvil (usa width/height y
+       valign en atributos, no solo CSS). */
+    + '<tr><td style="background:' + INK + ';padding:18px 26px;">'
+    + '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
+    + (logoUrl()
+        ? ('<td valign="middle" style="vertical-align:middle;padding-right:14px;">'
+           + '<img src="' + esc(logoUrl()) + '" alt="' + esc(BRAND) + '" width="50" height="50" '
+           + 'style="display:block;width:50px;height:50px;border-radius:50%;background:' + PAPER + ';border:0;outline:none;text-decoration:none;">'
+           + '</td>')
+        : '')
+    + '<td valign="middle" style="vertical-align:middle;">'
     + '<div style="color:' + PAPER + ';font-size:19px;font-weight:700;letter-spacing:.02em;">' + BRAND + '</div>'
     + '<div style="color:' + GOLD + ';font-size:12px;letter-spacing:.14em;text-transform:uppercase;margin-top:4px;">San Cristóbal · Galápagos</div>'
+    + '</td>'
+    + '</tr></table>'
     + '</td></tr>'
     + '<tr><td style="padding:26px;color:' + INK + ';font-size:15px;line-height:1.6;">' + innerHtml + '</td></tr>'
     + '<tr><td style="background:' + PAPER + ';padding:18px 26px;border-top:1px solid ' + LINE + ';color:' + SOFT + ';font-size:12px;line-height:1.6;">'

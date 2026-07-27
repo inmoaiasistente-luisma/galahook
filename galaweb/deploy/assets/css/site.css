@@ -574,6 +574,31 @@ select option:disabled{ color:rgba(251,248,241,.5); }
 .bk-recap div.tot b{color:var(--sea-deep);font-size:18px;}
 @media(max-width:720px){.bk-grid{grid-template-columns:1fr;}.bk-summary{order:2;}}
 
+/* ====================================================
+   MARCA HOOK ADVENTURE — clases reutilizables
+   Usadas por: modal de reserva, check-in y (a futuro) el
+   formulario de pasajeros. Reglas del asset oficial:
+   la marca de agua no captura clics ni selección y vive
+   por debajo del contenido; el logo de esquina es circular.
+   ==================================================== */
+.brand-badge{width:54px;height:54px;border-radius:50%;overflow:hidden;background:var(--sand);
+  box-shadow:0 4px 14px rgba(0,0,0,.18);flex:0 0 auto;}
+.brand-badge img{width:100%;height:100%;object-fit:cover;display:block;}
+.brand-watermark{position:absolute;inset:0;z-index:0;pointer-events:none;user-select:none;
+  overflow:hidden;display:flex;align-items:center;justify-content:center;}
+.brand-watermark img{width:min(560px,78%);height:auto;opacity:.05;}
+
+/* Aplicación en el modal de reserva (confirmación de pago y de cotización) */
+.bkmodal .brand-badge{position:absolute;top:14px;left:16px;z-index:5;}
+.bk-grid,.bk-success{position:relative;z-index:1;}   /* contenido por encima de la marca de agua */
+.bk-summary{padding-top:76px;}                        /* deja aire para el logo (columna izq. en desktop) */
+@media(max-width:720px){
+  .bkmodal .brand-badge{width:46px;height:46px;top:12px;left:12px;}
+  .bk-summary{padding-top:32px;}                      /* en móvil la columna izq. va debajo del formulario */
+  .bk-form{padding-top:68px;}                          /* el formulario queda arriba: libra el logo */
+  .bk-success{padding:62px 22px 40px;}
+}
+
 /* ---- sport-fishing trip card carousel ---- */
 .trip-car{position:relative;aspect-ratio:16/10;overflow:hidden;border-radius:12px 12px 0 0;background:var(--deep-2);}
 .trip-car-slide{position:absolute;inset:0;background-size:cover;background-position:center;opacity:0;transition:opacity 1s ease;}
