@@ -3,7 +3,7 @@
 /* =========================================================
    POST /api/admin-discount-rule-toggle (action=discount-rule-toggle)
    ---------------------------------------------------------
-   Activa o desactiva una regla. SOLO owner (admin/staff → 403).
+   Activa o desactiva una regla. owner y admin (staff → 403).
    NO borra: una regla usada históricamente se conserva; solo cambia
    `active`. Body estricto: { id, active }.
    ========================================================= */
@@ -16,7 +16,7 @@ const ALLOWED_KEYS = ['id', 'active'];
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  const session = await requireAdmin(req, res, ['owner']);   // solo owner
+  const session = await requireAdmin(req, res, ['owner', 'admin']);   // owner y admin
   if (!session) return;
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 

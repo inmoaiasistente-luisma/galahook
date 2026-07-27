@@ -195,13 +195,14 @@ marca **parcial** y se informa `missing_cost_sales_count` (no se finge costo 0).
 | | Ver Finanzas | Costos | Descuentos |
 |---|:--:|:--:|:--:|
 | **owner** | sí | crear/editar | crear/editar/activar |
-| **admin** | sí | solo ver | solo ver |
+| **admin** | sí | crear/editar | crear/editar/activar |
 | **staff** | no (403) | no (403) | no (403) |
 
 Endpoints (vía `admin-router`, sin sumar funciones Vercel): `finance-settings-list`
-(GET owner/admin), `finance-settings-save` (POST **owner**), `discount-rules-list`
-(GET owner/admin), `discount-rule-save` (POST **owner**), `discount-rule-toggle`
-(POST **owner**). Las reglas **no se borran**: se activan/desactivan con `active`.
+(GET owner/admin), `finance-settings-save` (POST **owner/admin**), `discount-rules-list`
+(GET owner/admin), `discount-rule-save` (POST **owner/admin**), `discount-rule-toggle`
+(POST **owner/admin**). staff → **403** en todos. Las reglas **no se borran**: se
+activan/desactivan con `active`.
 `payment_status` lo sigue moviendo solo Stripe/webhook.
 
 ## Resumen financiero

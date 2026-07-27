@@ -3,7 +3,7 @@
 /* =========================================================
    POST /api/admin-finance-settings-save (action=finance-settings-save)
    ---------------------------------------------------------
-   Crea o actualiza el costo de un tour. SOLO owner (admin → 403).
+   Crea o actualiza el costo de un tour. owner y admin (staff → 403).
    Upsert por (tenant_id, tour_id). Cambiar el costo NO modifica
    reservas históricas: solo afecta a las nuevas.
    Body estricto: { tour_id, fixed_cost_cents, cost_per_pax_cents, active }
@@ -19,8 +19,8 @@ const MAX_COST_CENTS = 100000000;    // $1,000,000 por componente
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  // SOLO owner puede modificar costos. admin (y staff) → 403.
-  const session = await requireAdmin(req, res, ['owner']);
+  // owner y admin pueden modificar costos. staff → 403.
+  const session = await requireAdmin(req, res, ['owner', 'admin']);
   if (!session) return;
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 

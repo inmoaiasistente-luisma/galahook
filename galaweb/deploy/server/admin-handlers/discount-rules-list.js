@@ -3,8 +3,8 @@
 /* =========================================================
    GET /api/admin-discount-rules   (action=discount-rules-list)
    ---------------------------------------------------------
-   Lista las reglas de descuento. owner y admin pueden CONSULTAR;
-   crear/editar/activar es solo owner (otros handlers). staff → 403.
+   Lista las reglas de descuento. owner y admin pueden CONSULTAR y
+   editar/activar (otros handlers). staff → 403.
    ========================================================= */
 
 const { sendJson, sendError, logServer, getTenantId } = require('../lib/http');
@@ -25,7 +25,7 @@ module.exports = async function handler(req, res) {
     const rs = await supabase.from('discount_rules').select('*')
       .eq('tenant_id', tenant).order('priority', { ascending: false }).order('created_at', { ascending: false });
     if (rs.error) { logServer('discount-rules-list', rs.error.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Server error'); }
-    return sendJson(res, 200, { role: session.role, canEdit: session.role === 'owner', rules: rs.data || [] });
+    return sendJson(res, 200, { role: session.role, canEdit: session.role === 'owner' || session.role === 'admin', rules: rs.data || [] });
   } catch (err) {
     logServer('discount-rules-list', err && err.message);
     return sendError(res, 500, 'INTERNAL_ERROR', 'Server error');

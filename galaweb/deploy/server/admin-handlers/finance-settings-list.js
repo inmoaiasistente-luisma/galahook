@@ -45,7 +45,7 @@ module.exports = async function handler(req, res) {
         };
       });
 
-    return sendJson(res, 200, { role: session.role, canEdit: session.role === 'owner', settings: tours });
+    return sendJson(res, 200, { role: session.role, canEdit: session.role === 'owner' || session.role === 'admin', settings: tours });
   } catch (err) {
     logServer('finance-settings-list', err && err.message);
     return sendError(res, 500, 'INTERNAL_ERROR', 'Server error');

@@ -3,10 +3,10 @@
 /* =========================================================
    POST /api/admin-discount-rule-save (action=discount-rule-save)
    ---------------------------------------------------------
-   Crea (sin id) o edita (con id) una regla de descuento. SOLO owner
-   (admin/staff → 403). No borra: para retirar una regla se usa el
-   toggle (active=false). Las validaciones reflejan los constraints de
-   la migración 0010. Cambiar reglas NO afecta reservas ya creadas.
+   Crea (sin id) o edita (con id) una regla de descuento. owner y admin
+   (staff → 403). No borra: para retirar una regla se usa el toggle
+   (active=false). Las validaciones reflejan los constraints de la
+   migración 0010. Cambiar reglas NO afecta reservas ya creadas.
    ========================================================= */
 
 const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, isNonEmptyString, isUuid, getTenantId } = require('../lib/http');
@@ -29,7 +29,7 @@ function isIsoOrNull(v) {
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  const session = await requireAdmin(req, res, ['owner']);   // solo owner
+  const session = await requireAdmin(req, res, ['owner', 'admin']);   // owner y admin
   if (!session) return;
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 

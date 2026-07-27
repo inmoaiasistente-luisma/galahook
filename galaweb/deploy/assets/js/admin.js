@@ -930,7 +930,7 @@ function panelStaffSchedule(){ return bkScreen({isStaff:true}); }
    configuraciones (nunca se recalcula dinero en el navegador). */
 function fin$(c){ return bkMoney(c,'usd'); }
 function panelFinance(role){
-  const canEdit = role==='owner';
+  const canEdit = role==='owner' || role==='admin';
   const wrap=el('<div class="fin-wrap"></div>');
 
   /* ---- filtros ---- */
@@ -1001,7 +1001,7 @@ function panelFinance(role){
   /* ---- COSTOS por tour ---- */
   const costSec=el('<div class="fin-sec"><h3>'+(ES?'Costos por tour':'Costs per tour')+'</h3>'
     +'<p class="bk-sub-hint">'+(canEdit?(ES?'Cambiar un costo NO altera reservas ya creadas; solo afecta a las nuevas.':'Changing a cost does NOT alter existing bookings; only new ones.')
-                                        :(ES?'Solo lectura (solo el administrador maestro puede editar).':'Read-only (only the master admin can edit).'))+'</p></div>');
+                                        :(ES?'Solo lectura.':'Read-only.'))+'</p></div>');
   const costWrap=el('<div class="bk-table-wrap"></div>'); costSec.appendChild(costWrap);
   wrap.appendChild(costSec);
 
