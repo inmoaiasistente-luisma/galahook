@@ -1183,6 +1183,10 @@ function showAdmin(user){
      +'<div class="brand-mini"><img src="assets/img/logo.png"><b>Hook Admin</b></div>'
      +'<div class="actions">'
        +'<span style="color:rgba(255,255,255,.72);font-size:12.5px;font-weight:600">'+who+'</span>'
+       +'<div class="lang-mini" id="langToggle" title="'+(ES?'Idioma':'Language')+'">'
+          +'<button type="button" data-lang="en" class="'+(ES?'':'on')+'">EN</button>'
+          +'<button type="button" data-lang="es" class="'+(ES?'on':'')+'">ES</button>'
+        +'</div>'
        // Los controles del editor de contenido NO se generan para staff.
        +(isStaff?'':'<span class="save-state" id="saveState"></span>')
        +'<a class="mini-btn" href="index.html" target="_blank">'+I.eye+' View site</a>'
@@ -1226,6 +1230,19 @@ function showAdmin(user){
         localStorage.removeItem(CKEY); W=loadWorking(); open('site');
         const s=document.getElementById('saveState'); s.textContent='Reset to defaults'; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2600);
       }
+    });
+  }
+  const langTog=document.getElementById('langToggle');
+  if(langTog){
+    langTog.querySelectorAll('button[data-lang]').forEach(function(b){
+      b.addEventListener('click',function(){
+        const want=b.dataset.lang;                 // 'en' | 'es'
+        if((want==='es')===ES) return;             // ya está en ese idioma
+        if(dirty && !confirm(ES?'Tienes cambios sin guardar. ¿Cambiar de idioma de todos modos?':'You have unsaved changes. Switch language anyway?')) return;
+        try{ localStorage.setItem('GHA_LANG', want); }catch(e){}
+        dirty=false;                               // evita el aviso beforeunload al recargar
+        location.reload();
+      });
     });
   }
   document.getElementById('logoutBtn').addEventListener('click',()=>{
