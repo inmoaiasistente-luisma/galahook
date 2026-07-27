@@ -9,10 +9,13 @@
 <link rel="stylesheet" href="assets/css/site.css">
 <style>
   body{background:#0c2322;color:var(--paper);}
-  .ck-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px 16px 40px;}
-  .ck-top{display:flex;align-items:center;gap:10px;margin:6px 0 20px;}
-  .ck-top img{height:38px;}
+  .ck-wrap{position:relative;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px 16px 40px;}
+  .ck-top{position:relative;z-index:1;align-self:flex-start;display:flex;align-items:center;gap:12px;margin:6px 0 20px;}
+  .ck-top .brand-badge{width:48px;height:48px;}
   .ck-top b{font-family:var(--display);font-size:16px;color:var(--paper);}
+  #ckRoot{position:relative;z-index:1;}
+  /* marca de agua sobre fondo oscuro: emblema claro muy tenue */
+  .ck-wrap .brand-watermark img{opacity:.06;}
   .ck-card{width:100%;max-width:460px;background:rgba(255,255,255,.05);border:1px solid var(--line-on-dark);
     border-radius:14px;padding:22px;}
   .ck-state{width:100%;max-width:460px;text-align:center;padding:26px 18px;border-radius:14px;margin-bottom:16px;font-weight:800;}
@@ -44,7 +47,8 @@
 </head>
 <body>
 <div class="ck-wrap">
-  <div class="ck-top"><img src="assets/img/logo.png" alt=""><b>Hook Adventure · Check-in</b></div>
+  <div class="brand-watermark" aria-hidden="true"><img src="assets/img/logo.png" alt=""></div>
+  <div class="ck-top"><span class="brand-badge"><img src="assets/img/logo.png" alt=""></span><b>Hook Adventure · Check-in</b></div>
   <div id="ckRoot"></div>
 </div>
 <script src="assets/js/checkin.js"></script>
