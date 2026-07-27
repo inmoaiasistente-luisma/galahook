@@ -451,18 +451,11 @@ function syncGuestsMin(){
   const min=bkState.min||1; g.min=min;
   let v=parseInt(g.value||'0',10); if(!v||v<min) v=Math.max(min,2); g.value=v;
 }
-/* Save every booking/request locally (Admin → Messages reads this) + optional email via Formspree */
-function recordBooking(data){
-  try{ const arr=JSON.parse(localStorage.getItem('GHA_MESSAGES')||'[]'); arr.unshift(data); localStorage.setItem('GHA_MESSAGES', JSON.stringify(arr.slice(0,300))); }catch(e){}
-  sendNotification(data);
-}
-function sendNotification(data){
-  const ep=S.meta.formEndpoint; if(!ep) return; // paste a Formspree endpoint in Admin → Site to receive emails (no server needed)
-  const body={ _subject:'New '+data.type+' — Galápagos Hook Adventure', _replyto:data.email, recipient:S.meta.notifyEmail,
-    traveler:data.name, email:data.email, experience:data.experience, travel_date:data.date, guests:data.guests,
-    total:data.total?('$'+data.total):'Custom quote', status:data.status, card_last4:data.card||'', message:data.message||'' };
-  try{ fetch(ep,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)}); }catch(e){}
-}
+/* Las reservas viven ÚNICAMENTE en Supabase y los correos los envía el
+   servidor con Resend. Aquí ya no se guarda nada en localStorage ni se
+   envían datos del cliente a servicios de terceros desde el navegador.
+   (Las antiguas recordBooking/sendNotification —GHA_MESSAGES + Formspree—
+   quedaron sin uso al conectar el backend y se retiraron.) */
 /* ---- estado del botón PAY (procesando) ---- */
 function setPayBusy(busy){
   const btn=document.getElementById('bkPayBtn'); if(!btn) return; const es=L==='es';

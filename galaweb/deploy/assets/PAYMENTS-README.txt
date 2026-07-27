@@ -1,54 +1,62 @@
-GALÁPAGOS HOOK ADVENTURE — Payments & booking emails
+GALÁPAGOS HOOK ADVENTURE — Pagos, reservas y correos
 =====================================================
 
-The booking checkout is fully built and "wired" so you can switch on real
-payments and email notifications without changing the design.
+ESTE ARCHIVO ES SOLO INFORMATIVO.
+No hay nada que configurar aquí ni en assets/js/content.js.
 
-Everything below is configured from the ADMIN panel (admin.html → "Site & Contact"),
-which writes to the same content store. No code editing required for emails.
+Todo lo que este documento describía antes (modo demo, Formspree,
+"pega tu clave de Stripe en content.js", Admin → Messages) YA NO EXISTE.
+El sistema real está conectado y funciona así:
 
---------------------------------------------------------------------
-1) RECEIVE BOOKING EMAILS  (no server needed — ~3 min)
---------------------------------------------------------------------
-We use Formspree so booking + quote requests are emailed to you.
 
-  1. Go to https://formspree.io and create a free account.
-  2. Create a new form and set the destination email to:
-        galahookadventure@outlook.com
-  3. Copy the form endpoint, it looks like:  https://formspree.io/f/abcdwxyz
-  4. Open admin.html → log in → "Site & Contact" → paste it into
-     the "formEndpoint" field (you can also edit assets/js/content.js → meta.formEndpoint).
-  5. Save. Done — every booking/request is now emailed to you AND stored
-     in Admin → "Messages".
+1) COBROS
+---------
+Stripe Elements, en la propia página, sin salir a Stripe Checkout.
 
-(If you leave formEndpoint empty, bookings are still saved in Admin → Messages,
- they just won't be emailed.)
+  · El navegador NUNCA envía el importe. Manda tour_id y número de
+    viajeros; el precio lo calcula el servidor con el catálogo
+    autorizado (server/lib/tour-catalog.js).
+  · /api/create-payment-intent crea el PaymentIntent y devuelve solo el
+    client_secret.
+  · /api/stripe-config sirve la clave PUBLICABLE desde una variable de
+    entorno. La clave secreta nunca sale del servidor.
+  · /api/stripe-webhook confirma el pago con firma verificada y raw body,
+    y marca la reserva como paid + confirmed.
 
---------------------------------------------------------------------
-2) CHARGE REAL CREDIT CARDS WITH STRIPE
---------------------------------------------------------------------
-Card charging needs a tiny backend (browsers can't charge cards directly,
-for security). The front-end is already prepared:
 
-  - meta.stripeKey  → paste your Stripe *publishable* key (pk_live_… / pk_test_…)
-  - The charge hook is in assets/js/app.js → submitBooking()
-    (look for the "STRIPE:" comment).
+2) DÓNDE VIVEN LAS RESERVAS
+---------------------------
+En Supabase. No en el navegador.
 
-To go live you need a small server endpoint (Netlify/Vercel function, Firebase,
-Cloudflare Worker, etc.) that:
-  1. creates a Stripe PaymentIntent with the amount, and
-  2. returns its client_secret to the page.
-Then in submitBooking() call stripe.confirmCardPayment(client_secret, …) before
-showing the confirmation screen.
+No se guarda ninguna reserva en localStorage y el navegador nunca habla
+directamente con Supabase: todo pasa por las funciones del servidor con
+la clave secreta.
 
-Stripe quickstart: https://stripe.com/docs/payments/quickstart
 
-Until then, the checkout runs in DEMO mode (no real charge) but captures the
-full booking, dates, guests and total — and emails/saves it.
+3) CORREOS
+----------
+Los envía el servidor con Resend, no el navegador.
 
---------------------------------------------------------------------
-3) WHERE BOOKINGS GO
---------------------------------------------------------------------
-  - Admin → "Messages": every booking & quote request (saved in the browser).
-  - Email: if a Formspree endpoint is set (step 1).
-  - Free cancellation window + min. package guests are configurable in content.js.
+  · Al cliente: confirmación bilingüe (inglés y español) con el código QR.
+  · Interno: aviso a BOOKING_NOTIFICATION_EMAIL.
+  · Cotizaciones y ventas directas tienen sus propios correos.
+  · Un mismo correo nunca se envía dos veces (idempotencia en base de datos).
+
+
+4) CONFIGURACIÓN
+----------------
+Toda la configuración sensible vive en variables de entorno de Vercel:
+Stripe, Supabase, Resend, TENANT_ID, SESSION_SECRET, QR_SIGNING_SECRET y
+PUBLIC_SITE_URL. Ver .env.example (plantilla, sin valores reales) y
+docs/go-live-checklist.md.
+
+⚠️ NUNCA pegues una clave, un token ni un endpoint externo en
+   assets/js/content.js ni en ningún archivo de assets/: todo lo que hay
+   en esa carpeta se descarga al navegador y sería público.
+
+
+5) EL PANEL
+-----------
+admin.html usa login multiusuario (Supabase Auth) con roles
+owner / admin / staff y sesión firmada del lado del servidor.
+Ver docs/admin-auth.md.

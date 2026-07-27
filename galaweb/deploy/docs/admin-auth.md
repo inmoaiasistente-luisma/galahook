@@ -68,8 +68,8 @@ Genera `SESSION_SECRET` con:
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-> `ADMIN_PASSWORD_HASH` **ya no se usa** (era el login de contraseña compartida).
-> Puede eliminarse de Vercel una vez validado el nuevo login.
+> El proyecto **no usa ninguna variable de contraseña compartida**. Si quedara
+> alguna del prototipo inicial en Vercel, elimínala: ver `docs/go-live-checklist.md`.
 
 ## Crear usuarios
 
