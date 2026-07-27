@@ -50,6 +50,18 @@ function getQuery(req) {
   catch (e) { return {}; }
 }
 
+/* Método de pago para el desglose. NO modifica la fila: solo clasifica.
+   · Canal web = Stripe SIEMPRE (el histórico puede tener payment_method
+     null porque el webhook no lo escribía; sigue siendo un cobro Stripe).
+   · Cualquier fila con stripe_payment_intent_id = Stripe.
+   · Ventas de agencia: su método declarado si es válido; 'other' solo
+     cuando de verdad es 'other' o falta de forma legítima. */
+function classifyMethod(r) {
+  if (r.sales_channel === 'web') return 'stripe';
+  if (r.stripe_payment_intent_id) return 'stripe';
+  return METHODS.indexOf(r.payment_method) !== -1 ? r.payment_method : 'other';
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only GET is allowed'); }
 
@@ -82,7 +94,7 @@ module.exports = async function handler(req, res) {
 
     for (let page = 0; page < MAX_PAGES; page++) {
       let query = supabase.from('bookings')
-        .select('amount_cents,sales_channel,payment_method,sold_at,paid_at')  // + fechas para la caja
+        .select('amount_cents,sales_channel,payment_method,sold_at,paid_at,stripe_payment_intent_id')  // + fechas y PI para clasificar
         .eq('tenant_id', tenant)
         .eq('request_type', 'booking')
         .eq('payment_status', 'paid');
@@ -118,7 +130,7 @@ module.exports = async function handler(req, res) {
       const ch = r.sales_channel === 'agency' ? 'agency' : 'web';
       revenue[ch] += amt; revenue.total += amt;
       counts[ch] += 1; counts.total += 1;
-      const m = METHODS.indexOf(r.payment_method) !== -1 ? r.payment_method : 'other';
+      const m = classifyMethod(r);
       by_method[m].amount_cents += amt; by_method[m].count += 1;
     });
 
