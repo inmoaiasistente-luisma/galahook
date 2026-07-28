@@ -281,7 +281,7 @@ function bookBtn(name, price, unit, cls, label, min, tourId){
 /* ===== HOTFIX (contención): checkout de PAQUETES en pausa mientras se
    estabiliza el precio canónico. NO afecta tours de día, pesca (cotización),
    navegación, contacto ni cotizaciones. Restaurar = PKG_CHECKOUT_PAUSED=false. */
-var PKG_CHECKOUT_PAUSED = true;
+var PKG_CHECKOUT_PAUSED = false;
 function isPackageTour(id){ return !!(S && S.packages && S.packages.some(function(p){ return p.id===id; })); }
 function bookables(){
   const PK=L==='es'?'Paquetes':'Packages', TO=L==='es'?'Tours':'Tours', FI=L==='es'?'Pesca deportiva':'Sport fishing';
@@ -751,7 +751,7 @@ function pkgCard(p){
       +(hasDetail?detailBtn('package', p.id, 'btn btn-ghost btn-block', (L==='es'?'Ver itinerario':'View itinerary')):'')
       +(PKG_CHECKOUT_PAUSED
          ? '<a class="btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block" href="contact.html">'+(L==='es'?'Contáctenos':'Contact us')+'</a>'
-         : bookBtn(t(p.name)+' · '+t(p.days), p.price, 'person', 'btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block', (onIndex?(L==='es'?'Consultar':'Enquire'):(L==='es'?'Reservar este viaje':'Book this journey')), (p.minGuests||2), p.id))
+         : bookBtn(t(p.name)+' · '+t(p.days), p.price, 'person', 'btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block', (onIndex?(L==='es'?'Consultar':'Enquire'):(L==='es'?'Reservar este viaje':'Book this trip')), (p.minGuests||2), p.id))
     +'</div>'
   +'</article>';
 }

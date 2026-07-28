@@ -87,10 +87,6 @@ module.exports = async function handler(req, res) {
     const tour = catalog.getTour(tour_id);
     if (!tour) return sendError(res, 400, 'INVALID_TOUR', 'Unknown tour_id');
     if (tour.requiresQuote) return sendError(res, 400, 'QUOTE_REQUIRED', 'This experience requires a quote request');
-    /* HOTFIX contención: el checkout de PAQUETES está en pausa mientras se
-       estabiliza el precio canónico. No se crea PaymentIntent para paquetes.
-       Tours de día y cotizaciones siguen operando. Restaurar: quitar esta guarda. */
-    if (tour.type === 'package') return sendError(res, 400, 'PACKAGE_CHECKOUT_PAUSED', 'Package checkout is temporarily unavailable');
 
     if (!isRealYmd(booking_date)) return sendError(res, 400, 'INVALID_DATE', 'booking_date must be a real YYYY-MM-DD date');
     if (!isNotPastGalapagos(booking_date)) return sendError(res, 400, 'DATE_IN_PAST', 'booking_date cannot be in the past');
