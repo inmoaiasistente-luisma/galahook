@@ -422,8 +422,12 @@ function updateBkSummary(){
   /* Total del servidor si ya llegó y coincide con tour+pax; si no, estimación
      local (bruto). El descuento y su etiqueta vienen del servidor. */
   const sp=(bkPricing.applied&&bkPricing.applied.tourId===bkState.tourId&&bkPricing.applied.guests===guests)?bkPricing.applied:null;
-  const amount= request?0:(sp?sp.amount:tot.gross);
-  const discount= sp?sp.discount:0;
+  /* UNIDADES: bkPricing.applied.amount/discount vienen del servidor (pricing-preview)
+     en CENTAVOS → se convierten a dólares UNA sola vez (÷100) para mostrarlos.
+     tot.gross ya está en dólares (estimación local base×pax): NO se divide.
+     El cobro real lo fija el servidor (create-payment-intent); esto es solo display. */
+  const amount= request?0:(sp?sp.amount/100:tot.gross);
+  const discount= sp?sp.discount/100:0;
   const promoRow=document.getElementById('bkPromoRow');
   if(promoRow){
     const show=!request&&discount>0;
