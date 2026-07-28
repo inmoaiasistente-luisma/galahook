@@ -43,6 +43,8 @@ module.exports = async function handler(req, res) {
     const bk = await supabase.from('bookings').select('*')
       .eq('id', notif.booking_id).eq('tenant_id', tenant).maybeSingle();
     if (bk.error || !bk.data) return sendError(res, 404, 'NOT_FOUND', 'Booking not found');
+    // No se reintentan correos de reservas archivadas (borrado lógico).
+    if (bk.data.deleted_at) return sendError(res, 409, 'BOOKING_ARCHIVED', 'This booking was archived');
 
     // Tipo y destinatario salen de la fila, nunca de la petición.
     const result = await sendBookingEmail({

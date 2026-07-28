@@ -14,6 +14,7 @@ const { getStripe } = require('../server/lib/stripe');
 const { getSupabase } = require('../server/lib/supabase');
 const catalog = require('../server/lib/tour-catalog');
 const { computeWebPricing } = require('../server/lib/pricing-engine');
+const { isStripeTestMode } = require('../server/lib/runtime-mode');
 const {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
   isUuid, isEmail, normalizeEmail, isNonEmptyString, isPositiveInt,
@@ -148,7 +149,8 @@ module.exports = async function handler(req, res) {
           pricing_snapshot: pricing.pricingSnapshot,
           currency: catalog.CURRENCY,
           payment_status: 'pending',
-          booking_status: 'pending_payment'
+          booking_status: 'pending_payment',
+          is_test: isStripeTestMode()   // TRUE mientras el sistema use Stripe TEST; false en LIVE
         };
         const { data: inserted, error } = await supabase.from('bookings').insert(candidate).select().single();
         if (!error) { row = inserted; freshlyInserted = true; break; }

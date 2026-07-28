@@ -1156,20 +1156,256 @@ function panelFinance(role){
 
 /* Los paneles se CONSTRUYEN según el rol: para staff el array contiene una sola
    entrada, así los paneles de contenido nunca se invocan ni entran al DOM. */
+/* ============ NOTIFICACIONES (owner + admin) ============ */
+function notifBadge(st){ return '<span class="notif-badge notif-'+escapeHtml(st)+'">'+escapeHtml(st)+'</span>'; }
+function panelNotifications(role){
+  const p=el('<div class="bk-screen"></div>');
+  const state={ page:1, limit:25, rows:[], totalPages:1 };
+
+  const intro=el('<p class="td-hint"></p>');
+  intro.textContent=ES?'Estado de los correos automáticos. Reintenta los que quedaron en fallido.':'Status of automated emails. Retry the ones that failed.';
+  p.appendChild(intro);
+
+  const fcard=el('<div class="bk-filters"></div>');
+  const searchWrap=el('<div class="ed-field"><label>'+(ES?'Buscar':'Search')+'</label></div>');
+  const searchInput=document.createElement('input'); searchInput.maxLength=100; searchInput.placeholder=ES?'Código o email':'Code or email'; searchWrap.appendChild(searchInput);
+  const fromF=bkDateField(ES?'Desde':'From'), toF=bkDateField(ES?'Hasta':'To');
+  const statusF=bkSelectField(ES?'Estado':'Status',[['',ES?'Todos':'All'],['sent','sent'],['failed','failed'],['pending','pending'],['sending','sending'],['skipped','skipped']]);
+  const typeF=bkSelectField(ES?'Tipo':'Type',[['',ES?'Todos':'All'],['customer_booking_confirmation','customer_booking_confirmation'],['owner_booking_notification','owner_booking_notification'],['customer_quote_acknowledgement','customer_quote_acknowledgement'],['owner_quote_notification','owner_quote_notification'],['customer_agency_confirmation','customer_agency_confirmation'],['owner_agency_notification','owner_agency_notification']]);
+  const row1=el('<div class="bk-frow"></div>'); row1.appendChild(searchWrap); row1.appendChild(fromF.wrap); row1.appendChild(toF.wrap);
+  const row2=el('<div class="bk-frow"></div>'); row2.appendChild(statusF.wrap); row2.appendChild(typeF.wrap);
+  fcard.appendChild(row1); fcard.appendChild(row2);
+  const btns=el('<div class="bk-fbtns"></div>');
+  const applyB=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Aplicar':'Apply')+'</button>');
+  const retryB=el('<button class="btn btn-ink btn-sm" type="button">'+(ES?'Reintentar fallidos seleccionados':'Retry selected failed')+'</button>'); retryB.style.marginLeft='auto';
+  btns.appendChild(applyB); btns.appendChild(retryB); fcard.appendChild(btns);
+  p.appendChild(fcard);
+
+  const COLS=['', ES?'Código':'Code', ES?'Tipo':'Type', ES?'Destinatario':'Recipient', ES?'Estado':'Status', ES?'Intentos':'Attempts', ES?'Fecha':'Date', 'Error', ES?'Acciones':'Actions'];
+  const wrap=el('<div class="bk-table-wrap"></div>');
+  const table=el('<table class="bk-table"><thead><tr>'+COLS.map(function(c){return '<th>'+escapeHtml(c)+'</th>';}).join('')+'</tr></thead><tbody></tbody></table>');
+  const tbody=table.querySelector('tbody'); wrap.appendChild(table); p.appendChild(wrap);
+  const pager=el('<div class="bk-pager"></div>');
+  const prevP=el('<button class="mini-btn" type="button">'+(ES?'‹ Anterior':'‹ Prev')+'</button>');
+  const nextP=el('<button class="mini-btn" type="button">'+(ES?'Siguiente ›':'Next ›')+'</button>');
+  const pageInfo=el('<span></span>'); pager.appendChild(prevP); pager.appendChild(pageInfo); pager.appendChild(nextP); p.appendChild(pager);
+
+  function params(){ const q={page:state.page,limit:state.limit}; const s=searchInput.value.trim(); if(s)q.search=s; if(fromF.input.value)q.date_from=fromF.input.value; if(toF.input.value)q.date_to=toF.input.value; if(statusF.select.value)q.status=statusF.select.value; if(typeF.select.value)q.notification_type=typeF.select.value; return q; }
+  function load(){
+    tbody.innerHTML='<tr><td colspan="9" class="bk-empty">'+(ES?'Cargando…':'Loading…')+'</td></tr>';
+    apiGet('/api/admin-notifications?'+bkQS(params())).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok){ tbody.innerHTML='<tr><td colspan="9" class="bk-empty">'+(ES?'Error al cargar':'Failed to load')+'</td></tr>'; return; }
+      state.rows=(r.data&&r.data.rows)||[]; const pg=(r.data&&r.data.pagination)||{}; state.totalPages=pg.totalPages||1;
+      render(); pageInfo.textContent=(ES?'Página ':'Page ')+(pg.page||1)+' / '+state.totalPages+' · '+(pg.total||0);
+      prevP.disabled=(state.page<=1); nextP.disabled=(state.page>=state.totalPages);
+    });
+  }
+  function render(){
+    if(!state.rows.length){ tbody.innerHTML='<tr><td colspan="9" class="bk-empty">'+(ES?'Sin notificaciones':'No notifications')+'</td></tr>'; return; }
+    tbody.innerHTML='';
+    state.rows.forEach(function(n){
+      const canRetry=(n.status==='failed');
+      const tr=el('<tr></tr>');
+      tr.innerHTML=
+        '<td>'+(canRetry?'<input type="checkbox" class="nf-ck" data-id="'+escapeHtml(n.id)+'">':'')+'</td>'
+        +'<td class="mono">'+escapeHtml(n.booking_code||'—')+'</td>'
+        +'<td class="ell">'+escapeHtml(n.notification_type||'')+'</td>'
+        +'<td class="ell">'+escapeHtml(n.recipient_email||'—')+'</td>'
+        +'<td>'+notifBadge(n.status)+'</td>'
+        +'<td class="num">'+escapeHtml(n.attempts)+'</td>'
+        +'<td>'+bkFmtDT(n.created_at)+'</td>'
+        +'<td class="ell">'+(n.last_error?escapeHtml(n.last_error):'—')+'</td>'
+        +'<td class="nf-actions"></td>';
+      const actions=tr.querySelector('.nf-actions');
+      if(canRetry){ const rb=el('<button class="mini-btn" type="button">'+(ES?'Reintentar':'Retry')+'</button>'); rb.addEventListener('click',function(){ retryOne(n.id, rb); }); actions.appendChild(rb); }
+      if(n.booking_code){ const ob=el('<button class="mini-btn" type="button">'+(ES?'Abrir':'Open')+'</button>'); ob.addEventListener('click',function(){ openBooking(n.booking_code); }); actions.appendChild(ob); }
+      tbody.appendChild(tr);
+    });
+  }
+  function retryOne(id, btn){
+    if(btn){ btn.disabled=true; btn.textContent=ES?'Enviando…':'Sending…'; }
+    apiPost('/api/admin-notifications-retry',{notification_id:id}).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      const st=r.data&&r.data.status;
+      adminToast(r.ok&&st==='sent'?(ES?'Correo reenviado':'Email resent'):(ES?'No se pudo reenviar':'Could not resend'));
+      load();
+    });
+  }
+  function retryBatch(){
+    const ids=Array.prototype.map.call(tbody.querySelectorAll('.nf-ck:checked'),function(c){return c.getAttribute('data-id');});
+    if(!ids.length){ adminToast(ES?'Selecciona correos fallidos':'Select failed emails'); return; }
+    if(!confirm((ES?'¿Reintentar ':'Retry ')+ids.length+(ES?' correo(s) fallido(s)?':' failed email(s)?'))) return;
+    retryB.disabled=true;
+    apiPost('/api/admin-notifications-retry-batch',{notification_ids:ids, confirmation:'RETRY FAILED EMAILS'}).then(function(r){
+      retryB.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok){ adminToast(ES?'No se pudo procesar':'Could not process'); return; }
+      const s=(r.data&&r.data.summary)||{};
+      adminToast((ES?'Enviados ':'Sent ')+(s.sent||0)+' · '+(ES?'fallidos ':'failed ')+(s.failed||0)+' · '+(ES?'omitidos ':'skipped ')+(s.skipped||0));
+      load();
+    });
+  }
+  function openBooking(code){
+    apiGet('/api/admin-bookings?'+bkQS({search:code,limit:5})).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      const list=(r.data&&r.data.bookings)||[];
+      const b=list.filter(function(x){return x.booking_code===code;})[0]||list[0];
+      if(b) bkAdminDetail(b,function(){}); else adminToast(ES?'Reserva no encontrada':'Booking not found');
+    });
+  }
+  applyB.addEventListener('click',function(){ state.page=1; load(); });
+  retryB.addEventListener('click',retryBatch);
+  prevP.addEventListener('click',function(){ if(state.page>1){ state.page--; load(); } });
+  nextP.addEventListener('click',function(){ if(state.page<state.totalPages){ state.page++; load(); } });
+  load();
+  return p;
+}
+
+/* ============ DATOS DE PRUEBA (SOLO owner) ============ */
+function tdMoney(c){ return (c==null)?'—':('$'+(Number(c)/100).toFixed(2)); }
+function panelTestData(role){
+  const p=el('<div class="bk-screen"></div>');
+  const state={ page:1, limit:25, rows:[], totalPages:1 };
+
+  const warn=el('<div class="fin-partial td-warn"></div>');
+  warn.innerHTML=ES
+    ? '⚠️ Solo el owner puede marcar o retirar datos de prueba. <b>Archivar</b> es un borrado lógico con auditoría: no borra pagos, correos ni QR y <b>no realiza reembolsos en Stripe</b>.'
+    : '⚠️ Only the owner can mark or remove test data. <b>Archiving</b> is a logged soft-delete: it does not delete payments, emails or QR and <b>does not refund in Stripe</b>.';
+  p.appendChild(warn);
+
+  const fcard=el('<div class="bk-filters"></div>');
+  const searchWrap=el('<div class="ed-field"><label>'+(ES?'Buscar':'Search')+'</label></div>');
+  const searchInput=document.createElement('input'); searchInput.maxLength=100; searchInput.placeholder=ES?'Código, cliente, email o tour':'Code, customer, email or tour'; searchWrap.appendChild(searchInput);
+  const fromF=bkDateField(ES?'Desde':'From'), toF=bkDateField(ES?'Hasta':'To');
+  const typeF=bkSelectField(ES?'Tipo':'Type',[['',ES?'Todos':'All'],['booking',ES?'Reserva':'Booking'],['quote',ES?'Cotización':'Quote']]);
+  const payF=bkSelectField(ES?'Estado de pago':'Payment status',[['',ES?'Todos':'All'],['not_required','not_required'],['pending','pending'],['processing','processing'],['paid','paid'],['failed','failed'],['refunded','refunded']]);
+  const chanF=bkSelectField(ES?'Canal':'Channel',[['',ES?'Todos':'All'],['web','web'],['agency',ES?'agencia':'agency']]);
+  const testF=bkSelectField(ES?'Marca TEST':'TEST flag',[['',ES?'Todas':'All'],['true',ES?'Solo prueba':'Test only'],['false',ES?'Solo reales':'Real only']]);
+  const viewF=bkSelectField(ES?'Vista':'View',[['active',ES?'Activas':'Active'],['all',ES?'Todas':'All'],['only',ES?'Archivadas':'Archived']]);
+  const row1=el('<div class="bk-frow"></div>'); row1.appendChild(searchWrap); row1.appendChild(fromF.wrap); row1.appendChild(toF.wrap);
+  const row2=el('<div class="bk-frow"></div>'); row2.appendChild(typeF.wrap); row2.appendChild(payF.wrap); row2.appendChild(chanF.wrap);
+  const row3=el('<div class="bk-frow"></div>'); row3.appendChild(testF.wrap); row3.appendChild(viewF.wrap);
+  fcard.appendChild(row1); fcard.appendChild(row2); fcard.appendChild(row3);
+  const btns=el('<div class="bk-fbtns"></div>');
+  const applyB=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Aplicar':'Apply')+'</button>');
+  const markB=el('<button class="btn btn-ink btn-sm" type="button">'+(ES?'Marcar como TEST':'Mark as test')+'</button>');
+  const archB=el('<button class="btn btn-ink btn-sm td-danger" type="button">'+(ES?'Archivar pruebas':'Archive test')+'</button>'); archB.style.marginLeft='auto';
+  btns.appendChild(applyB); btns.appendChild(markB); btns.appendChild(archB); fcard.appendChild(btns);
+  p.appendChild(fcard);
+
+  const COLS=['<input type="checkbox" class="td-all">', ES?'Código':'Code', ES?'Cliente':'Customer', 'Email', 'Tour', ES?'Tipo':'Type', ES?'Fecha':'Date', ES?'Canal':'Channel', ES?'Pago':'Payment', 'Total', 'TEST', ES?'Archivada':'Archived'];
+  const wrap=el('<div class="bk-table-wrap"></div>');
+  const table=el('<table class="bk-table"><thead><tr>'+COLS.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody></tbody></table>');
+  const tbody=table.querySelector('tbody'); wrap.appendChild(table); p.appendChild(wrap);
+  const selAll=table.querySelector('.td-all');
+  const pager=el('<div class="bk-pager"></div>');
+  const prevP=el('<button class="mini-btn" type="button">'+(ES?'‹ Anterior':'‹ Prev')+'</button>');
+  const nextP=el('<button class="mini-btn" type="button">'+(ES?'Siguiente ›':'Next ›')+'</button>');
+  const pageInfo=el('<span></span>'); pager.appendChild(prevP); pager.appendChild(pageInfo); pager.appendChild(nextP); p.appendChild(pager);
+
+  function params(){ const q={page:state.page,limit:state.limit}; const s=searchInput.value.trim(); if(s)q.search=s;
+    if(fromF.input.value)q.date_from=fromF.input.value; if(toF.input.value)q.date_to=toF.input.value;
+    if(typeF.select.value)q.request_type=typeF.select.value; if(payF.select.value)q.payment_status=payF.select.value;
+    if(chanF.select.value)q.sales_channel=chanF.select.value; if(testF.select.value)q.is_test=testF.select.value;
+    const v=viewF.select.value; if(v==='all')q.include_archived='true'; else if(v==='only')q.include_archived='only';
+    return q; }
+  function load(){
+    if(selAll) selAll.checked=false;
+    tbody.innerHTML='<tr><td colspan="12" class="bk-empty">'+(ES?'Cargando…':'Loading…')+'</td></tr>';
+    apiGet('/api/admin-test-data-list?'+bkQS(params())).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok){ tbody.innerHTML='<tr><td colspan="12" class="bk-empty">'+(r.status===403?(ES?'Solo el owner':'Owner only'):(ES?'Error al cargar':'Failed to load'))+'</td></tr>'; return; }
+      state.rows=(r.data&&r.data.rows)||[]; const pg=(r.data&&r.data.pagination)||{}; state.totalPages=pg.totalPages||1;
+      render(); pageInfo.textContent=(ES?'Página ':'Page ')+(pg.page||1)+' / '+state.totalPages+' · '+(pg.total||0);
+      prevP.disabled=(state.page<=1); nextP.disabled=(state.page>=state.totalPages);
+    });
+  }
+  function render(){
+    if(!state.rows.length){ tbody.innerHTML='<tr><td colspan="12" class="bk-empty">'+(ES?'Sin registros':'No records')+'</td></tr>'; return; }
+    tbody.innerHTML='';
+    state.rows.forEach(function(b){
+      const archived=!!b.deleted_at;
+      const tr=el('<tr'+(archived?' class="td-arch"':'')+'></tr>');
+      tr.innerHTML=
+        '<td>'+(archived?'':'<input type="checkbox" class="td-ck" data-id="'+escapeHtml(b.id)+'" data-test="'+(b.is_test?'1':'0')+'">')+'</td>'
+        +'<td class="mono">'+escapeHtml(b.booking_code||'')+'</td>'
+        +'<td class="ell">'+escapeHtml(b.customer_name||'')+'</td>'
+        +'<td class="ell">'+escapeHtml(b.customer_email||'—')+'</td>'
+        +'<td class="ell">'+escapeHtml(b.tour_name||'')+'</td>'
+        +'<td>'+escapeHtml(b.request_type||'')+'</td>'
+        +'<td>'+escapeHtml(b.booking_date||'—')+'</td>'
+        +'<td>'+escapeHtml(b.sales_channel||'—')+'</td>'
+        +'<td>'+escapeHtml(b.payment_status||'—')+'</td>'
+        +'<td class="num">'+tdMoney(b.amount_cents)+'</td>'
+        +'<td>'+(b.is_test?'<span class="notif-badge notif-test">TEST</span>':'—')+'</td>'
+        +'<td>'+(archived?'<span class="notif-badge notif-archived">'+(ES?'archivada':'archived')+'</span>':'—')+'</td>';
+      tbody.appendChild(tr);
+    });
+  }
+  function checkedRows(){ return Array.prototype.slice.call(tbody.querySelectorAll('.td-ck:checked')); }
+  function doMark(){
+    const rows=checkedRows(); if(!rows.length){ adminToast(ES?'Selecciona registros':'Select records'); return; }
+    const ids=rows.map(function(c){return c.getAttribute('data-id');});
+    if(!confirm(ES?'Revisa cuidadosamente los registros seleccionados. Marcarlos como prueba permitirá retirarlos posteriormente.':'Review the selected records carefully. Marking them as test will allow them to be archived later.')) return;
+    markB.disabled=true;
+    apiPost('/api/admin-test-data-mark',{booking_ids:ids, confirmation:'MARK AS TEST'}).then(function(r){
+      markB.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok){ adminToast(ES?'No se pudo marcar':'Could not mark'); return; }
+      adminToast((ES?'Marcadas ':'Marked ')+((r.data&&r.data.marked)||0)); load();
+    });
+  }
+  function doArchive(){
+    const rows=checkedRows(); if(!rows.length){ adminToast(ES?'Selecciona registros':'Select records'); return; }
+    if(rows.some(function(c){return c.getAttribute('data-test')!=='1';})){ adminToast(ES?'Solo se archivan registros marcados como TEST':'Only records marked as TEST can be archived'); return; }
+    const ids=rows.map(function(c){return c.getAttribute('data-id');});
+    const reason=prompt(ES?'Motivo del archivado (mínimo 5 caracteres):':'Reason for archiving (min 5 characters):');
+    if(reason==null) return;
+    if(reason.trim().length<5){ adminToast(ES?'Motivo demasiado corto':'Reason too short'); return; }
+    const typed=prompt(ES?'Escribe exactamente:  ARCHIVE TEST DATA':'Type exactly:  ARCHIVE TEST DATA');
+    if(typed!=='ARCHIVE TEST DATA'){ adminToast(ES?'Confirmación incorrecta':'Confirmation does not match'); return; }
+    if(!confirm(ES?'Esta acción los retirará del calendario, agenda y finanzas. No realiza reembolsos en Stripe. ¿Continuar?':'This will remove them from the calendar, schedule and finance. It does not refund in Stripe. Continue?')) return;
+    archB.disabled=true;
+    apiPost('/api/admin-test-data-archive',{booking_ids:ids, reason:reason.trim(), confirmation:'ARCHIVE TEST DATA'}).then(function(r){
+      archB.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok){ adminToast(ES?'No se pudo archivar':'Could not archive'); return; }
+      adminToast((ES?'Archivadas ':'Archived ')+((r.data&&r.data.archived)||0)); load();
+    });
+  }
+  if(selAll) selAll.addEventListener('change',function(){ tbody.querySelectorAll('.td-ck').forEach(function(c){ c.checked=selAll.checked; }); });
+  applyB.addEventListener('click',function(){ state.page=1; load(); });
+  markB.addEventListener('click',doMark);
+  archB.addEventListener('click',doArchive);
+  prevP.addEventListener('click',function(){ if(state.page>1){ state.page--; load(); } });
+  nextP.addEventListener('click',function(){ if(state.page<state.totalPages){ state.page++; load(); } });
+  load();
+  return p;
+}
+
 function panelsFor(role){
   if(role==='staff'){
     return [{id:'schedule', label:(ES?'Agenda de reservas':'Booking schedule'), build:panelStaffSchedule}];
   }
-  return [
+  const panels=[
     {id:'bookings',label:(ES?'Reservas':'Bookings'), build:panelBookings},
     {id:'finance', label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinance(role); }},
+    {id:'notifications', label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }}
+  ];
+  // Datos de prueba: SOLO owner (no se genera en el DOM para admin ni staff).
+  if(role==='owner'){
+    panels.push({id:'testdata', label:(ES?'Datos de prueba':'Test data'), build:function(){ return panelTestData(role); }});
+  }
+  panels.push(
     {id:'site',  label:'Site & Contact', build:panelSite},
     {id:'hero',  label:'Home Hero',      build:panelHero},
     {id:'packages',label:'Packages',     build:panelPackages},
     {id:'tours', label:'Tours',          build:panelTours},
     {id:'fishing',label:'Sport Fishing', build:panelFishing},
-    {id:'story', label:'About & Conservation', build:panelStory},
-  ];
+    {id:'story', label:'About & Conservation', build:panelStory}
+  );
+  return panels;
 }
 
 /* ============ ADMIN SHELL ============ */

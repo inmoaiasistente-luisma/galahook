@@ -98,7 +98,8 @@ module.exports = async function handler(req, res) {
         .select('amount_cents,gross_amount_cents,discount_cents,cost_cents,guests,tour_id,tour_name,sales_channel,payment_method,sold_at,paid_at,stripe_payment_intent_id')
         .eq('tenant_id', tenant)
         .eq('request_type', 'booking')
-        .eq('payment_status', 'paid');
+        .eq('payment_status', 'paid')
+        .is('deleted_at', null);   // las reservas archivadas no cuentan en finanzas
 
       if (startFrom) query = query.gte('paid_at', startFrom);
       if (endTo) query = query.lt('paid_at', endTo);
