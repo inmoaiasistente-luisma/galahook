@@ -40,6 +40,12 @@ module.exports = async function handler(req, res) {
 
   try {
     const supabase = getSupabase();
+    /* Una reserva archivada (borrado lógico) no expone sus notificaciones. */
+    const bk = await supabase.from('bookings').select('deleted_at')
+      .eq('id', bookingId).eq('tenant_id', tenant).maybeSingle();
+    if (bk.error) { logServer('booking-notifications', bk.error.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to load notifications'); }
+    if (!bk.data || bk.data.deleted_at) return sendJson(res, 200, { notifications: [] });
+
     const { data, error } = await supabase.from('email_notifications')
       .select('id,notification_type,recipient_email,status,attempts,sent_at,created_at')
       .eq('booking_id', bookingId).eq('tenant_id', tenant)

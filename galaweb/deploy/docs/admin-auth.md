@@ -318,3 +318,49 @@ Revocar deja el acceso inservible sin tocar `booking_status`.
   clientes. Los **precios reales de cobro** viven en `api/_lib/tour-catalog.js` (servidor).
 - La pantalla "Equipo" para invitar/desactivar usuarios desde la interfaz queda para
   una fase posterior; por ahora se gestiona desde Supabase.
+
+## Lote 4 — Limpieza de datos de prueba y centro de notificaciones
+
+### Datos de prueba (borrado lógico) — SOLO owner
+Migración `0011`: `bookings` gana `is_test`, `deleted_at`, `deleted_by_user_id`,
+`deletion_reason`, `test_marked_at`, `test_marked_by_user_id` (con CHECK de
+coherencia). **No hay DELETE físico**: archivar = borrado lógico con auditoría.
+
+- **`is_test` automático:** las operaciones NUEVAS (web, cotización, agencia)
+  guardan `is_test=true` mientras `STRIPE_SECRET_KEY` empiece por `sk_test_`
+  (`server/lib/runtime-mode.js`). Con `sk_live_` quedan `is_test=false`. Las
+  filas históricas **no** se tocan; nunca se infiere "prueba" por nombre, email,
+  código, monto ni fecha.
+- **Marcar / archivar:** solo el owner. `admin` y `staff` reciben 403 y la
+  sección **no se genera en el DOM** para ellos.
+  - `GET  /api/admin-test-data-list`
+  - `POST /api/admin-test-data-mark`     · confirmación exacta `MARK AS TEST`
+  - `POST /api/admin-test-data-archive`  · confirmación exacta `ARCHIVE TEST DATA`,
+    motivo ≥ 5 car., y **todas** deben ser `is_test=true` (si no, se rechaza el
+    lote completo, sin archivado parcial).
+- **Efecto del archivado:** `deleted_at IS NULL` se aplica en reservas, finanzas,
+  agenda, calendario, búsqueda, QR-lookup y notificaciones. Una reserva archivada
+  no aparece en el panel, no cuenta en finanzas, no se puede validar por QR y no
+  se le reintentan correos. No se modifican `payment_status`, `booking_status`,
+  `amount_cents`, Stripe, `sold_at` ni `paid_at`.
+
+### Centro de notificaciones — owner + admin
+- `GET  /api/admin-notifications`               (lista global; excluye archivadas)
+- `POST /api/admin-notifications-retry`          (individual; reutiliza `email-retry`)
+- `POST /api/admin-notifications-retry-batch`    (lote; confirmación `RETRY FAILED EMAILS`)
+- Solo se reintentan notificaciones `failed`; nunca se reenvía una `sent`
+  (idempotencia por `unique(booking_id, notification_type, recipient_email)`).
+- El destinatario se muestra **enmascarado** y el error **saneado** (sin claves,
+  payloads ni contenido del correo). `staff` recibe 403 y no ve la sección.
+
+### Permisos (resumen)
+| Acción | owner | admin | staff |
+|---|:--:|:--:|:--:|
+| Datos de prueba (listar/marcar/archivar) | ✅ | 403 | 403 |
+| Notificaciones (listar/reintentar) | ✅ | ✅ | 403 |
+
+### Legacy
+`ADMIN_PASSWORD_HASH` ya **no se usa** en el código ni en `.env.example`. Si aún
+existe en el proyecto de Vercel, **elimínala manualmente**. No borrar
+`SESSION_SECRET`, `QR_SIGNING_SECRET`, `TENANT_ID`, ni las variables de Supabase,
+Resend o Stripe.

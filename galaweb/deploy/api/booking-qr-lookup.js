@@ -88,6 +88,8 @@ module.exports = async function handler(req, res) {
     if (bk.error) { logServer('qr-lookup', bk.error.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to read the code'); }
     const booking = bk.data;
     if (!booking) return sendError(res, 400, 'QR_INVALID', 'Invalid code');
+    // Reserva archivada (borrado lógico): mismo error genérico, no se puede hacer check-in.
+    if (booking.deleted_at) return sendError(res, 400, 'QR_INVALID', 'Invalid code');
 
     const okState = booking.request_type === 'booking'
       && booking.payment_status === 'paid'

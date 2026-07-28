@@ -16,6 +16,12 @@
     { "source": "/api/admin-finance-settings-save", "destination": "/api/admin-router?action=finance-settings-save" },
     { "source": "/api/admin-discount-rules", "destination": "/api/admin-router?action=discount-rules-list" },
     { "source": "/api/admin-discount-rule-save", "destination": "/api/admin-router?action=discount-rule-save" },
-    { "source": "/api/admin-discount-rule-toggle", "destination": "/api/admin-router?action=discount-rule-toggle" }
+    { "source": "/api/admin-discount-rule-toggle", "destination": "/api/admin-router?action=discount-rule-toggle" },
+    { "source": "/api/admin-test-data-list", "destination": "/api/admin-router?action=test-data-list" },
+    { "source": "/api/admin-test-data-mark", "destination": "/api/admin-router?action=test-data-mark" },
+    { "source": "/api/admin-test-data-archive", "destination": "/api/admin-router?action=test-data-archive" },
+    { "source": "/api/admin-notifications", "destination": "/api/admin-router?action=notifications-list" },
+    { "source": "/api/admin-notifications-retry", "destination": "/api/admin-router?action=email-retry" },
+    { "source": "/api/admin-notifications-retry-batch", "destination": "/api/admin-router?action=notifications-retry-batch" }
   ]
 }

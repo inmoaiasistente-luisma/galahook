@@ -19,6 +19,7 @@ const { getSupabase } = require('../lib/supabase');
 const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
 const { notifyBooking } = require('../lib/booking-email-service');
 const { computeAgencyCost } = require('../lib/pricing-engine');
+const { isStripeTestMode } = require('../lib/runtime-mode');
 const catalog = require('../lib/tour-catalog');
 const {
   sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys,
@@ -180,7 +181,8 @@ module.exports = async function handler(req, res) {
         paid_at: soldAt,
         sold_at: soldAt,
         created_by_user_id: session.user_id,
-        created_by_name: session.full_name
+        created_by_name: session.full_name,
+        is_test: isStripeTestMode()   // TRUE mientras Production/Preview usen Stripe TEST; false en LIVE
       };
 
       const { data, error } = await supabase.from('bookings').insert(row).select().single();

@@ -61,6 +61,30 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 function isEmail(v) { return typeof v === 'string' && v.length <= 254 && EMAIL_RE.test(v); }
 function normalizeEmail(v) { return String(v).trim().toLowerCase(); }
 
+/* Enmascara un email para mostrarlo en el panel sin exponerlo completo:
+   "maria@example.com" -> "m•••a@example.com". Conserva el dominio (ayuda a
+   identificar) y oculta la parte local. */
+function maskEmail(v) {
+  const s = String(v == null ? '' : v).trim();
+  const at = s.indexOf('@');
+  if (at < 1) return s ? '•••' : '';
+  const name = s.slice(0, at), dom = s.slice(at + 1);
+  const head = name.slice(0, 1);
+  const tail = name.length > 2 ? name.slice(-1) : '';
+  return head + '•••' + tail + '@' + dom;
+}
+
+/* Sanea un mensaje de error del proveedor para mostrarlo sin filtrar
+   secretos: elimina posibles claves/tokens y trunca. Nunca payloads. */
+function sanitizeErrorText(v) {
+  let s = String(v == null ? '' : v);
+  s = s.replace(/\b(sk|pk|rk|re|whsec)_[A-Za-z0-9]+/g, '[redacted]')   // claves Stripe/Resend
+       .replace(/\bBearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
+       .replace(/[A-Za-z0-9_-]{40,}/g, '[redacted]')                     // blobs largos (tokens)
+       .replace(/\s+/g, ' ').trim();
+  return s.slice(0, 200);
+}
+
 function isNonEmptyString(v, min, max) {
   if (typeof v !== 'string') return false;
   const n = v.trim().length;
@@ -109,6 +133,6 @@ function getTenantId() {
 
 module.exports = {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
-  isUuid, isEmail, normalizeEmail, isNonEmptyString, isPositiveInt,
+  isUuid, isEmail, normalizeEmail, maskEmail, sanitizeErrorText, isNonEmptyString, isPositiveInt,
   isRealYmd, todayInGalapagos, isNotPastGalapagos, getTenantId
 };

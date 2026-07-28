@@ -102,7 +102,10 @@ module.exports = async function handler(req, res) {
   try {
     const supabase = getSupabase();
     const fields = isStaff ? STAFF_FIELDS : ADMIN_FIELDS;
-    let query = supabase.from('bookings').select(fields, { count: 'exact' }).eq('tenant_id', tenant);
+    /* Las reservas archivadas (borrado lógico del owner) NO aparecen en el
+       panel operativo para ningún rol. Solo se ven en "Datos de prueba". */
+    let query = supabase.from('bookings').select(fields, { count: 'exact' })
+      .eq('tenant_id', tenant).is('deleted_at', null);
 
     if (isStaff) {
       /* Filtros BLOQUEADOS: se fuerzan en el servidor. Cualquier valor enviado

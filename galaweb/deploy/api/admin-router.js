@@ -49,6 +49,11 @@ ROUTES['finance-settings-save'] = require('../server/admin-handlers/finance-sett
 ROUTES['discount-rules-list'] = require('../server/admin-handlers/discount-rules-list');
 ROUTES['discount-rule-save'] = require('../server/admin-handlers/discount-rule-save');
 ROUTES['discount-rule-toggle'] = require('../server/admin-handlers/discount-rule-toggle');
+ROUTES['test-data-list'] = require('../server/admin-handlers/test-data-list');
+ROUTES['test-data-mark'] = require('../server/admin-handlers/test-data-mark');
+ROUTES['test-data-archive'] = require('../server/admin-handlers/test-data-archive');
+ROUTES['notifications-list'] = require('../server/admin-handlers/notifications-list');
+ROUTES['notifications-retry-batch'] = require('../server/admin-handlers/notifications-retry-batch');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */

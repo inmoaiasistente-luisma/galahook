@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const { getSupabase } = require('../server/lib/supabase');
 const { notifyBooking } = require('../server/lib/booking-email-service');
 const catalog = require('../server/lib/tour-catalog');
+const { isStripeTestMode } = require('../server/lib/runtime-mode');
 const {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
   isUuid, isEmail, normalizeEmail, isNonEmptyString, isPositiveInt,
@@ -123,7 +124,8 @@ module.exports = async function handler(req, res) {
         amount_cents: null,
         currency: catalog.CURRENCY,
         payment_status: 'not_required',
-        booking_status: 'new'
+        booking_status: 'new',
+        is_test: isStripeTestMode()   // TRUE mientras el sistema use Stripe TEST; false en LIVE
       };
       const { data: inserted, error } = await supabase.from('bookings').insert(candidate).select().single();
       if (!error) {
