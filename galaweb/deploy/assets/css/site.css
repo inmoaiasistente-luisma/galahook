@@ -42,8 +42,10 @@
 /* ---------- reset / base ---------- */
 *{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
+html,body{overflow-x:hidden;}
 body{
   margin:0;
+  max-width:100%;
   font-family:var(--body);
   color:var(--ink);
   background:var(--sand);
@@ -511,6 +513,13 @@ select option:disabled{ color:rgba(251,248,241,.5); }
   .reel{grid-template-columns:repeat(4,1fr);}
   .nav,.lang-toggle{display:none;}
   .nav-toggle{display:flex;}
+  /* Header cabe en pantallas chicas: logo/iconos/boton mas compactos */
+  .site-header .wrap-wide{gap:14px;}
+  .header-tools{gap:14px;}
+  .header-tools .btn-sm{padding:11px 18px;font-size:15px;}
+  .brand img{height:58px;}
+  .site-header.scrolled .brand img{height:52px;}
+  .hdr-social svg{width:30px;height:30px;}
   .nav.open{display:flex;position:fixed;top:0;right:0;bottom:0;width:min(82vw,360px);background:var(--deep);flex-direction:column;align-items:stretch;padding:96px 28px 28px;gap:4px;z-index:210;box-shadow:var(--shadow);}
   .nav.open a{color:var(--paper);font-size:18px;padding:14px 12px;border-bottom:1px solid var(--line-on-dark);text-shadow:none;}
   .nav.open a::after{display:none;}
@@ -518,7 +527,20 @@ select option:disabled{ color:rgba(251,248,241,.5); }
 }
 @media(max-width:620px){
   body{font-size:16px;}
-  .wrap,.wrap-wide{padding:0 18px;}
+  .wrap,.wrap-wide{padding:0 16px;}
+  /* Header en telefono: compacto, sin desbordar */
+  .site-header{padding:12px 0;}
+  .site-header .wrap-wide{gap:10px;}
+  .brand img{height:46px;}
+  .site-header.scrolled .brand img{height:42px;}
+  .brand{gap:10px;}
+  .brand-text b{font-size:14px;}
+  .brand-text span{font-size:8px;letter-spacing:.26em;}
+  .hdr-social{display:none;}
+  .header-tools{gap:8px;}
+  .header-tools .btn-sm{padding:9px 13px;font-size:13px;}
+  .nav-toggle{padding:7px;gap:6px;}
+  .nav-toggle span{width:26px;}
   .grid-3,.grid-4,.pkg-grid,.grid-2,.stats,.features{grid-template-columns:1fr;}
   .trust .wrap{grid-template-columns:1fr 1fr;}
   .trust-item{border-right:none;border-bottom:1px solid var(--line-on-dark);}
@@ -530,6 +552,11 @@ select option:disabled{ color:rgba(251,248,241,.5); }
   .stats{grid-template-columns:1fr 1fr;}
 }
 
+@media(max-width:360px){
+  /* Telefonos muy angostos: solo marca + menu (Book queda en hero/WhatsApp/menu) */
+  .header-tools .btn-sm{display:none;}
+  .brand-text b{font-size:13px;}
+}
 .nav-toggle{z-index:220;}
 .mobile-lang{display:none;}
 
