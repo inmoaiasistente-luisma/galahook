@@ -301,6 +301,114 @@ function ownerAgencyNotification(b) {
   return { subject: subject, html: html, text: text };
 }
 
+/* Botón de acción reutilizable (sin JS, compatible con clientes de correo). */
+function ctaButton(url, label) {
+  if (!url) return '';
+  return '<p style="margin:16px 0 8px;"><a href="' + esc(url) + '" style="background:' + GOLD + ';color:' + INK + ';padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:700;display:inline-block;">' + esc(label) + '</a></p>';
+}
+function connectionCityLabel(v) {
+  const map = { quito: 'Quito', guayaquil: 'Guayaquil', either: 'Cualquiera / Either', connection_tbd: 'Por definir / TBD' };
+  return map[v] || (v || '—');
+}
+
+/* --- 7. Cliente: invitación al formulario de pasajeros (sin QR) --- */
+function customerPassengerFormInvitation(b, ctx) {
+  ctx = ctx || {};
+  const url = ctx.formUrl || (siteUrl() ? siteUrl() + '/passengers.html' : '');
+  const subject = 'Complete your passenger details — ' + (b.booking_code || '');
+  const html = shell(subject,
+    h1('Complete your passenger details', 'Completa los datos de tus pasajeros')
+    + para('Thank you, ' + (b.customer_name || '') + '. To begin preparing your flight options to San Cristóbal and, when needed, your connection-city hotel, please complete each passenger\'s details.',
+           'Gracias, ' + (b.customer_name || '') + '. Para comenzar a preparar tus opciones de vuelos a San Cristóbal y, cuando sea necesario, el hotel en tu ciudad de conexión, completa los datos de cada pasajero.')
+    + rows(bookingPairs(b, { name: true }))
+    + ctaButton(url, 'Complete passenger details / Completar datos')
+    + para('This secure link is personal to your booking — please do not share it.',
+           'Este enlace seguro es personal de tu reserva — por favor no lo compartas.'));
+  const text = textBlock([
+    'COMPLETE YOUR PASSENGER DETAILS / COMPLETA LOS DATOS DE TUS PASAJEROS', '',
+    'Booking code / Código: ' + (b.booking_code || ''),
+    'Tour: ' + (b.tour_name || ''),
+    'Date / Fecha: ' + (b.booking_date || ''),
+    'Guests / Pax: ' + (b.guests || ''), '',
+    url ? ('Open your secure form / Abre tu formulario seguro: ' + url) : null, '',
+    'This secure link is personal to your booking — please do not share it.',
+    'Este enlace seguro es personal de tu reserva — por favor no lo compartas.'
+  ]);
+  return { subject: subject, html: html, text: text };
+}
+
+/* --- 8. Interno: formulario de pasajeros recibido (sin documentos) --- */
+function ownerPassengerFormSubmitted(b, ctx) {
+  ctx = ctx || {};
+  const form = ctx.form || {};
+  const subject = 'Formulario de pasajeros recibido — ' + (b.booking_code || '');
+  const html = shell(subject,
+    h1('Formulario de pasajeros recibido', 'Requiere revisión del equipo')
+    + rows([
+      ['Código', esc(b.booking_code)],
+      ['Cliente', esc(b.customer_name)],
+      ['Tour', esc(b.tour_name)],
+      ['Fecha', esc(b.booking_date)],
+      ['Pax', esc(b.guests)],
+      ['Ciudad preferida', esc(connectionCityLabel(form.preferred_connection_city))]
+    ])
+    + '<p style="margin:0 0 12px;color:' + SOFT + ';">Por seguridad, este correo no incluye números de documento. Abre el panel para revisar el expediente completo.</p>'
+    + adminLink());
+  const text = textBlock([
+    'FORMULARIO DE PASAJEROS RECIBIDO', '',
+    'Código: ' + (b.booking_code || ''),
+    'Cliente: ' + (b.customer_name || ''),
+    'Tour: ' + (b.tour_name || ''),
+    'Fecha: ' + (b.booking_date || ''),
+    'Pax: ' + (b.guests || ''),
+    'Ciudad preferida: ' + connectionCityLabel(form.preferred_connection_city), '',
+    'Por seguridad, este correo no incluye números de documento.',
+    siteUrl() ? (siteUrl() + '/admin.html') : null
+  ]);
+  return { subject: subject, html: html, text: text };
+}
+
+/* --- 9. Cliente: se solicitan cambios en el formulario --- */
+function customerPassengerFormChangesRequested(b, ctx) {
+  ctx = ctx || {};
+  const url = ctx.formUrl || (siteUrl() ? siteUrl() + '/passengers.html' : '');
+  const note = ctx.note
+    ? ('<p style="margin:0 0 10px;color:' + INK + ';"><strong>' + esc(ctx.note) + '</strong></p>')
+    : '';
+  const subject = 'We need a few changes — ' + (b.booking_code || '');
+  const html = shell(subject,
+    h1('We need a few changes', 'Necesitamos algunos cambios')
+    + para('Thank you for your submission, ' + (b.customer_name || '') + '. Please review and update the passenger details using your secure link.',
+           'Gracias por enviar los datos, ' + (b.customer_name || '') + '. Por favor revisa y actualiza la información de los pasajeros con tu enlace seguro.')
+    + note
+    + rows(bookingPairs(b, { name: true }))
+    + ctaButton(url, 'Update passenger details / Actualizar datos'));
+  const text = textBlock([
+    'WE NEED A FEW CHANGES / NECESITAMOS ALGUNOS CAMBIOS', '',
+    ctx.note ? ('Note / Nota: ' + ctx.note) : null,
+    'Booking code / Código: ' + (b.booking_code || ''), '',
+    url ? ('Update your details / Actualiza tus datos: ' + url) : null
+  ]);
+  return { subject: subject, html: html, text: text };
+}
+
+/* --- 10. Cliente: intake completado --- */
+function customerPassengerFormCompleted(b) {
+  const subject = 'All passenger details received — ' + (b.booking_code || '');
+  const html = shell(subject,
+    h1('Thank you — all set', 'Gracias — todo listo')
+    + para('Thank you. We received the information for all passengers. Our team will begin preparing flight and accommodation options.',
+           'Gracias. Recibimos la información de todos los pasajeros. Nuestro equipo comenzará a preparar las opciones de vuelos y alojamiento.')
+    + rows(bookingPairs(b, { name: true })));
+  const text = textBlock([
+    'ALL PASSENGER DETAILS RECEIVED / DATOS DE PASAJEROS RECIBIDOS', '',
+    'Thank you. We received the information for all passengers. Our team will begin preparing flight and accommodation options.',
+    'Gracias. Recibimos la información de todos los pasajeros. Nuestro equipo comenzará a preparar las opciones de vuelos y alojamiento.', '',
+    'Booking code / Código: ' + (b.booking_code || '')
+  ]);
+  return { subject: subject, html: html, text: text };
+}
+
 /* ---------------- registro ---------------- */
 const TEMPLATES = {
   customer_booking_confirmation: { build: customerBookingConfirmation, qr: true },
@@ -308,7 +416,11 @@ const TEMPLATES = {
   customer_quote_acknowledgement: { build: customerQuoteAcknowledgement, qr: false },
   owner_quote_notification: { build: ownerQuoteNotification, qr: false },
   customer_agency_confirmation: { build: customerAgencyConfirmation, qr: true },
-  owner_agency_notification: { build: ownerAgencyNotification, qr: false }
+  owner_agency_notification: { build: ownerAgencyNotification, qr: false },
+  customer_passenger_form_invitation: { build: customerPassengerFormInvitation, qr: false },
+  owner_passenger_form_submitted: { build: ownerPassengerFormSubmitted, qr: false },
+  customer_passenger_form_changes_requested: { build: customerPassengerFormChangesRequested, qr: false },
+  customer_passenger_form_completed: { build: customerPassengerFormCompleted, qr: false }
 };
 
 module.exports = { TEMPLATES, esc, money, methodLabel };

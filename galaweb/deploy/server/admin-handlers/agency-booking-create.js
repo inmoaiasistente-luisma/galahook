@@ -18,6 +18,8 @@ const crypto = require('crypto');
 const { getSupabase } = require('../lib/supabase');
 const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
 const { notifyBooking } = require('../lib/booking-email-service');
+const { ensurePassengerForm } = require('../lib/passenger-intake');
+const { sendInvitation } = require('../lib/passenger-intake-emails');
 const { computeAgencyCost } = require('../lib/pricing-engine');
 const { isStripeTestMode } = require('../lib/runtime-mode');
 const catalog = require('../lib/tour-catalog');
@@ -191,6 +193,12 @@ module.exports = async function handler(req, res) {
            devuelve éxito y la notificación queda como failed para reintentar. */
         try { await notifyBooking(data, 'customer_agency_confirmation', 'owner_agency_notification'); }
         catch (e) { logServer('agency-create', 'notify failed'); }
+        /* Intake de pasajeros (venta paid+confirmed). Fire-and-forget: si el
+           cliente no tiene email o falla el correo, la venta no se ve afectada. */
+        try {
+          const form = await ensurePassengerForm(data);
+          if (form) await sendInvitation(data, form);
+        } catch (e) { logServer('agency-create', 'intake failed'); }
         const view = session.role === 'staff' ? pick(data, STAFF_VIEW) : data;
         return sendJson(res, 200, { booking: view });
       }

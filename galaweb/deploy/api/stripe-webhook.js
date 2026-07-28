@@ -14,6 +14,8 @@ const { getStripe } = require('../server/lib/stripe');
 const { getSupabase } = require('../server/lib/supabase');
 const { readRawBody } = require('../server/lib/raw-body');
 const { notifyBooking } = require('../server/lib/booking-email-service');
+const { ensurePassengerForm } = require('../server/lib/passenger-intake');
+const { sendInvitation } = require('../server/lib/passenger-intake-emails');
 
 const HANDLED = [
   'payment_intent.processing',
@@ -186,6 +188,18 @@ async function processPaymentIntent(supabase, event, pi) {
         await notifyBooking(row, 'customer_booking_confirmation', 'owner_booking_notification');
       } catch (e) {
         logSafe('notify (no afecta al pago)', sanitize(e && e.message));
+      }
+
+      /* Intake de pasajeros: crear el formulario seguro y enviar la invitación.
+         Igual que el correo/QR, un fallo aquí NUNCA devuelve 500 a Stripe. */
+      try {
+        const fresh2 = await supabase.from('bookings').select('*').eq('id', booking.id).maybeSingle();
+        const row2 = (fresh2 && fresh2.data) || Object.assign({}, booking,
+          { payment_status: 'paid', booking_status: 'confirmed', paid_at: paidAt });
+        const form = await ensurePassengerForm(row2);
+        if (form) await sendInvitation(row2, form);
+      } catch (e) {
+        logSafe('intake (no afecta al pago)', sanitize(e && e.message));
       }
       return;
     }
