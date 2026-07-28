@@ -278,10 +278,12 @@ function esc(s){ return String(s==null?'':s).replace(/"/g,'&quot;'); }
 function bookBtn(name, price, unit, cls, label, min, tourId){
   return '<button type="button" class="'+cls+' js-book" data-name="'+esc(name)+'" data-price="'+(price||0)+'" data-unit="'+unit+'" data-min="'+(min||1)+'" data-tour-id="'+esc(tourId||'')+'">'+label+'</button>';
 }
-/* ===== HOTFIX (contención): checkout de PAQUETES en pausa mientras se
-   estabiliza el precio canónico. NO afecta tours de día, pesca (cotización),
-   navegación, contacto ni cotizaciones. Restaurar = PKG_CHECKOUT_PAUSED=false. */
-var PKG_CHECKOUT_PAUSED = true;
+/* ===== Checkout de PAQUETES ACTIVO. La contención temporal (bug de display
+   100x del total del modal) se resolvió: pricing-preview y create-payment-intent
+   coinciden y el total se muestra en dólares (÷100 una sola vez). Precios
+   canónicos 2026 vigentes. Poner en true reactivaría la contención (tarjeta con
+   "Contáctenos" + guard server-side) sin afectar tours de día ni cotizaciones. */
+var PKG_CHECKOUT_PAUSED = false;
 function isPackageTour(id){ return !!(S && S.packages && S.packages.some(function(p){ return p.id===id; })); }
 function bookables(){
   const PK=L==='es'?'Paquetes':'Packages', TO=L==='es'?'Tours':'Tours', FI=L==='es'?'Pesca deportiva':'Sport fishing';
