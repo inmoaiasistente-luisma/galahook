@@ -116,6 +116,20 @@ function numField(label, obj, key){
   f.addEventListener('input',()=>{ obj[key]=parseInt(f.value||'0',10); setDirty(); });
   box.appendChild(f); wrap.appendChild(box); return wrap;
 }
+/* HOTFIX precios: el precio canónico lo administra el servidor (tour-catalog.js);
+   la edición desde el panel (localStorage) ya no controla el precio público.
+   Campo de precio de solo lectura con nota, hasta que exista la tabla de precios
+   editable en Supabase (trabajo separado). No bloquea textos/imágenes/itinerarios. */
+function readOnlyPriceField(label, obj, key){
+  const wrap=el('<div class="ed-field"><label>'+label+'</label></div>');
+  const box=el('<div class="price-in"><span>$</span></div>');
+  const f=document.createElement('input'); f.type='number'; f.value=obj[key]||0; f.readOnly=true; f.disabled=true;
+  box.appendChild(f); wrap.appendChild(box);
+  wrap.appendChild(el('<div class="bk-sub-hint" style="margin-top:6px">'+(ES
+    ? 'Precio canónico administrado en el servidor. La edición permanente desde el panel estará disponible próximamente.'
+    : 'Canonical price managed by the server. Permanent price editing from the admin panel will be available soon.')+'</div>'));
+  return wrap;
+}
 function imgField(label, obj, key){
   const wrap=el('<div class="ed-field"><label>'+label+'</label><div class="img-edit"></div></div>');
   const row=wrap.querySelector('.img-edit');
@@ -245,7 +259,7 @@ function panelPackages(){
       c.appendChild(imgField('Photo',it,'img'));
       const r=el('<div class="ed-row"></div>'); r.appendChild(biField('Days',it,'days')); r.appendChild(biField('Nights',it,'nights')); c.appendChild(r);
       const nm=biField('Name',it,'name'); nm.querySelectorAll('input').forEach(i=>i.addEventListener('input',onTitle)); c.appendChild(nm);
-      c.appendChild(numField('Price (per person)',it,'price'));
+      c.appendChild(readOnlyPriceField('Price (per person)',it,'price'));
       const pop=el('<div class="ed-field"><label style="display:flex;align-items:center;gap:9px;text-transform:none;letter-spacing:0;font-size:14px;cursor:pointer"><input type="checkbox" style="width:auto"> Mark as “Most Popular”</label></div>');
       const cb=pop.querySelector('input'); cb.checked=!!it.popular; cb.addEventListener('change',()=>{ if(cb.checked) W.packages.forEach(x=>x.popular=false); it.popular=cb.checked; setDirty(); });
       c.appendChild(pop);
@@ -267,7 +281,7 @@ function panelTours(){
       sel.addEventListener('change',()=>{it.cat=sel.value;setDirty();}); catWrap.appendChild(sel);
       r.appendChild(catWrap); r.appendChild(biField('Duration',it,'duration')); c.appendChild(r);
       c.appendChild(biField('Tag (badge)',it,'tag'));
-      const r2=el('<div class="ed-row"></div>'); r2.appendChild(numField('Price (0 = custom quote)',it,'price')); r2.appendChild(biField('Price label',it,'priceLabel')); c.appendChild(r2);
+      const r2=el('<div class="ed-row"></div>'); r2.appendChild(readOnlyPriceField('Price (0 = custom quote)',it,'price')); r2.appendChild(biField('Price label',it,'priceLabel')); c.appendChild(r2);
       c.appendChild(biField('Description',it,'blurb',true));
     }
   });
@@ -284,7 +298,7 @@ function panelFishing(){
   const sub=listPanel(f.trips,{
     addLabel:'Add charter', titleField:it=>it.name&&it.name.en?it.name.en:'Charter',
     template:()=>({id:'f'+Date.now(),name:{en:'New charter',es:''},duration:{en:'',es:''},price:0}),
-    build:(cc,it,idx,onTitle)=>{ const nm=biField('Name',it,'name'); nm.querySelectorAll('input').forEach(i=>i.addEventListener('input',onTitle)); cc.appendChild(nm); cc.appendChild(biField('Duration',it,'duration')); cc.appendChild(numField('Price',it,'price')); }
+    build:(cc,it,idx,onTitle)=>{ const nm=biField('Name',it,'name'); nm.querySelectorAll('input').forEach(i=>i.addEventListener('input',onTitle)); cc.appendChild(nm); cc.appendChild(biField('Duration',it,'duration')); cc.appendChild(readOnlyPriceField('Price',it,'price')); }
   });
   ct.appendChild(sub); p.appendChild(ct);
   const ci=card('Fishing photos','Shown in the rotating reel on the Sport Fishing page.');
