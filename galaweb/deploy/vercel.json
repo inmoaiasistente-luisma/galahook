@@ -23,5 +23,9 @@
     { "source": "/api/admin-notifications", "destination": "/api/admin-router?action=notifications-list" },
     { "source": "/api/admin-notifications-retry", "destination": "/api/admin-router?action=email-retry" },
     { "source": "/api/admin-notifications-retry-batch", "destination": "/api/admin-router?action=notifications-retry-batch" }
+  ],
+  "headers": [
+    { "source": "/assets/(.*)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" } ] },
+    { "source": "/(.*)\\.html", "headers": [ { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" } ] }
   ]
 }

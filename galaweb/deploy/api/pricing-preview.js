@@ -19,6 +19,9 @@ const ALLOWED_KEYS = ['tour_id', 'guests'];
 const MAX_GUESTS = 20;
 
 module.exports = async function handler(req, res) {
+  /* El precio canónico NUNCA se cachea: cada consulta refleja el catálogo vivo. */
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
   if (req.method !== 'POST') return methodNotAllowed(res);
 
   let tenant;

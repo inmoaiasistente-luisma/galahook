@@ -46,10 +46,25 @@ function deepMerge(base, over){
   }
   return (over!==undefined)? over : base;
 }
+/* FUENTE ÚNICA DE PRECIOS (hotfix): los precios mostrados provienen SIEMPRE
+   del catálogo canónico horneado (window.GHA_DEFAULT, espejo verificado del
+   catálogo del servidor server/lib/tour-catalog.js). El editor de contenido
+   local (localStorage) puede cambiar textos/imágenes pero NUNCA el precio:
+   aquí se reimponen los precios canónicos por id. Ids sin catálogo → 0. */
+function reconcilePrices(S){
+  const def = window.GHA_DEFAULT || {};
+  const map = function(arr){ const m={}; (arr||[]).forEach(function(x){ if(x&&x.id!=null) m[x.id]=x; }); return m; };
+  const dp=map(def.packages), dt=map(def.tours), dfr=map(def.fishing&&def.fishing.trips);
+  (S.packages||[]).forEach(function(p){ p.price = dp[p.id]?dp[p.id].price:0; });
+  (S.tours||[]).forEach(function(t){ t.price = dt[t.id]?dt[t.id].price:0; });
+  if(S.fishing&&S.fishing.trips) S.fishing.trips.forEach(function(f){ f.price = dfr[f.id]?dfr[f.id].price:0; });
+  return S;
+}
 function loadContent(){
   let stored=null;
   try{ stored=JSON.parse(localStorage.getItem(CKEY)||'null'); }catch(e){}
-  return stored ? deepMerge(window.GHA_DEFAULT, stored) : window.GHA_DEFAULT;
+  const merged = stored ? deepMerge(window.GHA_DEFAULT, stored) : window.GHA_DEFAULT;
+  return reconcilePrices(merged);
 }
 let S = loadContent();
 let L = localStorage.getItem(LKEY) || 'en';
@@ -730,10 +745,8 @@ function pkgCard(p){
     +'<div class="pkg-media'+(hasDetail?' js-detail':'')+'"'+(hasDetail?' data-type="package" data-id="'+esc(p.id)+'"':'')+'><img src="'+p.img+'" alt="'+t(p.name)+'" loading="lazy"></div>'
     +'<div class="pkg-head"><span class="days">'+t(p.days)+'</span> <span class="nights">/ '+t(p.nights)+'</span>'
       +'<div style="font-family:var(--display);font-weight:700;font-size:19px;margin-top:8px">'+t(p.name)+'</div></div>'
-    +(onIndex?'':(PKG_CHECKOUT_PAUSED
-        ? '<div class="pkg-price quote"><small style="color:var(--ink-soft)">'+(L==='es'?'Precio':'Price')+'</small><b style="font-size:15px;line-height:1.4;color:var(--ink)">'+(L==='es'?'Precio temporalmente no disponible':'Price temporarily unavailable')+'</b><em style="color:var(--ink-soft)">'+(L==='es'?'Contáctenos para completar su reserva':'Contact us to complete your reservation')+'</em></div>'
-        : '<div class="pkg-price"><small>'+(L==='es'?'Desde':'From')+'</small><b>'+money(p.price)+'</b><em>/ '+(L==='es'?'persona':'person')+' · '+(L==='es'?'mín 2':'min 2')+'</em></div>'))
-    +'<ul class="pkg-includes">'+p.includes.map(i=>'<li>'+svg('check')+'<span>'+t(i)+'</span></li>').join('')+'</ul>'
+    +(onIndex?'':'<div class="pkg-price"><small>'+(L==='es'?'Desde':'From')+'</small><b>'+money(p.price)+'</b><em>/ '+(L==='es'?'persona':'person')+' · '+(L==='es'?'mín 2':'min 2')+'</em></div>')
+    +'<ul class="pkg-includes">'+(p.includes||[]).map(i=>'<li>'+svg('check')+'<span>'+t(i)+'</span></li>').join('')+'</ul>'
     +'<div class="pkg-foot">'
       +(hasDetail?detailBtn('package', p.id, 'btn btn-ghost btn-block', (L==='es'?'Ver itinerario':'View itinerary')):'')
       +(PKG_CHECKOUT_PAUSED
