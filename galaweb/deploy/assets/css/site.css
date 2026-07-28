@@ -520,6 +520,17 @@ select option:disabled{ color:rgba(251,248,241,.5); }
   .brand img{height:58px;}
   .site-header.scrolled .brand img{height:52px;}
   .hdr-social svg{width:30px;height:30px;}
+  /* Sin backdrop-filter en movil: evita crear containing-block que colapsa
+     el menu fijo (.nav.open). Fondo solido para legibilidad del header. */
+  .site-header.scrolled{background:#f7f3eb;-webkit-backdrop-filter:none;backdrop-filter:none;}
+  /* Refuerzo: el menu movil siempre a pantalla completa y opaco */
+  .nav.open{height:100dvh;background:var(--deep);}
+  /* Menu abierto = overlay oscuro: enlaces e icono SIEMPRE claros,
+     aun con el header scrolleado (que si no pone el texto oscuro -> invisible) */
+  .site-header.scrolled .nav.open a,
+  .nav.open a{color:var(--paper);text-shadow:none;}
+  .site-header.scrolled .nav.open ~ .header-tools .nav-toggle span,
+  .nav.open ~ .header-tools .nav-toggle span{background:var(--paper);}
   .nav.open{display:flex;position:fixed;top:0;right:0;bottom:0;width:min(82vw,360px);background:var(--deep);flex-direction:column;align-items:stretch;padding:96px 28px 28px;gap:4px;z-index:210;box-shadow:var(--shadow);}
   .nav.open a{color:var(--paper);font-size:18px;padding:14px 12px;border-bottom:1px solid var(--line-on-dark);text-shadow:none;}
   .nav.open a::after{display:none;}
