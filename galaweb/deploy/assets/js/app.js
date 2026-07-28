@@ -263,10 +263,15 @@ function esc(s){ return String(s==null?'':s).replace(/"/g,'&quot;'); }
 function bookBtn(name, price, unit, cls, label, min, tourId){
   return '<button type="button" class="'+cls+' js-book" data-name="'+esc(name)+'" data-price="'+(price||0)+'" data-unit="'+unit+'" data-min="'+(min||1)+'" data-tour-id="'+esc(tourId||'')+'">'+label+'</button>';
 }
+/* ===== HOTFIX (contención): checkout de PAQUETES en pausa mientras se
+   estabiliza el precio canónico. NO afecta tours de día, pesca (cotización),
+   navegación, contacto ni cotizaciones. Restaurar = PKG_CHECKOUT_PAUSED=false. */
+var PKG_CHECKOUT_PAUSED = true;
+function isPackageTour(id){ return !!(S && S.packages && S.packages.some(function(p){ return p.id===id; })); }
 function bookables(){
   const PK=L==='es'?'Paquetes':'Packages', TO=L==='es'?'Tours':'Tours', FI=L==='es'?'Pesca deportiva':'Sport fishing';
   const out=[];
-  S.packages.forEach(p=>{ if(p.price) out.push({tourId:p.id, label:t(p.name)+' · '+t(p.days), price:p.price, unit:'person', min:(p.minGuests||2), requiresQuote:false, group:PK}); });
+  if(!PKG_CHECKOUT_PAUSED) S.packages.forEach(p=>{ if(p.price) out.push({tourId:p.id, label:t(p.name)+' · '+t(p.days), price:p.price, unit:'person', min:(p.minGuests||2), requiresQuote:false, group:PK}); });
   S.tours.forEach(tr=>{ if(tr.price) out.push({tourId:tr.id, label:t(tr.name), price:tr.price, unit:'person', min:1, requiresQuote:false, group:TO}); });
   S.fishing.trips.forEach(tr=>{ if(tr.price) out.push({tourId:tr.id, label:t(tr.name), price:tr.price, unit:'boat', min:1, requiresQuote:false, group:FI}); });
   return out;
@@ -443,6 +448,11 @@ function refreshPricing(){
   }).catch(function(){ if(mySeq!==bkPricing.seq) return; bkPricing.pending=false; bkPricing.applied=null; updateBkSummary(); });
 }
 function openBooking(opts){
+  /* HOTFIX contención: no abrir checkout de paquetes mientras el precio se estabiliza. */
+  if(PKG_CHECKOUT_PAUSED && isPackageTour(opts&&opts.tourId)){
+    if(window.GHA&&GHA.toast) GHA.toast(L==='es'?'Precio temporalmente no disponible. Contáctenos para completar su reserva.':'Price temporarily unavailable. Contact us to complete your reservation.');
+    return;
+  }
   buildBookingModal();
   const general=!opts.name;
   bkSubmitting=false; bkResetRequestId();
@@ -720,11 +730,15 @@ function pkgCard(p){
     +'<div class="pkg-media'+(hasDetail?' js-detail':'')+'"'+(hasDetail?' data-type="package" data-id="'+esc(p.id)+'"':'')+'><img src="'+p.img+'" alt="'+t(p.name)+'" loading="lazy"></div>'
     +'<div class="pkg-head"><span class="days">'+t(p.days)+'</span> <span class="nights">/ '+t(p.nights)+'</span>'
       +'<div style="font-family:var(--display);font-weight:700;font-size:19px;margin-top:8px">'+t(p.name)+'</div></div>'
-    +(onIndex?'':'<div class="pkg-price"><small>'+(L==='es'?'Desde':'From')+'</small><b>'+money(p.price)+'</b><em>/ '+(L==='es'?'persona':'person')+' · '+(L==='es'?'mín 2':'min 2')+'</em></div>')
+    +(onIndex?'':(PKG_CHECKOUT_PAUSED
+        ? '<div class="pkg-price quote"><small style="color:var(--ink-soft)">'+(L==='es'?'Precio':'Price')+'</small><b style="font-size:15px;line-height:1.4;color:var(--ink)">'+(L==='es'?'Precio temporalmente no disponible':'Price temporarily unavailable')+'</b><em style="color:var(--ink-soft)">'+(L==='es'?'Contáctenos para completar su reserva':'Contact us to complete your reservation')+'</em></div>'
+        : '<div class="pkg-price"><small>'+(L==='es'?'Desde':'From')+'</small><b>'+money(p.price)+'</b><em>/ '+(L==='es'?'persona':'person')+' · '+(L==='es'?'mín 2':'min 2')+'</em></div>'))
     +'<ul class="pkg-includes">'+p.includes.map(i=>'<li>'+svg('check')+'<span>'+t(i)+'</span></li>').join('')+'</ul>'
     +'<div class="pkg-foot">'
       +(hasDetail?detailBtn('package', p.id, 'btn btn-ghost btn-block', (L==='es'?'Ver itinerario':'View itinerary')):'')
-      +bookBtn(t(p.name)+' · '+t(p.days), p.price, 'person', 'btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block', (onIndex?(L==='es'?'Consultar':'Enquire'):(L==='es'?'Reservar este viaje':'Book this journey')), (p.minGuests||2), p.id)
+      +(PKG_CHECKOUT_PAUSED
+         ? '<a class="btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block" href="contact.html">'+(L==='es'?'Contáctenos':'Contact us')+'</a>'
+         : bookBtn(t(p.name)+' · '+t(p.days), p.price, 'person', 'btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block', (onIndex?(L==='es'?'Consultar':'Enquire'):(L==='es'?'Reservar este viaje':'Book this journey')), (p.minGuests||2), p.id))
     +'</div>'
   +'</article>';
 }
