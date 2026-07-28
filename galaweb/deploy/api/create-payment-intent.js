@@ -87,6 +87,10 @@ module.exports = async function handler(req, res) {
     const tour = catalog.getTour(tour_id);
     if (!tour) return sendError(res, 400, 'INVALID_TOUR', 'Unknown tour_id');
     if (tour.requiresQuote) return sendError(res, 400, 'QUOTE_REQUIRED', 'This experience requires a quote request');
+    /* HOTFIX contención (reactivada): checkout de PAQUETES en pausa por un bug de
+       display del total en el modal (muestra centavos como dólares, 100x). El
+       cobro server-side es correcto, pero no se reabre hasta corregir el display. */
+    if (tour.type === 'package') return sendError(res, 400, 'PACKAGE_CHECKOUT_PAUSED', 'Package checkout is temporarily unavailable');
 
     if (!isRealYmd(booking_date)) return sendError(res, 400, 'INVALID_DATE', 'booking_date must be a real YYYY-MM-DD date');
     if (!isNotPastGalapagos(booking_date)) return sendError(res, 400, 'DATE_IN_PAST', 'booking_date cannot be in the past');

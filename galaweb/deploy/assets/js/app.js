@@ -281,7 +281,7 @@ function bookBtn(name, price, unit, cls, label, min, tourId){
 /* ===== HOTFIX (contención): checkout de PAQUETES en pausa mientras se
    estabiliza el precio canónico. NO afecta tours de día, pesca (cotización),
    navegación, contacto ni cotizaciones. Restaurar = PKG_CHECKOUT_PAUSED=false. */
-var PKG_CHECKOUT_PAUSED = false;
+var PKG_CHECKOUT_PAUSED = true;
 function isPackageTour(id){ return !!(S && S.packages && S.packages.some(function(p){ return p.id===id; })); }
 function bookables(){
   const PK=L==='es'?'Paquetes':'Packages', TO=L==='es'?'Tours':'Tours', FI=L==='es'?'Pesca deportiva':'Sport fishing';
