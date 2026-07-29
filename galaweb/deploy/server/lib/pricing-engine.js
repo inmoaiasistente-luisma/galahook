@@ -17,6 +17,7 @@
 
 const catalog = require('./tour-catalog');
 const { getSupabase } = require('./supabase');
+const { resolvePackageBasePriceCents } = require('./package-pricing');
 
 /* ---- selección de regla ---------------------------------------------
    Entre las reglas aplicables se ordena y se toma la PRIMERA:
@@ -77,7 +78,19 @@ async function computeWebPricing(o) {
   if (!tour) throw new Error('INVALID_TOUR');
   if (tour.requiresQuote || tour.priceCents == null) throw new Error('QUOTE_ONLY');
 
-  const gross = catalog.calculateGrossCents(tour, guests);
+  /* PRECIO BASE: los PAQUETES toman su precio de Supabase (fuente de verdad,
+     editable por el owner); el resto usa el catálogo. Si un paquete no tiene
+     precio publicado (ni fallback válido) se lanza PACKAGE_PRICE_UNAVAILABLE
+     y el checkout/preview se bloquea (nunca se inventa un precio). */
+  let basePriceCents = tour.priceCents;
+  let packagePricing = null;
+  if (tour.type === 'package') {
+    packagePricing = await resolvePackageBasePriceCents(o && o.tenantId, tour); // throws PACKAGE_PRICE_UNAVAILABLE
+    basePriceCents = packagePricing.priceCents;
+  }
+  const effectiveTour = (basePriceCents === tour.priceCents) ? tour : Object.assign({}, tour, { priceCents: basePriceCents });
+
+  const gross = catalog.calculateGrossCents(effectiveTour, guests);
 
   const supabase = getSupabase();
 
@@ -118,7 +131,10 @@ async function computeWebPricing(o) {
   } : null;
 
   const pricingSnapshot = {
-    base_price_cents: tour.priceCents,
+    base_price_cents: basePriceCents,                 // precio efectivo (paquetes: Supabase; resto: catálogo)
+    catalog_price_cents: tour.priceCents,             // referencia del catálogo (respaldo)
+    package_price_source: packagePricing ? packagePricing.source : null,      // 'db' | 'fallback' | null
+    package_pricing_version: packagePricing ? packagePricing.pricingVersion : null,
     unit: tour.unit,
     guests: guests,
     rule: rule ? { id: rule.id, name: rule.name, type: rule.discount_type,
@@ -134,6 +150,7 @@ async function computeWebPricing(o) {
     amountCents: amount,
     costCents: costCents,             // null si no hay configuración de costo
     appliedDiscount: appliedDiscount, // null si no hubo regla
+    packagePricing: packagePricing,   // {priceCents,source,currency,pricingVersion,publishedAt} o null (no-paquete)
     pricingSnapshot: pricingSnapshot
   };
 }

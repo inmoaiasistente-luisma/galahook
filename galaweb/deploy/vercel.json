@@ -22,7 +22,13 @@
     { "source": "/api/admin-test-data-archive", "destination": "/api/admin-router?action=test-data-archive" },
     { "source": "/api/admin-notifications", "destination": "/api/admin-router?action=notifications-list" },
     { "source": "/api/admin-notifications-retry", "destination": "/api/admin-router?action=email-retry" },
-    { "source": "/api/admin-notifications-retry-batch", "destination": "/api/admin-router?action=notifications-retry-batch" }
+    { "source": "/api/admin-notifications-retry-batch", "destination": "/api/admin-router?action=notifications-retry-batch" },
+    { "source": "/api/admin-package-prices-list", "destination": "/api/admin-router?action=package-prices-list" },
+    { "source": "/api/admin-package-price-draft-save", "destination": "/api/admin-router?action=package-price-draft-save" },
+    { "source": "/api/admin-package-price-publish", "destination": "/api/admin-router?action=package-price-publish" },
+    { "source": "/api/admin-package-price-history", "destination": "/api/admin-router?action=package-price-history" },
+    { "source": "/api/admin-package-price-rollback", "destination": "/api/admin-router?action=package-price-rollback" },
+    { "source": "/api/admin-package-price-toggle", "destination": "/api/admin-router?action=package-price-toggle" }
   ],
   "headers": [
     { "source": "/assets/(.*)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" } ] },

@@ -54,6 +54,12 @@ ROUTES['test-data-mark'] = require('../server/admin-handlers/test-data-mark');
 ROUTES['test-data-archive'] = require('../server/admin-handlers/test-data-archive');
 ROUTES['notifications-list'] = require('../server/admin-handlers/notifications-list');
 ROUTES['notifications-retry-batch'] = require('../server/admin-handlers/notifications-retry-batch');
+ROUTES['package-prices-list'] = require('../server/admin-handlers/package-prices-list');
+ROUTES['package-price-draft-save'] = require('../server/admin-handlers/package-price-draft-save');
+ROUTES['package-price-publish'] = require('../server/admin-handlers/package-price-publish');
+ROUTES['package-price-history'] = require('../server/admin-handlers/package-price-history');
+ROUTES['package-price-rollback'] = require('../server/admin-handlers/package-price-rollback');
+ROUTES['package-price-toggle'] = require('../server/admin-handlers/package-price-toggle');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */
