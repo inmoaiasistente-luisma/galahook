@@ -331,6 +331,34 @@ async function togglePackagePrice(o) {
   return { ok: true, published: row };
 }
 
+/* ---- ACTUALIZACIÓN DIRECTA EN VIVO (owner) — un solo paso, RPC atómico ----
+   El owner escribe un precio y se publica al instante. El motivo lo pone el
+   backend automáticamente ('owner_direct_update'): el owner nunca lo escribe.
+   Si el precio es idéntico al publicado, no hace nada (NO_CHANGE). */
+async function updateLivePrice(o) {
+  const tenantId = o.tenantId, packageId = o.packageId, basePriceCents = o.basePriceCents, userId = o.userId || null;
+  if (!isPackageId(packageId)) return { ok: false, error: 'INVALID_PACKAGE' };
+  if (!Number.isInteger(basePriceCents) || basePriceCents <= 0 || basePriceCents > MAX_PRICE_CENTS) return { ok: false, error: 'INVALID_PRICE' };
+
+  // ¿ya es ese el precio publicado? -> no crear una versión redundante.
+  const cur = await getPublishedPackagePrice(tenantId, packageId);
+  if (cur.status === 'table_missing') return { ok: false, error: 'NOT_MIGRATED' };
+  if (cur.status === 'error') return { ok: false, error: 'DB_ERROR' };
+  if (cur.status === 'published' && cur.priceCents === basePriceCents) return { ok: false, error: 'NO_CHANGE', currentCents: cur.priceCents };
+
+  const supabase = getSupabase();
+  let res;
+  try {
+    res = await supabase.rpc('update_package_price_atomic', {
+      p_tenant: tenantId, p_package: packageId, p_price_cents: basePriceCents, p_user: userId, p_reason: 'owner_direct_update'
+    });
+  } catch (e) { logServer('package-pricing:update', e && e.message); return { ok: false, error: 'DB_ERROR' }; }
+  if (res.error) { logServer('package-pricing:update', res.error.message); return { ok: false, error: rpcError(res.error) }; }
+  const row = normalizeRpcRow(res.data);
+  if (!row) return { ok: false, error: 'DB_ERROR' };
+  return { ok: true, published: row, version: row.pricing_version != null ? Number(row.pricing_version) : null };
+}
+
 /* ---- historial de un paquete (owner + admin) ---- */
 async function getPackagePriceHistory(tenantId, packageId) {
   if (!isPackageId(packageId)) return { status: 'error', error: 'INVALID_PACKAGE' };
@@ -348,5 +376,5 @@ module.exports = {
   getPublishedPackagePrice, resolvePackageBasePriceCents,
   listPublishedPackagePrices, publicPackagePriceList, listAllForAdmin,
   saveDraftPrice, publishPackagePrice, rollbackPackagePrice, togglePackagePrice,
-  getPackagePriceHistory
+  updateLivePrice, getPackagePriceHistory
 };

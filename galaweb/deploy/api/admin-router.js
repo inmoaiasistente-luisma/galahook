@@ -60,6 +60,7 @@ ROUTES['package-price-publish'] = require('../server/admin-handlers/package-pric
 ROUTES['package-price-history'] = require('../server/admin-handlers/package-price-history');
 ROUTES['package-price-rollback'] = require('../server/admin-handlers/package-price-rollback');
 ROUTES['package-price-toggle'] = require('../server/admin-handlers/package-price-toggle');
+ROUTES['package-price-update'] = require('../server/admin-handlers/package-price-update');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */
