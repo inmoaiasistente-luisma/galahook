@@ -74,6 +74,13 @@ ROUTES['package-price-history'] = require('../server/admin-handlers/package-pric
 ROUTES['package-price-rollback'] = require('../server/admin-handlers/package-price-rollback');
 ROUTES['package-price-toggle'] = require('../server/admin-handlers/package-price-toggle');
 ROUTES['package-price-update'] = require('../server/admin-handlers/package-price-update');
+/* Etapa 8C — Milu Turismo (jobs de búsqueda; worker vía Edge Function en 8D+). */
+ROUTES['milu-search-start'] = require('../server/admin-handlers/milu-search-start');
+ROUTES['milu-search-status'] = require('../server/admin-handlers/milu-search-status');
+ROUTES['milu-search-cancel'] = require('../server/admin-handlers/milu-search-cancel');
+ROUTES['milu-options-list'] = require('../server/admin-handlers/milu-options-list');
+ROUTES['milu-settings-get'] = require('../server/admin-handlers/milu-settings-get');
+ROUTES['milu-settings-save'] = require('../server/admin-handlers/milu-settings-save');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */

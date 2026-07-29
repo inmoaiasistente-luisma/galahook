@@ -40,7 +40,13 @@
     { "source": "/api/admin-package-price-history", "destination": "/api/admin-router?action=package-price-history" },
     { "source": "/api/admin-package-price-rollback", "destination": "/api/admin-router?action=package-price-rollback" },
     { "source": "/api/admin-package-price-toggle", "destination": "/api/admin-router?action=package-price-toggle" },
-    { "source": "/api/admin-package-price-update", "destination": "/api/admin-router?action=package-price-update" }
+    { "source": "/api/admin-package-price-update", "destination": "/api/admin-router?action=package-price-update" },
+    { "source": "/api/admin-milu-search-start", "destination": "/api/admin-router?action=milu-search-start" },
+    { "source": "/api/admin-milu-search-status", "destination": "/api/admin-router?action=milu-search-status" },
+    { "source": "/api/admin-milu-search-cancel", "destination": "/api/admin-router?action=milu-search-cancel" },
+    { "source": "/api/admin-milu-options-list", "destination": "/api/admin-router?action=milu-options-list" },
+    { "source": "/api/admin-milu-settings", "destination": "/api/admin-router?action=milu-settings-get" },
+    { "source": "/api/admin-milu-settings-save", "destination": "/api/admin-router?action=milu-settings-save" }
   ],
   "headers": [
     { "source": "/assets/(.*)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" } ] },
