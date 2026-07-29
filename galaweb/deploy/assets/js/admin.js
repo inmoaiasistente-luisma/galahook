@@ -1511,7 +1511,8 @@ function panelPackagePricing(role){
         const desc = mode==='publish'?(ES?'Se publicará $'+ (parseFloat(priceInput.value)||0) +' para '+pk.name+'.':'Publishing $'+(parseFloat(priceInput.value)||0)+' for '+pk.name+'.')
                     : mode==='rollback'?(ES?'Se publicará el precio de la versión anterior como una nueva versión.':'The previous version price will be published as a new version.')
                     : mode==='deactivate'?(ES?'El paquete quedará SIN precio publicado y su reserva se bloqueará.':'The package will have NO published price and booking will be blocked.')
-                    : (ES?'Se volverá a publicar el último precio conocido.':'The last known price will be published again.');
+                    : (ES?('Se volverá a publicar la versión v'+((pk.last_archived&&pk.last_archived.pricing_version)||'?')+' ('+fin$((pk.last_archived&&pk.last_archived.base_price_cents)||0)+') como una nueva versión.')
+                         :('Version v'+((pk.last_archived&&pk.last_archived.pricing_version)||'?')+' ('+fin$((pk.last_archived&&pk.last_archived.base_price_cents)||0)+') will be republished as a new version.'));
         box.appendChild(el('<p class="bk-sub-hint" style="margin:0 0 6px">'+escapeHtml(desc)+'</p>'));
         const reason=el('<input type="text" placeholder="'+(ES?'Motivo (mínimo 5 caracteres)':'Reason (min 5 characters)')+'" maxlength="500" style="width:100%;max-width:420px">');
         box.appendChild(reason);
@@ -1527,11 +1528,21 @@ function panelPackagePricing(role){
           if(mode==='publish'){
             const cents=Math.round((parseFloat(priceInput.value)||0)*100);
             if(!(cents>0)){ adminToast(ES?'Precio inválido.':'Invalid price.'); return; }
-            sendAction('/api/admin-package-price-publish',{package_id:pk.package_id, base_price_cents:cents, change_reason:reasonVal}, confirm, ES?'Precio publicado':'Price published');
+            /* Se PERSISTE el draft (idempotente: 1 draft/paquete) y se publica ESE
+               draft por id — el precio publicado se lee del draft en el servidor. */
+            confirm.disabled=true;
+            apiPost('/api/admin-package-price-draft-save',{package_id:pk.package_id, base_price_cents:cents}).then(function(dr){
+              if(dr.status===401){ onUnauthorized(); return; }
+              if(!dr.ok||!dr.data||!dr.data.draft||!dr.data.draft.id){ confirm.disabled=false; adminToast(ES?'No se pudo preparar el borrador.':'Could not prepare the draft.'); return; }
+              sendAction('/api/admin-package-price-publish',{package_id:pk.package_id, draft_id:dr.data.draft.id, change_reason:reasonVal}, confirm, ES?'Precio publicado':'Price published');
+            }).catch(function(){ confirm.disabled=false; adminToast(ES?'Error de conexión.':'Connection error.'); });
           } else if(mode==='rollback'){
             sendAction('/api/admin-package-price-rollback',{package_id:pk.package_id, change_reason:reasonVal}, confirm, ES?'Precio revertido':'Price rolled back');
+          } else if(mode==='reactivate'){
+            if(!pk.last_archived||!pk.last_archived.id){ adminToast(ES?'No hay versión para reactivar.':'No version to reactivate.'); return; }
+            sendAction('/api/admin-package-price-toggle',{package_id:pk.package_id, action:'reactivate', change_reason:reasonVal, source_price_id:pk.last_archived.id}, confirm, ES?'Precio reactivado':'Price reactivated');
           } else {
-            sendAction('/api/admin-package-price-toggle',{package_id:pk.package_id, action:mode, change_reason:reasonVal}, confirm, mode==='deactivate'?(ES?'Precio desactivado':'Price deactivated'):(ES?'Precio reactivado':'Price reactivated'));
+            sendAction('/api/admin-package-price-toggle',{package_id:pk.package_id, action:'deactivate', change_reason:reasonVal}, confirm, ES?'Precio desactivado':'Price deactivated');
           }
         });
       }
@@ -1570,7 +1581,7 @@ function panelPackagePricing(role){
           const offB=el('<button class="mini-btn" type="button" style="margin-left:6px">'+(ES?'Desactivar':'Deactivate')+'</button>');
           offB.addEventListener('click',function(){ openConfirm('deactivate'); });
           tdAct.appendChild(offB);
-        } else {
+        } else if(pk.last_archived&&pk.last_archived.id){
           const onB=el('<button class="mini-btn" type="button" style="margin-left:6px">'+(ES?'Reactivar':'Reactivate')+'</button>');
           onB.addEventListener('click',function(){ openConfirm('reactivate'); });
           tdAct.appendChild(onB);

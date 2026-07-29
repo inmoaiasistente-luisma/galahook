@@ -42,6 +42,9 @@ create table public.package_prices (
   constraint chk_pp_price            check (base_price_cents > 0),
   constraint chk_pp_currency         check (currency = 'USD'),
   constraint chk_pp_status           check (status in ('draft','published','archived')),
+  -- Solo los ids de paquete admitidos (sin mayúsculas, espacios ni aliases).
+  -- Añadir un paquete nuevo requiere ampliar este CHECK a propósito.
+  constraint chk_pp_package          check (package_id in ('p3','p4','p7','p8sc','p8is')),
   constraint chk_pp_version_positive check (pricing_version is null or pricing_version >= 1),
   -- published/archived deben llevar versión; draft puede no llevarla
   constraint chk_pp_version_required check (status = 'draft' or pricing_version is not null)
@@ -84,11 +87,12 @@ create table public.package_price_history (
   old_version         integer,
   new_version         integer,
   changed_by_user_id  uuid references auth.users(id),
-  change_reason       text,
+  change_reason       text not null,                   -- OBLIGATORIO (incluida la semilla)
   action              text not null,                   -- publish | rollback | deactivate | reactivate
   created_at          timestamptz not null default now(),
-  constraint chk_pph_action check (action in ('publish','rollback','deactivate','reactivate')),
-  constraint chk_pph_reason check (change_reason is null or char_length(change_reason) >= 5)
+  constraint chk_pph_action  check (action in ('publish','rollback','deactivate','reactivate')),
+  constraint chk_pph_reason  check (char_length(btrim(change_reason)) >= 5),
+  constraint chk_pph_package check (package_id in ('p3','p4','p7','p8sc','p8is'))
 );
 
 comment on table public.package_price_history is
@@ -123,24 +127,36 @@ create trigger trg_pph_no_mutation before update or delete on public.package_pri
 --    El backend mantiene requireAdmin/sameOrigin/sesión y pasa el user_id real.
 -- ---------------------------------------------------------------------
 
--- PUBLICAR: archiva el published actual, publica la nueva versión, consume el
--- draft y registra el historial. Devuelve la nueva fila publicada.
+-- PUBLICAR: publica un DRAFT REAL identificado por id. El precio publicado se
+-- lee ÚNICAMENTE de ese draft (nunca del navegador ni del handler). Bloquea el
+-- draft (FOR UPDATE), valida tenant/package/status/precio, archiva el published
+-- anterior, crea la nueva versión con el precio del draft, ARCHIVA el draft
+-- usado (idempotencia: un segundo intento con el mismo draft_id ya no lo
+-- encuentra en 'draft' -> DRAFT_NOT_FOUND) y registra el historial.
 create or replace function public.publish_package_price_atomic(
-  p_tenant text, p_package text, p_price_cents integer, p_user uuid, p_reason text
+  p_tenant text, p_package text, p_draft_id uuid, p_user uuid, p_reason text
 ) returns public.package_prices
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  v_old  public.package_prices;
-  v_new  public.package_prices;
-  v_next integer;
+  v_draft public.package_prices;
+  v_old   public.package_prices;
+  v_new   public.package_prices;
+  v_next  integer;
 begin
   if p_tenant is null or length(p_tenant) = 0 then raise exception 'INVALID_TENANT'; end if;
   if p_package is null or length(p_package) = 0 then raise exception 'INVALID_PACKAGE'; end if;
-  if p_price_cents is null or p_price_cents <= 0 then raise exception 'INVALID_PRICE'; end if;
+  if p_draft_id is null then raise exception 'DRAFT_NOT_FOUND'; end if;
   if p_reason is null or char_length(btrim(p_reason)) < 5 then raise exception 'REASON_REQUIRED'; end if;
   if p_user is null then raise exception 'INVALID_ACTOR'; end if;
 
   perform pg_advisory_xact_lock(hashtext(p_tenant || '|' || p_package)::bigint);
+
+  -- El draft es la ÚNICA fuente del precio. Se bloquea para evitar carreras.
+  select * into v_draft from public.package_prices where id = p_draft_id for update;
+  if v_draft.id is null or v_draft.status <> 'draft' then raise exception 'DRAFT_NOT_FOUND'; end if;
+  if v_draft.tenant_id <> p_tenant then raise exception 'DRAFT_TENANT_MISMATCH'; end if;
+  if v_draft.package_id <> p_package then raise exception 'DRAFT_PACKAGE_MISMATCH'; end if;
+  if v_draft.base_price_cents is null or v_draft.base_price_cents <= 0 then raise exception 'INVALID_PRICE'; end if;
 
   select * into v_old from public.package_prices
    where tenant_id = p_tenant and package_id = p_package and status = 'published'
@@ -158,16 +174,17 @@ begin
   insert into public.package_prices
     (tenant_id, package_id, base_price_cents, currency, status, pricing_version, effective_from, published_at, published_by_user_id, created_by_user_id, updated_by_user_id)
   values
-    (p_tenant, p_package, p_price_cents, 'USD', 'published', v_next, now(), now(), p_user, p_user, p_user)
+    (p_tenant, p_package, v_draft.base_price_cents, 'USD', 'published', v_next, now(), now(), p_user, p_user, p_user)
   returning * into v_new;
 
+  -- consume EXACTAMENTE el draft publicado (no otros borradores).
   update public.package_prices set status = 'archived', updated_by_user_id = p_user, updated_at = now()
-   where tenant_id = p_tenant and package_id = p_package and status = 'draft';
+   where id = v_draft.id;
 
   insert into public.package_price_history
     (tenant_id, package_id, old_price_cents, new_price_cents, old_version, new_version, changed_by_user_id, change_reason, action)
   values
-    (p_tenant, p_package, v_old.base_price_cents, p_price_cents, v_old.pricing_version, v_next, p_user, btrim(p_reason), 'publish');
+    (p_tenant, p_package, v_old.base_price_cents, v_draft.base_price_cents, v_old.pricing_version, v_next, p_user, btrim(p_reason), 'publish');
 
   return v_new;
 end;
@@ -229,17 +246,19 @@ begin
 end;
 $$;
 
--- DESACTIVAR / REACTIVAR: deactivate archiva el published (deja 0 published);
--- reactivate republica el último precio conocido como nueva versión.
+-- DESACTIVAR / REACTIVAR:
+--   deactivate → archiva el published (deja 0 published; ignora p_source_id).
+--   reactivate → republica una VERSIÓN IDENTIFICADA (p_source_id) como nueva
+--     versión. El precio se lee de esa fila archivada, NUNCA de un monto libre.
 create or replace function public.set_package_price_active_atomic(
-  p_tenant text, p_package text, p_action text, p_user uuid, p_reason text
+  p_tenant text, p_package text, p_action text, p_user uuid, p_reason text, p_source_id uuid
 ) returns public.package_prices
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  v_cur  public.package_prices;
-  v_last public.package_prices;
-  v_new  public.package_prices;
-  v_next integer;
+  v_cur    public.package_prices;
+  v_source public.package_prices;
+  v_new    public.package_prices;
+  v_next   integer;
 begin
   if p_tenant is null or length(p_tenant) = 0 then raise exception 'INVALID_TENANT'; end if;
   if p_package is null or length(p_package) = 0 then raise exception 'INVALID_PACKAGE'; end if;
@@ -266,15 +285,18 @@ begin
 
     return v_new;
   else
+    if p_source_id is null then raise exception 'SOURCE_NOT_FOUND'; end if;
+
     select * into v_cur from public.package_prices
      where tenant_id = p_tenant and package_id = p_package and status = 'published'
      for update;
     if v_cur.id is not null then raise exception 'ALREADY_PUBLISHED'; end if;
 
-    select * into v_last from public.package_prices
-     where tenant_id = p_tenant and package_id = p_package and status = 'archived' and pricing_version is not null
-     order by pricing_version desc limit 1;
-    if v_last.id is null then raise exception 'NO_PRICE_TO_REACTIVATE'; end if;
+    -- La versión a reactivar debe existir, ser de este tenant/package, estar
+    -- archivada y tener versión. El precio se toma de ella (no de un monto libre).
+    select * into v_source from public.package_prices where id = p_source_id for update;
+    if v_source.id is null or v_source.status <> 'archived' or v_source.pricing_version is null then raise exception 'SOURCE_NOT_FOUND'; end if;
+    if v_source.tenant_id <> p_tenant or v_source.package_id <> p_package then raise exception 'SOURCE_NOT_FOUND'; end if;
 
     select coalesce(max(pricing_version), 0) + 1 into v_next
       from public.package_prices
@@ -283,13 +305,13 @@ begin
     insert into public.package_prices
       (tenant_id, package_id, base_price_cents, currency, status, pricing_version, effective_from, published_at, published_by_user_id, created_by_user_id, updated_by_user_id)
     values
-      (p_tenant, p_package, v_last.base_price_cents, 'USD', 'published', v_next, now(), now(), p_user, p_user, p_user)
+      (p_tenant, p_package, v_source.base_price_cents, 'USD', 'published', v_next, now(), now(), p_user, p_user, p_user)
     returning * into v_new;
 
     insert into public.package_price_history
       (tenant_id, package_id, old_price_cents, new_price_cents, old_version, new_version, changed_by_user_id, change_reason, action)
     values
-      (p_tenant, p_package, null, v_last.base_price_cents, null, v_next, p_user, btrim(p_reason), 'reactivate');
+      (p_tenant, p_package, null, v_source.base_price_cents, v_source.pricing_version, v_next, p_user, btrim(p_reason), 'reactivate');
 
     return v_new;
   end if;
@@ -298,12 +320,12 @@ $$;
 
 -- Permisos: SOLO el backend (service_role) puede ejecutar los RPC. Nunca anon,
 -- authenticated ni PUBLIC. El backend ya valida requireAdmin/owner/sameOrigin.
-revoke execute on function public.publish_package_price_atomic(text,text,integer,uuid,text)   from public, anon, authenticated;
-revoke execute on function public.rollback_package_price_atomic(text,text,uuid,text)          from public, anon, authenticated;
-revoke execute on function public.set_package_price_active_atomic(text,text,text,uuid,text)   from public, anon, authenticated;
-grant  execute on function public.publish_package_price_atomic(text,text,integer,uuid,text)   to service_role;
-grant  execute on function public.rollback_package_price_atomic(text,text,uuid,text)          to service_role;
-grant  execute on function public.set_package_price_active_atomic(text,text,text,uuid,text)   to service_role;
+revoke execute on function public.publish_package_price_atomic(text,text,uuid,uuid,text)           from public, anon, authenticated;
+revoke execute on function public.rollback_package_price_atomic(text,text,uuid,text)               from public, anon, authenticated;
+revoke execute on function public.set_package_price_active_atomic(text,text,text,uuid,text,uuid)   from public, anon, authenticated;
+grant  execute on function public.publish_package_price_atomic(text,text,uuid,uuid,text)           to service_role;
+grant  execute on function public.rollback_package_price_atomic(text,text,uuid,text)               to service_role;
+grant  execute on function public.set_package_price_active_atomic(text,text,text,uuid,text,uuid)   to service_role;
 
 -- ---------------------------------------------------------------------
 -- D) SEMILLA — precios oficiales vigentes 2026 (published, version 1)

@@ -73,9 +73,22 @@ transaccional de Postgres:
 
 | Operación | Función RPC |
 |---|---|
-| Publicar | `publish_package_price_atomic(tenant, package, price_cents, user, reason)` |
+| Publicar | `publish_package_price_atomic(tenant, package, draft_id, user, reason)` |
 | Rollback | `rollback_package_price_atomic(tenant, package, user, reason)` |
-| Desactivar/Reactivar | `set_package_price_active_atomic(tenant, package, action, user, reason)` |
+| Desactivar/Reactivar | `set_package_price_active_atomic(tenant, package, action, user, reason, source_id)` |
+
+**El precio nunca viaja en el cuerpo:**
+- **Publicar** recibe un **`draft_id`**, no un importe. El RPC bloquea ese draft
+  (`FOR UPDATE`), valida `tenant`/`package`/`status='draft'`/`precio>0` y lee el
+  precio **solo de ese draft**. Si el draft no existe, es de otro tenant/paquete,
+  o ya fue consumido → error controlado y el precio anterior sigue publicado.
+  **Idempotencia:** al publicar se archiva el draft; un segundo intento con el
+  mismo `draft_id` devuelve `DRAFT_NOT_FOUND` (no crea otra versión ni historial).
+  El handler de publicación solo envía `package_id`, `draft_id` y motivo.
+- **Reactivar** recibe un **`source_price_id`** (una versión archivada
+  identificada); el RPC lee el precio de esa fila. Nunca acepta un monto libre.
+- **`change_reason` es `NOT NULL`** (mín. 5 caracteres) para toda acción, y un
+  **`CHECK`** limita `package_id` a `p3·p4·p7·p8sc·p8is` en ambas tablas.
 
 Propiedades:
 

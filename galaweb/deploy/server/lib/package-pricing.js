@@ -82,7 +82,8 @@ function isMissingRpc(error) {
 function rpcError(error) {
   const msg = String((error && error.message) || '');
   const known = ['REASON_REQUIRED', 'INVALID_PACKAGE', 'INVALID_PRICE', 'INVALID_ACTION',
-    'INVALID_ACTOR', 'INVALID_TENANT', 'NO_PREVIOUS', 'NOT_PUBLISHED', 'ALREADY_PUBLISHED', 'NO_PRICE_TO_REACTIVATE'];
+    'INVALID_ACTOR', 'INVALID_TENANT', 'NO_PREVIOUS', 'NOT_PUBLISHED', 'ALREADY_PUBLISHED', 'NO_PRICE_TO_REACTIVATE',
+    'DRAFT_NOT_FOUND', 'DRAFT_TENANT_MISMATCH', 'DRAFT_PACKAGE_MISMATCH', 'SOURCE_NOT_FOUND'];
   for (let i = 0; i < known.length; i++) { if (msg.indexOf(known[i]) !== -1) return known[i]; }
   if (isMissingRpc(error) || isMissingTableError(error)) return 'NOT_MIGRATED';
   return 'DB_ERROR';
@@ -192,13 +193,14 @@ async function publicPackagePriceList(tenantId) {
   return { ok: false, source: 'error' };
 }
 
-/* ---- vista ADMIN: publicado + draft por paquete ---- */
+/* ---- vista ADMIN: publicado + draft (con id) + última versión archivada ----
+   Incluye draft.id (para publicar ese draft por id) y last_archived (para
+   reactivar una versión identificada). Nunca expone importes de otros tenants. */
 async function listAllForAdmin(tenantId) {
   const supabase = getSupabase();
   let res;
   try {
-    res = await supabase.from(TABLE).select('*')
-      .eq('tenant_id', tenantId).in('status', ['published', 'draft']);
+    res = await supabase.from(TABLE).select('*').eq('tenant_id', tenantId);
   } catch (e) { return { status: 'error', message: e && e.message }; }
 
   if (res && res.error) {
@@ -210,22 +212,29 @@ async function listAllForAdmin(tenantId) {
   packageIds().forEach(function (id) {
     byId[id] = {
       package_id: id, name: catalog.TOURS[id].name, catalog_price_cents: catalogPriceCents(id),
-      published: null, draft: null
+      published: null, draft: null, last_archived: null
     };
   });
   rows.forEach(function (r) {
-    if (!byId[r.package_id]) return;
-    const item = {
-      base_price_cents: Number(r.base_price_cents),
-      currency: r.currency || DEFAULT_CURRENCY,
-      pricing_version: r.pricing_version != null ? Number(r.pricing_version) : null,
-      published_at: r.published_at || null,
-      published_by_user_id: r.published_by_user_id || null,
-      updated_at: r.updated_at || null,
-      updated_by_user_id: r.updated_by_user_id || null
-    };
-    if (r.status === 'published') byId[r.package_id].published = item;
-    else if (r.status === 'draft') byId[r.package_id].draft = item;
+    const bucket = byId[r.package_id];
+    if (!bucket) return;
+    if (r.status === 'published') {
+      bucket.published = {
+        base_price_cents: Number(r.base_price_cents), currency: r.currency || DEFAULT_CURRENCY,
+        pricing_version: r.pricing_version != null ? Number(r.pricing_version) : null,
+        published_at: r.published_at || null, published_by_user_id: r.published_by_user_id || null
+      };
+    } else if (r.status === 'draft') {
+      bucket.draft = {
+        id: r.id, base_price_cents: Number(r.base_price_cents),
+        updated_at: r.updated_at || null, updated_by_user_id: r.updated_by_user_id || null
+      };
+    } else if (r.status === 'archived' && r.pricing_version != null) {
+      const v = Number(r.pricing_version);
+      if (!bucket.last_archived || v > bucket.last_archived.pricing_version) {
+        bucket.last_archived = { id: r.id, base_price_cents: Number(r.base_price_cents), pricing_version: v };
+      }
+    }
   });
   return { status: 'ok', packages: packageIds().map(function (id) { return byId[id]; }) };
 }
@@ -261,16 +270,19 @@ async function saveDraftPrice(o) {
   } catch (e) { return { ok: false, error: 'DB_ERROR' }; }
 }
 
-/* ---- PUBLICAR (owner) — RPC atómico ---- */
+/* ---- PUBLICAR (owner) — RPC atómico ----
+   Publica un DRAFT REAL identificado por id. El precio se lee dentro del RPC
+   desde ese draft; el navegador/handler NUNCA envían el importe. Idempotente:
+   publicar dos veces el mismo draft_id devuelve DRAFT_NOT_FOUND la segunda vez. */
 async function publishPackagePrice(o) {
   if (!isPackageId(o.packageId)) return { ok: false, error: 'INVALID_PACKAGE' };
-  if (!Number.isInteger(o.basePriceCents) || o.basePriceCents <= 0 || o.basePriceCents > MAX_PRICE_CENTS) return { ok: false, error: 'INVALID_PRICE' };
+  if (!o.draftId || typeof o.draftId !== 'string') return { ok: false, error: 'DRAFT_NOT_FOUND' };
   if ((o.reason || '').trim().length < 5) return { ok: false, error: 'REASON_REQUIRED' };
   const supabase = getSupabase();
   let res;
   try {
     res = await supabase.rpc('publish_package_price_atomic', {
-      p_tenant: o.tenantId, p_package: o.packageId, p_price_cents: o.basePriceCents, p_user: o.userId || null, p_reason: (o.reason || '').trim()
+      p_tenant: o.tenantId, p_package: o.packageId, p_draft_id: o.draftId, p_user: o.userId || null, p_reason: (o.reason || '').trim()
     });
   } catch (e) { logServer('package-pricing:publish', e && e.message); return { ok: false, error: 'DB_ERROR' }; }
   if (res.error) { logServer('package-pricing:publish', res.error.message); return { ok: false, error: rpcError(res.error) }; }
@@ -296,17 +308,21 @@ async function rollbackPackagePrice(o) {
   return { ok: true, published: row, version: row.pricing_version != null ? Number(row.pricing_version) : null };
 }
 
-/* ---- DESACTIVAR / REACTIVAR (owner) — RPC atómico ---- */
+/* ---- DESACTIVAR / REACTIVAR (owner) — RPC atómico ----
+   reactivate republica una VERSIÓN IDENTIFICADA (sourceId), no un precio libre;
+   el RPC lee el precio de esa fila archivada. deactivate ignora sourceId. */
 async function togglePackagePrice(o) {
   const action = o.action;
   if (!isPackageId(o.packageId)) return { ok: false, error: 'INVALID_PACKAGE' };
   if (action !== 'deactivate' && action !== 'reactivate') return { ok: false, error: 'INVALID_ACTION' };
   if ((o.reason || '').trim().length < 5) return { ok: false, error: 'REASON_REQUIRED' };
+  if (action === 'reactivate' && (!o.sourceId || typeof o.sourceId !== 'string')) return { ok: false, error: 'SOURCE_NOT_FOUND' };
   const supabase = getSupabase();
   let res;
   try {
     res = await supabase.rpc('set_package_price_active_atomic', {
-      p_tenant: o.tenantId, p_package: o.packageId, p_action: action, p_user: o.userId || null, p_reason: (o.reason || '').trim()
+      p_tenant: o.tenantId, p_package: o.packageId, p_action: action, p_user: o.userId || null,
+      p_reason: (o.reason || '').trim(), p_source_id: action === 'reactivate' ? o.sourceId : null
     });
   } catch (e) { logServer('package-pricing:toggle', e && e.message); return { ok: false, error: 'DB_ERROR' }; }
   if (res.error) { logServer('package-pricing:toggle', res.error.message); return { ok: false, error: rpcError(res.error) }; }
