@@ -11,6 +11,10 @@
 -- ENDURECIMIENTO DE INTEGRIDAD (revisión previa a aplicar):
 --   · Integridad de tenant garantizada por el MOTOR (unique compuestas
 --     (id, tenant_id) + FKs compuestas), no solo por el código.
+--   · Integridad a NIVEL DE RESERVA: job↔formulario, opciones↔job, opción↔
+--     reserva, lodging↔formulario, compras↔opción y logs↔subtarea comparten
+--     la MISMA reserva vía unique compuestas (id, tenant_id, booking_id[,
+--     passenger_form_id]) + FKs compuestas equivalentes; no depende del worker.
 --   · Cola robusta: claim/reclaim validan job padre (activo y en estado
 --     reclamable), intentos, lease y parámetros; recuperación con backoff o
 --     failed según intentos.
@@ -27,7 +31,7 @@
 --     (availability_status).
 --   · Impiden DELETE por trigger: travel_search_jobs, travel_search_subtasks,
 --     travel_flight_options, travel_hotel_options, travel_logistics,
---     travel_flight_bookings, travel_hotel_bookings, llm_usage_log.
+--     travel_flight_bookings, travel_hotel_bookings, llm_usage_log, milu_settings.
 --   · Append-only (UPDATE+DELETE bloqueados): travel_search_audit.
 --   · Solo borrables en entorno local vacío (nunca Production): ninguna por
 --     código; usar drop de esquema en un entorno de desarrollo aislado.
@@ -38,13 +42,27 @@
 
 begin;
 
--- ---------- 0. Unique compuesta faltante en padre de 0014 (aditiva) ----------
--- Necesaria para la FK compuesta de travel_hotel_options.lodging_requirement_id.
--- id ya es PK (único), así que (id, tenant_id) es trivialmente único.
+-- ---------- 0. Unique compuestas faltantes en padres de 0014 (aditivas) ----------
+-- Necesarias como destino de las FKs compuestas de 0015. id ya es PK (único),
+-- así que cualquier tupla que lo incluya es trivialmente única.
+--
+-- (id, tenant_id): FK de tenant (travel_hotel_options.lodging_requirement_id).
 alter table public.booking_lodging_requirements
   drop constraint if exists uq_blr_id_tenant;
 alter table public.booking_lodging_requirements
   add constraint uq_blr_id_tenant unique (id, tenant_id);
+-- (id, tenant_id, passenger_form_id): FK de RESERVA — el lodging usado por una
+-- opción de hotel debe pertenecer al MISMO formulario que el job.
+alter table public.booking_lodging_requirements
+  drop constraint if exists uq_blr_id_tenant_form;
+alter table public.booking_lodging_requirements
+  add constraint uq_blr_id_tenant_form unique (id, tenant_id, passenger_form_id);
+-- (id, tenant_id, booking_id): FK de RESERVA — el formulario referenciado por un
+-- job debe pertenecer a la MISMA reserva que el job.
+alter table public.booking_passenger_forms
+  drop constraint if exists uq_bpf_id_tenant_booking;
+alter table public.booking_passenger_forms
+  add constraint uq_bpf_id_tenant_booking unique (id, tenant_id, booking_id);
 
 -- ---------- A. Job principal de búsqueda ----------
 create table public.travel_search_jobs (
@@ -66,10 +84,18 @@ create table public.travel_search_jobs (
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
   constraint uq_tsj_id_tenant unique (id, tenant_id),
+  -- (id, tenant_id, booking_id): destino de las FKs de RESERVA de opciones,
+  -- logística y log de IA (garantizan job de la misma reserva).
+  constraint uq_tsj_id_tenant_booking unique (id, tenant_id, booking_id),
+  -- (id, tenant_id, booking_id, passenger_form_id): destino de la FK de las
+  -- opciones de hotel (garantiza que la opción use el formulario del job).
+  constraint uq_tsj_id_tenant_booking_form unique (id, tenant_id, booking_id, passenger_form_id),
   constraint fk_tsj_booking_tenant foreign key (booking_id, tenant_id)
     references public.bookings (id, tenant_id) on delete restrict,
-  constraint fk_tsj_form_tenant foreign key (passenger_form_id, tenant_id)
-    references public.booking_passenger_forms (id, tenant_id) on delete restrict,
+  -- El formulario debe pertenecer a la MISMA reserva (no solo al mismo tenant).
+  -- passenger_form_id nullable → MATCH SIMPLE no verifica cuando es null.
+  constraint fk_tsj_form_tenant_booking foreign key (passenger_form_id, tenant_id, booking_id)
+    references public.booking_passenger_forms (id, tenant_id, booking_id) on delete restrict,
   constraint chk_tsj_type   check (search_type in ('flights','hotels','complete_trip')),
   constraint chk_tsj_status check (status in
     ('queued','running','completed','partial','failed','expired','cancelled'))
@@ -108,6 +134,9 @@ create table public.travel_search_subtasks (
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
   constraint uq_tss_id_tenant unique (id, tenant_id),
+  -- (id, tenant_id, job_id): destino de la FK de llm_usage_log (garantiza que
+  -- el log referencie una subtarea DEL mismo job).
+  constraint uq_tss_id_tenant_job unique (id, tenant_id, job_id),
   constraint uq_tss_job_kind unique (job_id, kind),
   constraint fk_tss_job_tenant foreign key (job_id, tenant_id)
     references public.travel_search_jobs (id, tenant_id) on delete restrict,
@@ -166,8 +195,11 @@ create table public.travel_flight_options (
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
   constraint uq_tfo_id_tenant unique (id, tenant_id),
-  constraint fk_tfo_job_tenant foreign key (search_job_id, tenant_id)
-    references public.travel_search_jobs (id, tenant_id) on delete restrict,
+  -- (id, tenant_id, booking_id): destino de la FK de travel_flight_bookings.
+  constraint uq_tfo_id_tenant_booking unique (id, tenant_id, booking_id),
+  -- El job debe pertenecer a la MISMA reserva que la opción (no solo al tenant).
+  constraint fk_tfo_job_tenant_booking foreign key (search_job_id, tenant_id, booking_id)
+    references public.travel_search_jobs (id, tenant_id, booking_id) on delete restrict,
   constraint fk_tfo_booking_tenant foreign key (booking_id, tenant_id)
     references public.bookings (id, tenant_id) on delete restrict,
   constraint chk_tfo_status check (availability_status in
@@ -185,7 +217,9 @@ create index idx_tfo_job on public.travel_flight_options (search_job_id);
 -- Idempotencia: una sola fila ACTIVA por clave lógica; refresh versiona y expira.
 create unique index uq_tfo_active_key
   on public.travel_flight_options (search_job_id, provider, provider_result_key) where active = true;
-create index idx_tfo_version
+-- Unicidad histórica: una sola fila por (clave lógica, versión). Retry actualiza
+-- la versión activa; refresh crea exactamente result_version+1 (nunca duplica).
+create unique index uq_tfo_version_key
   on public.travel_flight_options (search_job_id, provider, provider_result_key, result_version);
 
 alter table public.travel_flight_options enable row level security;
@@ -199,6 +233,7 @@ create table public.travel_hotel_options (
   tenant_id              text not null default 'hook-adventure',
   search_job_id          uuid not null,
   booking_id             uuid not null,
+  passenger_form_id      uuid,             -- formulario del job (integridad de reserva)
   lodging_requirement_id uuid,
   provider               text not null,
   provider_result_key    text not null,    -- clave estable del adapter (dedup)
@@ -234,12 +269,20 @@ create table public.travel_hotel_options (
   created_at             timestamptz not null default now(),
   updated_at             timestamptz not null default now(),
   constraint uq_tho_id_tenant unique (id, tenant_id),
-  constraint fk_tho_job_tenant foreign key (search_job_id, tenant_id)
-    references public.travel_search_jobs (id, tenant_id) on delete restrict,
+  -- (id, tenant_id, booking_id): destino de la FK de travel_hotel_bookings.
+  constraint uq_tho_id_tenant_booking unique (id, tenant_id, booking_id),
+  -- El job debe pertenecer a la MISMA reserva que la opción.
+  constraint fk_tho_job_tenant_booking foreign key (search_job_id, tenant_id, booking_id)
+    references public.travel_search_jobs (id, tenant_id, booking_id) on delete restrict,
+  -- Y la opción debe usar el MISMO formulario que el job (cuando hay formulario).
+  -- passenger_form_id nullable → MATCH SIMPLE no verifica cuando es null.
+  constraint fk_tho_job_form foreign key (search_job_id, tenant_id, booking_id, passenger_form_id)
+    references public.travel_search_jobs (id, tenant_id, booking_id, passenger_form_id) on delete restrict,
   constraint fk_tho_booking_tenant foreign key (booking_id, tenant_id)
     references public.bookings (id, tenant_id) on delete restrict,
-  constraint fk_tho_lodging_tenant foreign key (lodging_requirement_id, tenant_id)
-    references public.booking_lodging_requirements (id, tenant_id) on delete restrict,
+  -- El lodging usado debe pertenecer al MISMO formulario (no solo al tenant).
+  constraint fk_tho_lodging_form foreign key (lodging_requirement_id, tenant_id, passenger_form_id)
+    references public.booking_lodging_requirements (id, tenant_id, passenger_form_id) on delete restrict,
   constraint chk_tho_dest check (destination in
     ('quito','guayaquil','san_cristobal','santa_cruz','isabela')),
   constraint chk_tho_status check (availability_status in
@@ -268,8 +311,13 @@ create unique index uq_tho_active_key
      (search_job_id, provider, provider_result_key,
       coalesce(lodging_requirement_id, '00000000-0000-0000-0000-000000000000'::uuid))
   where active = true;
-create index idx_tho_version
-  on public.travel_hotel_options (search_job_id, provider, provider_result_key, result_version);
+-- Unicidad histórica por requerimiento de alojamiento (null → centinela): una
+-- sola fila por (clave lógica, versión). Refresh crea exactamente la siguiente.
+create unique index uq_tho_version_key
+  on public.travel_hotel_options
+     (search_job_id, provider, provider_result_key,
+      coalesce(lodging_requirement_id, '00000000-0000-0000-0000-000000000000'::uuid),
+      result_version);
 
 alter table public.travel_hotel_options enable row level security;
 revoke all on table public.travel_hotel_options from anon, authenticated;
@@ -297,8 +345,9 @@ create table public.travel_logistics (
   constraint uq_tl_booking unique (booking_id),
   constraint fk_tl_booking_tenant foreign key (booking_id, tenant_id)
     references public.bookings (id, tenant_id) on delete restrict,
-  constraint fk_tl_job_tenant foreign key (search_job_id, tenant_id)
-    references public.travel_search_jobs (id, tenant_id) on delete restrict,
+  -- El job debe pertenecer a la MISMA reserva que la logística.
+  constraint fk_tl_job_tenant_booking foreign key (search_job_id, tenant_id, booking_id)
+    references public.travel_search_jobs (id, tenant_id, booking_id) on delete restrict,
   constraint chk_tl_status check (status in
     ('searching','options_ready','under_review','approved','purchasing',
      'partially_confirmed','fully_confirmed','customer_notified'))
@@ -337,8 +386,9 @@ create table public.travel_flight_bookings (
   updated_at           timestamptz not null default now(),
   constraint fk_tfb_booking_tenant foreign key (booking_id, tenant_id)
     references public.bookings (id, tenant_id) on delete restrict,
-  constraint fk_tfb_option_tenant foreign key (flight_option_id, tenant_id)
-    references public.travel_flight_options (id, tenant_id) on delete restrict,
+  -- La opción comprada debe pertenecer a la MISMA reserva que el registro.
+  constraint fk_tfb_option_tenant_booking foreign key (flight_option_id, tenant_id, booking_id)
+    references public.travel_flight_options (id, tenant_id, booking_id) on delete restrict,
   constraint chk_tfb_cost check (provider_cost_cents is null or provider_cost_cents >= 0),
   constraint chk_tfb_taxes check (taxes_cents is null or taxes_cents >= 0),
   constraint chk_tfb_fees check (fees_cents is null or fees_cents >= 0),
@@ -379,8 +429,9 @@ create table public.travel_hotel_bookings (
   updated_at           timestamptz not null default now(),
   constraint fk_thb_booking_tenant foreign key (booking_id, tenant_id)
     references public.bookings (id, tenant_id) on delete restrict,
-  constraint fk_thb_option_tenant foreign key (hotel_option_id, tenant_id)
-    references public.travel_hotel_options (id, tenant_id) on delete restrict,
+  -- La opción reservada debe pertenecer a la MISMA reserva que el registro.
+  constraint fk_thb_option_tenant_booking foreign key (hotel_option_id, tenant_id, booking_id)
+    references public.travel_hotel_options (id, tenant_id, booking_id) on delete restrict,
   constraint chk_thb_cost check (provider_cost_cents is null or provider_cost_cents >= 0),
   constraint chk_thb_taxes check (taxes_cents is null or taxes_cents >= 0),
   constraint chk_thb_fees check (fees_cents is null or fees_cents >= 0),
@@ -407,6 +458,12 @@ create table public.travel_search_audit (
   result            text not null,
   sanitized_details jsonb,
   created_at        timestamptz not null default now(),
+  -- FKs opcionales (booking_id/search_job_id nullable → MATCH SIMPLE): si el job
+  -- se registra, debe coincidir con la reserva indicada (misma reserva).
+  constraint fk_tsa_booking_tenant foreign key (booking_id, tenant_id)
+    references public.bookings (id, tenant_id) on delete restrict,
+  constraint fk_tsa_job_tenant_booking foreign key (search_job_id, tenant_id, booking_id)
+    references public.travel_search_jobs (id, tenant_id, booking_id) on delete restrict,
   constraint chk_tsa_actor  check (actor_type in ('owner','admin','system')),
   constraint chk_tsa_result check (result in ('success','failure'))
 );
@@ -445,11 +502,12 @@ create table public.llm_usage_log (
   latency_ms         integer,
   status             text not null default 'completed',
   created_at         timestamptz not null default now(),
-  -- job_id/subtask_id, cuando existan, deben pertenecer al mismo tenant.
-  constraint fk_llm_job_tenant foreign key (job_id, tenant_id)
-    references public.travel_search_jobs (id, tenant_id) on delete restrict,
-  constraint fk_llm_subtask_tenant foreign key (subtask_id, tenant_id)
-    references public.travel_search_subtasks (id, tenant_id) on delete restrict,
+  -- job_id/subtask_id nullable → MATCH SIMPLE. Cuando existen, el job debe ser de
+  -- la MISMA reserva y la subtarea DEL mismo job (no solo del mismo tenant).
+  constraint fk_llm_job_tenant_booking foreign key (job_id, tenant_id, booking_id)
+    references public.travel_search_jobs (id, tenant_id, booking_id) on delete restrict,
+  constraint fk_llm_subtask_tenant_job foreign key (subtask_id, tenant_id, job_id)
+    references public.travel_search_subtasks (id, tenant_id, job_id) on delete restrict,
   constraint chk_llm_in check (input_tokens >= 0),
   constraint chk_llm_out check (output_tokens >= 0),
   constraint chk_llm_cr check (cache_read_tokens >= 0),
@@ -613,5 +671,7 @@ create trigger trg_no_delete_tl   before delete on public.travel_logistics      
 create trigger trg_no_delete_tfb  before delete on public.travel_flight_bookings  for each row execute function public.milu_forbid_physical_delete();
 create trigger trg_no_delete_thb  before delete on public.travel_hotel_bookings   for each row execute function public.milu_forbid_physical_delete();
 create trigger trg_no_delete_llm  before delete on public.llm_usage_log           for each row execute function public.milu_forbid_physical_delete();
+-- Config también se conserva (única tabla mutable de configuración): sin DELETE.
+create trigger trg_no_delete_ms   before delete on public.milu_settings           for each row execute function public.milu_forbid_physical_delete();
 
 commit;

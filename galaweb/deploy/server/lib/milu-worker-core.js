@@ -176,7 +176,8 @@ async function upsertHotelOptions(job, opts, opts2) {
     const lrid = o.lodging_requirement_id || null;
     const rows = (await supabase.from('travel_hotel_options').select('*').eq('search_job_id', job.id).eq('provider', o.provider).eq('active', true)).data || [];
     const actives = rows.filter(function (r) { return (r.provider_result_key || '') === key && (r.lodging_requirement_id || null) === lrid; });
-    const payload = hotelRow(job, o); payload.provider_result_key = key; payload.lodging_requirement_id = lrid;
+    // passenger_form_id del job: liga la opción al formulario del job (FK de reserva).
+    const payload = hotelRow(job, o); payload.provider_result_key = key; payload.lodging_requirement_id = lrid; payload.passenger_form_id = job.passenger_form_id || null;
     if (refresh && actives.length) {
       var maxV2 = 0;
       for (var b = 0; b < actives.length; b++) { maxV2 = Math.max(maxV2, actives[b].result_version || 1); await supabase.from('travel_hotel_options').update({ active: false, availability_status: 'expired' }).eq('id', actives[b].id); }

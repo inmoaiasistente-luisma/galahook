@@ -424,10 +424,10 @@ const SQL = fs.readFileSync(path.join(BASE, 'supabase/migrations/0015_milu_touri
 
   // 53-57 integridad de tenant por FK compuesta (estructural en 0015)
   ok('53 FK compuesta job/subtask', /fk_tss_job_tenant\s+foreign key \(job_id, tenant_id\)[\s\S]*references public\.travel_search_jobs \(id, tenant_id\)/.test(SQL));
-  ok('54 FK compuesta opción/job', /fk_tfo_job_tenant\s+foreign key \(search_job_id, tenant_id\)/.test(SQL) && /fk_tho_job_tenant\s+foreign key \(search_job_id, tenant_id\)/.test(SQL));
+  ok('54 FK compuesta opción/job (por reserva)', /fk_tfo_job_tenant_booking\s+foreign key \(search_job_id, tenant_id, booking_id\)/.test(SQL) && /fk_tho_job_tenant_booking\s+foreign key \(search_job_id, tenant_id, booking_id\)/.test(SQL));
   ok('55 FK compuesta opción/booking', /fk_tfo_booking_tenant\s+foreign key \(booking_id, tenant_id\)/.test(SQL) && /fk_tho_booking_tenant\s+foreign key \(booking_id, tenant_id\)/.test(SQL));
-  ok('56 FK compuesta passenger_form', /fk_tsj_form_tenant\s+foreign key \(passenger_form_id, tenant_id\)[\s\S]*references public\.booking_passenger_forms \(id, tenant_id\)/.test(SQL));
-  ok('57 FK compuesta lodging + unique padre', /fk_tho_lodging_tenant\s+foreign key \(lodging_requirement_id, tenant_id\)/.test(SQL) && /uq_blr_id_tenant unique \(id, tenant_id\)/.test(SQL));
+  ok('56 FK compuesta passenger_form (por reserva)', /fk_tsj_form_tenant_booking\s+foreign key \(passenger_form_id, tenant_id, booking_id\)[\s\S]*?references public\.booking_passenger_forms \(id, tenant_id, booking_id\)/.test(SQL));
+  ok('57 FK compuesta lodging + unique padre', /fk_tho_lodging_form\s+foreign key \(lodging_requirement_id, tenant_id, passenger_form_id\)/.test(SQL) && /uq_blr_id_tenant unique \(id, tenant_id\)/.test(SQL));
 
   // 58 retry no duplica hotel
   const job58 = { id: nid(), tenant_id: 'hook-adventure', booking_id: nid(), requirements_snapshot: snap() };
@@ -462,6 +462,84 @@ const SQL = fs.readFileSync(path.join(BASE, 'supabase/migrations/0015_milu_touri
 
   // 64 marcador: 42 previas verdes + suites históricas (el runner de QA las ejecuta)
   ok('64 42 pruebas base + suites históricas (QA runner)', pass >= 42);
+
+  /* ============================================================
+     INTEGRIDAD A NIVEL DE RESERVA (65-76) — misma reserva, no solo mismo tenant.
+     Los cruces entre reservas los IMPIDE el motor (FKs compuestas); se verifican
+     estructuralmente sobre 0015 (no hay Postgres real en node). Retry/refresh y
+     el no-DELETE de config se verifican por comportamiento y por trigger.
+     ============================================================ */
+  // 65 (item1) Job booking A + formulario B → rechazado (FK 3-col + unique padre)
+  ok('65 job/formulario deben compartir reserva',
+    /fk_tsj_form_tenant_booking\s+foreign key \(passenger_form_id, tenant_id, booking_id\)[\s\S]*?references public\.booking_passenger_forms \(id, tenant_id, booking_id\)/.test(SQL) &&
+    /uq_bpf_id_tenant_booking unique \(id, tenant_id, booking_id\)/.test(SQL));
+
+  // 66 (item2) Opción de vuelo job A + booking B → rechazado
+  ok('66 opción de vuelo/job comparten reserva',
+    /fk_tfo_job_tenant_booking\s+foreign key \(search_job_id, tenant_id, booking_id\)[\s\S]*?references public\.travel_search_jobs \(id, tenant_id, booking_id\)/.test(SQL) &&
+    /uq_tsj_id_tenant_booking unique \(id, tenant_id, booking_id\)/.test(SQL));
+
+  // 67 (item3) Opción de hotel job A + booking B → rechazado; + mismo formulario
+  ok('67 opción de hotel/job comparten reserva y formulario',
+    /fk_tho_job_tenant_booking\s+foreign key \(search_job_id, tenant_id, booking_id\)/.test(SQL) &&
+    /fk_tho_job_form\s+foreign key \(search_job_id, tenant_id, booking_id, passenger_form_id\)[\s\S]*?references public\.travel_search_jobs \(id, tenant_id, booking_id, passenger_form_id\)/.test(SQL) &&
+    /uq_tsj_id_tenant_booking_form unique \(id, tenant_id, booking_id, passenger_form_id\)/.test(SQL) &&
+    /passenger_form_id\s+uuid,\s+-- formulario del job \(integridad de reserva\)/.test(SQL));
+
+  // 68 (item4) Lodging de formulario A usado en formulario B → rechazado
+  ok('68 lodging pertenece al mismo formulario',
+    /fk_tho_lodging_form\s+foreign key \(lodging_requirement_id, tenant_id, passenger_form_id\)[\s\S]*?references public\.booking_lodging_requirements \(id, tenant_id, passenger_form_id\)/.test(SQL) &&
+    /uq_blr_id_tenant_form unique \(id, tenant_id, passenger_form_id\)/.test(SQL));
+
+  // 69 (item5) Travel logistics job A + booking B → rechazado
+  ok('69 logística/job comparten reserva',
+    /fk_tl_job_tenant_booking\s+foreign key \(search_job_id, tenant_id, booking_id\)[\s\S]*?references public\.travel_search_jobs \(id, tenant_id, booking_id\)/.test(SQL));
+
+  // 70 (item6) Flight booking con opción de otra reserva → rechazado
+  ok('70 compra de vuelo usa opción de la misma reserva',
+    /fk_tfb_option_tenant_booking\s+foreign key \(flight_option_id, tenant_id, booking_id\)[\s\S]*?references public\.travel_flight_options \(id, tenant_id, booking_id\)/.test(SQL) &&
+    /uq_tfo_id_tenant_booking unique \(id, tenant_id, booking_id\)/.test(SQL));
+
+  // 71 (item7) Hotel booking con opción de otra reserva → rechazado
+  ok('71 reserva de hotel usa opción de la misma reserva',
+    /fk_thb_option_tenant_booking\s+foreign key \(hotel_option_id, tenant_id, booking_id\)[\s\S]*?references public\.travel_hotel_options \(id, tenant_id, booking_id\)/.test(SQL) &&
+    /uq_tho_id_tenant_booking unique \(id, tenant_id, booking_id\)/.test(SQL));
+
+  // 72 (item8) LLM log job A + subtarea B → rechazado; + job de la misma reserva
+  ok('72 log de IA/subtarea comparten job y reserva',
+    /fk_llm_subtask_tenant_job\s+foreign key \(subtask_id, tenant_id, job_id\)[\s\S]*?references public\.travel_search_subtasks \(id, tenant_id, job_id\)/.test(SQL) &&
+    /uq_tss_id_tenant_job unique \(id, tenant_id, job_id\)/.test(SQL) &&
+    /fk_llm_job_tenant_booking\s+foreign key \(job_id, tenant_id, booking_id\)/.test(SQL));
+
+  // 73 (item9) Audit job A + booking B → rechazado (FKs opcionales)
+  ok('73 auditoría ligada a reserva y job coherentes',
+    /fk_tsa_booking_tenant\s+foreign key \(booking_id, tenant_id\)[\s\S]*?references public\.bookings \(id, tenant_id\)/.test(SQL) &&
+    /fk_tsa_job_tenant_booking\s+foreign key \(search_job_id, tenant_id, booking_id\)[\s\S]*?references public\.travel_search_jobs \(id, tenant_id, booking_id\)/.test(SQL));
+
+  // 74 (item10) Retry no duplica result_version (comportamiento + índice único)
+  const job74 = { id: nid(), tenant_id: 'hook-adventure', booking_id: nid(), passenger_form_id: nid(), requirements_snapshot: snap() };
+  const db74 = { travel_flight_options: [], travel_search_jobs: [job74] }; setClient(db74);
+  await worker.runSubtask({ id: nid(), job_id: job74.id, kind: 'flights_duffel' }, { job: job74, flightProvider: 'stub' });
+  await worker.runSubtask({ id: nid(), job_id: job74.id, kind: 'flights_duffel' }, { job: job74, flightProvider: 'stub' });
+  ok('74 retry no duplica result_version (vuelo)',
+    db74.travel_flight_options.length === 1 && db74.travel_flight_options[0].result_version === 1 &&
+    /uq_tfo_version_key\s+on public\.travel_flight_options \(search_job_id, provider, provider_result_key, result_version\)/.test(SQL));
+
+  // 75 (item11) Refresh crea exactamente la versión siguiente (comportamiento + índice único)
+  const job75 = { id: nid(), tenant_id: 'hook-adventure', booking_id: nid(), passenger_form_id: nid(), requirements_snapshot: snap() };
+  const db75 = { travel_flight_options: [], travel_search_jobs: [job75] }; setClient(db75);
+  const sfl = stub.searchFlights({ origin: 'UIO', destination: 'SCY' });
+  await worker.upsertFlightOptions(job75, sfl);
+  await worker.upsertFlightOptions(job75, sfl, { refresh: true });
+  const act75 = db75.travel_flight_options.filter(function (o) { return o.active === true; });
+  const exp75 = db75.travel_flight_options.filter(function (o) { return o.active === false && o.availability_status === 'expired'; });
+  ok('75 refresh crea una sola versión siguiente',
+    db75.travel_flight_options.length === 2 && act75.length === 1 && act75[0].result_version === 2 &&
+    exp75.length === 1 && exp75[0].result_version === 1 && /uq_tho_version_key/.test(SQL));
+
+  // 76 (item12) DELETE de milu_settings rechazado (trigger)
+  ok('76 DELETE de milu_settings rechazado (trigger)',
+    /trg_no_delete_ms\s+before delete on public\.milu_settings[\s\S]*?milu_forbid_physical_delete/.test(SQL));
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);
