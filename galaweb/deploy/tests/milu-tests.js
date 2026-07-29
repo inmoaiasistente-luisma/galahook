@@ -152,7 +152,7 @@ function baseContract(booking) {
       { passenger_number: 2, legal_first_name: 'Luis', legal_last_name: 'Gomez', age_category: 'adult', nationality: 'Ecuadorian', baggage_notes: null, special_assistance: null, accessibility_or_mobility_needs: null }
     ],
     lodging_requirements: [
-      { destination: 'san_cristobal', lodging_required: true, check_in_date: '2026-08-01', check_out_date: '2026-08-04', nights: 3, guest_count: 2, rooms_required: 1, room_preferences: null, approximate_budget_cents: 12000, accessibility_notes: null, pending_resolution: false }
+      { id: nid(), destination: 'san_cristobal', lodging_required: true, check_in_date: '2026-08-01', check_out_date: '2026-08-04', nights: 3, guest_count: 2, rooms_required: 1, room_preferences: null, approximate_budget_cents: 12000, accessibility_notes: null, pending_resolution: false }
     ],
     hotel_search_preferences: [
       { destination: 'san_cristobal', hotel_name: 'Miconia', priority: 1, preference_notes: 'Primera opción', search_aliases: ['https://www.booking.com/hotel/ec/miconia.html'] },
@@ -181,7 +181,7 @@ function snap() {
   return {
     preferred_connection_city: 'quito', passenger_count: 2,
     flight_dates: { default_departure_date: '2026-08-01', default_return_date: '2026-08-04', duration_days: 4 },
-    lodging_requirements: [{ destination: 'san_cristobal', pending_resolution: false, check_in_date: '2026-08-01', check_out_date: '2026-08-04', nights: 3, rooms_required: 1, guest_count: 2 }],
+    lodging_requirements: [{ id: nid(), destination: 'san_cristobal', pending_resolution: false, check_in_date: '2026-08-01', check_out_date: '2026-08-04', nights: 3, rooms_required: 1, guest_count: 2 }],
     hotel_search_preferences: [
       { destination: 'san_cristobal', hotel_name: 'Miconia', priority: 1, search_aliases: ['https://www.booking.com/hotel/ec/miconia.html'] },
       { destination: 'san_cristobal', hotel_name: 'Casa Opuntia', priority: 2, search_aliases: [] }
@@ -200,6 +200,8 @@ function queueDb(jobStatus, jobActive, subs) {
 }
 
 const SQL = fs.readFileSync(path.join(BASE, 'supabase/migrations/0015_milu_tourism_search.sql'), 'utf8');
+/* Extrae el cuerpo de un CREATE TABLE para afirmar columnas dentro de esa tabla. */
+function tableBlock(name) { const m = new RegExp('create table public\\.' + name + ' \\(([\\s\\S]*?)\\n\\);').exec(SQL); return m ? m[1] : ''; }
 
 (async function () {
   /* ===== Orquestador (1-10) ===== */
@@ -427,7 +429,7 @@ const SQL = fs.readFileSync(path.join(BASE, 'supabase/migrations/0015_milu_touri
   ok('54 FK compuesta opción/job (por reserva)', /fk_tfo_job_tenant_booking\s+foreign key \(search_job_id, tenant_id, booking_id\)/.test(SQL) && /fk_tho_job_tenant_booking\s+foreign key \(search_job_id, tenant_id, booking_id\)/.test(SQL));
   ok('55 FK compuesta opción/booking', /fk_tfo_booking_tenant\s+foreign key \(booking_id, tenant_id\)/.test(SQL) && /fk_tho_booking_tenant\s+foreign key \(booking_id, tenant_id\)/.test(SQL));
   ok('56 FK compuesta passenger_form (por reserva)', /fk_tsj_form_tenant_booking\s+foreign key \(passenger_form_id, tenant_id, booking_id\)[\s\S]*?references public\.booking_passenger_forms \(id, tenant_id, booking_id\)/.test(SQL));
-  ok('57 FK compuesta lodging + unique padre', /fk_tho_lodging_form\s+foreign key \(lodging_requirement_id, tenant_id, passenger_form_id\)/.test(SQL) && /uq_blr_id_tenant unique \(id, tenant_id\)/.test(SQL));
+  ok('57 FK compuesta lodging + unique padre', /fk_tho_lodging_form_dest\s+foreign key \(lodging_requirement_id, tenant_id, passenger_form_id, destination\)/.test(SQL) && /uq_blr_id_tenant unique \(id, tenant_id\)/.test(SQL));
 
   // 58 retry no duplica hotel
   const job58 = { id: nid(), tenant_id: 'hook-adventure', booking_id: nid(), requirements_snapshot: snap() };
@@ -437,7 +439,11 @@ const SQL = fs.readFileSync(path.join(BASE, 'supabase/migrations/0015_milu_touri
   ok('58 retry no duplica opción de hotel', db58.travel_hotel_options.length === 2);
 
   // 59 refresh crea nueva versión y conserva historia
-  await worker.upsertHotelOptions(job58, manual.searchHotels(snap().lodging_requirements[0], snap().hotel_search_preferences, cost.DEFAULT_MILU_SETTINGS), { refresh: true });
+  // Usa el MISMO lodging_requirement_id que el worker ligó en 58 (dedup por clave).
+  const lr58 = job58.requirements_snapshot.lodging_requirements[0];
+  const opts59 = manual.searchHotels(lr58, job58.requirements_snapshot.hotel_search_preferences, cost.DEFAULT_MILU_SETTINGS)
+    .map(function (o) { o.lodging_requirement_id = lr58.id; return o; });
+  await worker.upsertHotelOptions(job58, opts59, { refresh: true });
   const actives59 = db58.travel_hotel_options.filter(function (o) { return o.active === true; });
   const expired59 = db58.travel_hotel_options.filter(function (o) { return o.active === false && o.availability_status === 'expired'; });
   ok('59 refresh crea nueva result_version y conserva historia', db58.travel_hotel_options.length === 4 && actives59.length === 2 && expired59.length === 2 && actives59.every(function (o) { return o.result_version === 2; }));
@@ -484,11 +490,11 @@ const SQL = fs.readFileSync(path.join(BASE, 'supabase/migrations/0015_milu_touri
     /fk_tho_job_tenant_booking\s+foreign key \(search_job_id, tenant_id, booking_id\)/.test(SQL) &&
     /fk_tho_job_form\s+foreign key \(search_job_id, tenant_id, booking_id, passenger_form_id\)[\s\S]*?references public\.travel_search_jobs \(id, tenant_id, booking_id, passenger_form_id\)/.test(SQL) &&
     /uq_tsj_id_tenant_booking_form unique \(id, tenant_id, booking_id, passenger_form_id\)/.test(SQL) &&
-    /passenger_form_id\s+uuid,\s+-- formulario del job \(integridad de reserva\)/.test(SQL));
+    /passenger_form_id\s+uuid not null,\s+-- formulario del job \(integridad de reserva\)/.test(SQL));
 
   // 68 (item4) Lodging de formulario A usado en formulario B → rechazado
   ok('68 lodging pertenece al mismo formulario',
-    /fk_tho_lodging_form\s+foreign key \(lodging_requirement_id, tenant_id, passenger_form_id\)[\s\S]*?references public\.booking_lodging_requirements \(id, tenant_id, passenger_form_id\)/.test(SQL) &&
+    /fk_tho_lodging_form_dest\s+foreign key \(lodging_requirement_id, tenant_id, passenger_form_id, destination\)[\s\S]*?references public\.booking_lodging_requirements \(id, tenant_id, passenger_form_id, destination\)/.test(SQL) &&
     /uq_blr_id_tenant_form unique \(id, tenant_id, passenger_form_id\)/.test(SQL));
 
   // 69 (item5) Travel logistics job A + booking B → rechazado
@@ -540,6 +546,72 @@ const SQL = fs.readFileSync(path.join(BASE, 'supabase/migrations/0015_milu_touri
   // 76 (item12) DELETE de milu_settings rechazado (trigger)
   ok('76 DELETE de milu_settings rechazado (trigger)',
     /trg_no_delete_ms\s+before delete on public\.milu_settings[\s\S]*?milu_forbid_physical_delete/.test(SQL));
+
+  /* ============================================================
+     CIERRE DE HUECOS MATCH SIMPLE (77-88) — columnas NOT NULL + CHECKs de
+     dependencia + FK de destino + FK de hotel preferido. Estructurales sobre
+     0015 (motor); 88 verifica el cableado en runtime.
+     ============================================================ */
+  const jobsBlk = tableBlock('travel_search_jobs');
+  const thoBlk  = tableBlock('travel_hotel_options');
+
+  // 77 (item1) Job sin passenger_form → rechazado (columna NOT NULL)
+  ok('77 job exige passenger_form (NOT NULL)', /passenger_form_id\s+uuid not null/.test(jobsBlk));
+
+  // 78 (item2) Hotel option sin passenger_form → rechazado (columna NOT NULL)
+  ok('78 opción de hotel exige passenger_form (NOT NULL)', /passenger_form_id\s+uuid not null/.test(thoBlk));
+
+  // 79 (item3) Hotel option sin lodging_requirement → rechazado (columna NOT NULL)
+  ok('79 opción de hotel exige lodging_requirement (NOT NULL)', /lodging_requirement_id uuid not null/.test(thoBlk));
+
+  // 80 (item4) Lodging de otro destino usado por la opción → rechazado (FK 4-col + destino)
+  ok('80 lodging del mismo destino (FK con destination)',
+    /fk_tho_lodging_form_dest\s+foreign key \(lodging_requirement_id, tenant_id, passenger_form_id, destination\)[\s\S]*?references public\.booking_lodging_requirements \(id, tenant_id, passenger_form_id, destination\)/.test(SQL) &&
+    /uq_blr_id_form_dest unique \(id, tenant_id, passenger_form_id, destination\)/.test(SQL));
+
+  // 81 (item5) Audit con job y booking null → rechazado (CHECK)
+  ok('81 audit con job exige booking (CHECK)',
+    /chk_tsa_job_booking check \(search_job_id is null or booking_id is not null\)/.test(SQL));
+
+  // 82 (item6) LLM log con subtask y job null → rechazado (CHECK)
+  ok('82 llm con subtask exige job (CHECK)',
+    /chk_llm_subtask_job check \(subtask_id is null or job_id is not null\)/.test(SQL));
+
+  // 83 (item7) LLM log con job y booking null → rechazado (CHECK)
+  ok('83 llm con job exige booking (CHECK)',
+    /chk_llm_job_booking check \(job_id is null or booking_id is not null\)/.test(SQL));
+
+  // 84 (item8) preferred_hotel_id de otro tenant → rechazado (FK compuesta + unique padre)
+  ok('84 hotel preferido del mismo tenant (FK compuesta)',
+    /fk_tho_pref_tenant\s+foreign key \(preferred_hotel_id, tenant_id\)[\s\S]*?references public\.hotel_search_preferences \(id, tenant_id\)/.test(SQL) &&
+    /uq_hsp_id_tenant unique \(id, tenant_id\)/.test(SQL));
+
+  // 85 (item9) provider_result_key vacío → rechazado (CHECK en ambas tablas)
+  ok('85 provider_result_key no vacío (CHECK)',
+    /chk_tfo_prk check \(provider_result_key <> ''\)/.test(SQL) && /chk_tho_prk check \(provider_result_key <> ''\)/.test(SQL));
+
+  // 86 (item10) idempotency_key vacío → rechazado (CHECK)
+  ok('86 idempotency_key no vacío (CHECK)',
+    /chk_tsj_idem_key check \(idempotency_key <> ''\)/.test(SQL));
+
+  // 87 (extra) provider / origin / destino sin cadenas vacías (CHECK)
+  ok('87 provider/origen/destino no vacíos (CHECK)',
+    /chk_tfo_provider check \(provider <> ''\)/.test(SQL) && /chk_tho_provider check \(provider <> ''\)/.test(SQL) &&
+    /chk_tfo_origin check \(origin is null or origin <> ''\)/.test(SQL) &&
+    /chk_tfo_dest_ne check \(destination is null or destination <> ''\)/.test(SQL));
+
+  // 88 (runtime) el worker liga cada opción de hotel a su lodging y al formulario del job
+  const lrId88 = nid();
+  const job88 = { id: nid(), tenant_id: 'hook-adventure', booking_id: nid(), passenger_form_id: nid(),
+    requirements_snapshot: { preferred_connection_city: 'quito', passenger_count: 2,
+      flight_dates: { default_departure_date: '2026-08-01', default_return_date: '2026-08-04' },
+      lodging_requirements: [{ id: lrId88, destination: 'san_cristobal', pending_resolution: false, check_in_date: '2026-08-01', check_out_date: '2026-08-04', nights: 3, rooms_required: 1, guest_count: 2 }],
+      hotel_search_preferences: snap().hotel_search_preferences } };
+  const db88 = { travel_hotel_options: [], travel_search_jobs: [job88] }; setClient(db88);
+  await worker.runSubtask({ id: nid(), job_id: job88.id, kind: 'hotel_preferred_links' }, { job: job88 });
+  ok('88 worker liga opción a lodging y formulario del job (runtime)',
+    db88.travel_hotel_options.length > 0 &&
+    db88.travel_hotel_options.every(function (o) { return o.lodging_requirement_id === lrId88 && o.passenger_form_id === job88.passenger_form_id; }));
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);

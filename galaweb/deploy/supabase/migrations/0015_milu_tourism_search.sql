@@ -63,13 +63,26 @@ alter table public.booking_passenger_forms
   drop constraint if exists uq_bpf_id_tenant_booking;
 alter table public.booking_passenger_forms
   add constraint uq_bpf_id_tenant_booking unique (id, tenant_id, booking_id);
+-- (id, tenant_id, passenger_form_id, destination): FK de RESERVA + DESTINO — una
+-- opción de hotel de un destino no puede ligarse a un lodging de otro destino.
+alter table public.booking_lodging_requirements
+  drop constraint if exists uq_blr_id_form_dest;
+alter table public.booking_lodging_requirements
+  add constraint uq_blr_id_form_dest unique (id, tenant_id, passenger_form_id, destination);
+-- (id, tenant_id): FK compuesta del hotel preferido (nunca de otro tenant).
+alter table public.hotel_search_preferences
+  drop constraint if exists uq_hsp_id_tenant;
+alter table public.hotel_search_preferences
+  add constraint uq_hsp_id_tenant unique (id, tenant_id);
 
 -- ---------- A. Job principal de búsqueda ----------
 create table public.travel_search_jobs (
   id                    uuid primary key default gen_random_uuid(),
   tenant_id             text not null default 'hook-adventure',
   booking_id            uuid not null,
-  passenger_form_id     uuid,
+  -- NOT NULL: el job de Milu solo existe tras un formulario submitted/reviewed/
+  -- complete; así no hay jobs desconectados de un formulario válido.
+  passenger_form_id     uuid not null,
   search_type           text not null,
   status                text not null default 'queued',
   requested_by_user_id  uuid references auth.users(id),
@@ -98,7 +111,8 @@ create table public.travel_search_jobs (
     references public.booking_passenger_forms (id, tenant_id, booking_id) on delete restrict,
   constraint chk_tsj_type   check (search_type in ('flights','hotels','complete_trip')),
   constraint chk_tsj_status check (status in
-    ('queued','running','completed','partial','failed','expired','cancelled'))
+    ('queued','running','completed','partial','failed','expired','cancelled')),
+  constraint chk_tsj_idem_key check (idempotency_key <> '')
 );
 create unique index uq_tsj_active_idem
   on public.travel_search_jobs (tenant_id, idempotency_key) where active = true;
@@ -211,7 +225,11 @@ create table public.travel_flight_options (
   constraint chk_tfo_version check (result_version >= 1),
   constraint chk_tfo_pax check (passenger_count is null or passenger_count >= 1),
   constraint chk_tfo_price check (total_price_cents is null or total_price_cents >= 0),
-  constraint chk_tfo_score check (recommendation_score is null or (recommendation_score >= 0 and recommendation_score <= 100))
+  constraint chk_tfo_score check (recommendation_score is null or (recommendation_score >= 0 and recommendation_score <= 100)),
+  constraint chk_tfo_provider check (provider <> ''),
+  constraint chk_tfo_prk check (provider_result_key <> ''),
+  constraint chk_tfo_origin check (origin is null or origin <> ''),
+  constraint chk_tfo_dest_ne check (destination is null or destination <> '')
 );
 create index idx_tfo_job on public.travel_flight_options (search_job_id);
 -- Idempotencia: una sola fila ACTIVA por clave lógica; refresh versiona y expira.
@@ -233,14 +251,14 @@ create table public.travel_hotel_options (
   tenant_id              text not null default 'hook-adventure',
   search_job_id          uuid not null,
   booking_id             uuid not null,
-  passenger_form_id      uuid,             -- formulario del job (integridad de reserva)
-  lodging_requirement_id uuid,
+  passenger_form_id      uuid not null,    -- formulario del job (integridad de reserva)
+  lodging_requirement_id uuid not null,    -- requerimiento de alojamiento (obligatorio)
   provider               text not null,
   provider_result_key    text not null,    -- clave estable del adapter (dedup)
   result_version         integer not null default 1,
   destination            text not null,
   hotel_name             text not null,
-  preferred_hotel_id     uuid references public.hotel_search_preferences(id),
+  preferred_hotel_id     uuid,             -- FK compuesta por tenant (más abajo)
   is_preferred           boolean not null default false,
   is_airbnb              boolean not null default false,
   check_in_date          date,
@@ -274,15 +292,21 @@ create table public.travel_hotel_options (
   -- El job debe pertenecer a la MISMA reserva que la opción.
   constraint fk_tho_job_tenant_booking foreign key (search_job_id, tenant_id, booking_id)
     references public.travel_search_jobs (id, tenant_id, booking_id) on delete restrict,
-  -- Y la opción debe usar el MISMO formulario que el job (cuando hay formulario).
-  -- passenger_form_id nullable → MATCH SIMPLE no verifica cuando es null.
+  -- Y la opción debe usar el MISMO formulario que el job. passenger_form_id es
+  -- NOT NULL, así que la FK siempre se verifica (nunca omitida por MATCH SIMPLE).
   constraint fk_tho_job_form foreign key (search_job_id, tenant_id, booking_id, passenger_form_id)
     references public.travel_search_jobs (id, tenant_id, booking_id, passenger_form_id) on delete restrict,
   constraint fk_tho_booking_tenant foreign key (booking_id, tenant_id)
     references public.bookings (id, tenant_id) on delete restrict,
-  -- El lodging usado debe pertenecer al MISMO formulario (no solo al tenant).
-  constraint fk_tho_lodging_form foreign key (lodging_requirement_id, tenant_id, passenger_form_id)
-    references public.booking_lodging_requirements (id, tenant_id, passenger_form_id) on delete restrict,
+  -- El lodging usado debe pertenecer al MISMO formulario Y al MISMO destino que la
+  -- opción. lodging_requirement_id/passenger_form_id/destination son NOT NULL → la
+  -- FK siempre se verifica (San Cristóbal nunca liga a lodging de Guayaquil).
+  constraint fk_tho_lodging_form_dest foreign key (lodging_requirement_id, tenant_id, passenger_form_id, destination)
+    references public.booking_lodging_requirements (id, tenant_id, passenger_form_id, destination) on delete restrict,
+  -- Hotel preferido: FK compuesta por tenant (nunca de otro tenant). preferred_hotel_id
+  -- nullable (muchas opciones no son un preferido) → MATCH SIMPLE cuando es null.
+  constraint fk_tho_pref_tenant foreign key (preferred_hotel_id, tenant_id)
+    references public.hotel_search_preferences (id, tenant_id) on delete restrict,
   constraint chk_tho_dest check (destination in
     ('quito','guayaquil','san_cristobal','santa_cruz','isabela')),
   constraint chk_tho_status check (availability_status in
@@ -301,7 +325,10 @@ create table public.travel_hotel_options (
   constraint chk_tho_ppp check (price_per_person_cents is null or price_per_person_cents >= 0),
   constraint chk_tho_total check (total_price_cents is null or total_price_cents >= 0),
   constraint chk_tho_score check (recommendation_score is null or (recommendation_score >= 0 and recommendation_score <= 100)),
-  constraint chk_tho_dates check (check_in_date is null or check_out_date is null or check_out_date > check_in_date)
+  constraint chk_tho_dates check (check_in_date is null or check_out_date is null or check_out_date > check_in_date),
+  constraint chk_tho_provider check (provider <> ''),
+  constraint chk_tho_prk check (provider_result_key <> '')
+  -- destination no vacío ya garantizado por chk_tho_dest (IN de destinos).
 );
 create index idx_tho_job  on public.travel_hotel_options (search_job_id);
 create index idx_tho_dest on public.travel_hotel_options (destination);
@@ -465,7 +492,10 @@ create table public.travel_search_audit (
   constraint fk_tsa_job_tenant_booking foreign key (search_job_id, tenant_id, booking_id)
     references public.travel_search_jobs (id, tenant_id, booking_id) on delete restrict,
   constraint chk_tsa_actor  check (actor_type in ('owner','admin','system')),
-  constraint chk_tsa_result check (result in ('success','failure'))
+  constraint chk_tsa_result check (result in ('success','failure')),
+  -- Si hay job, debe haber booking → la FK compuesta (job, tenant, booking) se
+  -- verifica completa. Eventos generales pueden llevar job y booking en null.
+  constraint chk_tsa_job_booking check (search_job_id is null or booking_id is not null)
 );
 create index idx_tsa_tenant  on public.travel_search_audit (tenant_id);
 create index idx_tsa_job     on public.travel_search_audit (search_job_id);
@@ -508,6 +538,10 @@ create table public.llm_usage_log (
     references public.travel_search_jobs (id, tenant_id, booking_id) on delete restrict,
   constraint fk_llm_subtask_tenant_job foreign key (subtask_id, tenant_id, job_id)
     references public.travel_search_subtasks (id, tenant_id, job_id) on delete restrict,
+  -- Dependencias: si hay subtarea debe haber job; si hay job debe haber booking.
+  -- Fuerza que las FKs compuestas de arriba se verifiquen completas.
+  constraint chk_llm_subtask_job check (subtask_id is null or job_id is not null),
+  constraint chk_llm_job_booking check (job_id is null or booking_id is not null),
   constraint chk_llm_in check (input_tokens >= 0),
   constraint chk_llm_out check (output_tokens >= 0),
   constraint chk_llm_cr check (cache_read_tokens >= 0),

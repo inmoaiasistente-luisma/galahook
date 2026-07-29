@@ -230,7 +230,11 @@ async function runSubtask(subtask, deps) {
       for (var i = 0; i < lodg.length; i++) {
         if (lodg[i].pending_resolution) continue;   // connection_tbd → no se busca
         const part = adapter.searchHotels(lodg[i], snapshot.hotel_search_preferences || [], deps.settings);
-        for (var k = 0; k < part.length; k++) all.push(part[k]);
+        for (var k = 0; k < part.length; k++) {
+          // Liga cada opción a su requerimiento (lodging_requirement_id NOT NULL).
+          if (part[k].lodging_requirement_id == null) part[k].lodging_requirement_id = lodg[i].id || null;
+          all.push(part[k]);
+        }
       }
       await upsertHotelOptions(job, all, { refresh: deps.refresh });
       return { status: usable(all) ? 'completed' : 'partial', count: all.length, reason: usable(all) ? null : 'provider_not_connected' };
