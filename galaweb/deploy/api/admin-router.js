@@ -66,6 +66,14 @@ ROUTES['passenger-document-reveal'] = require('../server/admin-handlers/passenge
 ROUTES['lodging-requirements-save'] = require('../server/admin-handlers/lodging-requirements-save');
 ROUTES['hotel-preferences-list'] = require('../server/admin-handlers/hotel-preferences-list');
 ROUTES['hotel-preferences-save'] = require('../server/admin-handlers/hotel-preferences-save');
+/* Precios de paquetes en vivo (main / migraciones 0012–0013). */
+ROUTES['package-prices-list'] = require('../server/admin-handlers/package-prices-list');
+ROUTES['package-price-draft-save'] = require('../server/admin-handlers/package-price-draft-save');
+ROUTES['package-price-publish'] = require('../server/admin-handlers/package-price-publish');
+ROUTES['package-price-history'] = require('../server/admin-handlers/package-price-history');
+ROUTES['package-price-rollback'] = require('../server/admin-handlers/package-price-rollback');
+ROUTES['package-price-toggle'] = require('../server/admin-handlers/package-price-toggle');
+ROUTES['package-price-update'] = require('../server/admin-handlers/package-price-update');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */

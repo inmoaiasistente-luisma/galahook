@@ -1,5 +1,5 @@
 -- =========================================================
--- 0012 — Etapa 8: notas de paquetes, intake de pasajeros,
+-- 0014 — Etapa 8: notas de paquetes, intake de pasajeros,
 --        alojamiento (5 destinos + connection_tbd), hoteles
 --        preferidos, documentos cifrados (AES-256-GCM + keyring),
 --        auditoria de acceso a documentos y emails auditables.

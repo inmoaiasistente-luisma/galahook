@@ -21,9 +21,9 @@ const CURRENCY = 'usd';
 
 const TOURS = {
   // ---- Paquetes (person, mínimo 2) ----
-  p3:   { name: 'Island Escape (4 Days)',                              priceCents: 279900, unit: 'person', minGuests: 2, requiresQuote: false, type: 'package' },
-  p4:   { name: 'Hook Signature (5 Days)',                             priceCents: 349900, unit: 'person', minGuests: 2, requiresQuote: false, type: 'package' },
-  p7:   { name: 'Wild Galápagos (7 Days)',                            priceCents: 489900, unit: 'person', minGuests: 2, requiresQuote: false, type: 'package' },
+  p3:   { name: 'Island Escape (4 Days)',                              priceCents: 349900, unit: 'person', minGuests: 2, requiresQuote: false, type: 'package' },
+  p4:   { name: 'Hook Signature (5 Days)',                             priceCents: 399900, unit: 'person', minGuests: 2, requiresQuote: false, type: 'package' },
+  p7:   { name: 'Wild Galápagos (7 Days)',                            priceCents: 479900, unit: 'person', minGuests: 2, requiresQuote: false, type: 'package' },
   p8sc: { name: 'Island Hopper — Santa Cruz & San Cristóbal (8 Days)', priceCents: 531900, unit: 'person', minGuests: 2, requiresQuote: false, type: 'package' },
   p8is: { name: 'Island Hopper — Santa Cruz & Isabela (8 Days)',       priceCents: 531900, unit: 'person', minGuests: 2, requiresQuote: false, type: 'package' },
 

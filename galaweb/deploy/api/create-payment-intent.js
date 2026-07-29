@@ -88,6 +88,10 @@ module.exports = async function handler(req, res) {
     const tour = catalog.getTour(tour_id);
     if (!tour) return sendError(res, 400, 'INVALID_TOUR', 'Unknown tour_id');
     if (tour.requiresQuote) return sendError(res, 400, 'QUOTE_REQUIRED', 'This experience requires a quote request');
+    /* Checkout de PAQUETES reactivado: el bug de display 100x del total del modal
+       se corrigió (frontend divide centavos a dólares una sola vez). El cobro
+       siempre se derivó del catálogo server-side (computeWebPricing) — el navegador
+       nunca envía importes (ALLOWED_KEYS no incluye 'amount'). */
 
     if (!isRealYmd(booking_date)) return sendError(res, 400, 'INVALID_DATE', 'booking_date must be a real YYYY-MM-DD date');
     if (!isNotPastGalapagos(booking_date)) return sendError(res, 400, 'DATE_IN_PAST', 'booking_date cannot be in the past');
@@ -117,6 +121,9 @@ module.exports = async function handler(req, res) {
     try { pricing = await computeWebPricing({ tenantId: tenant, tourId: tour.id, guests: guests }); }
     catch (e) {
       if (e && e.message === 'QUOTE_ONLY') return sendError(res, 400, 'QUOTE_REQUIRED', 'This experience requires a quote request');
+      /* Paquete sin precio publicado (ni fallback válido): se BLOQUEA aquí,
+         ANTES de crear la reserva o el PaymentIntent. No se cobra nada. */
+      if (e && e.message === 'PACKAGE_PRICE_UNAVAILABLE') return sendError(res, 409, 'PACKAGE_PRICE_UNAVAILABLE', 'Package price is not available');
       logServer('pricing', e && e.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to price the booking');
     }
 

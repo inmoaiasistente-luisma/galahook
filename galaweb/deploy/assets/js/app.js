@@ -46,10 +46,25 @@ function deepMerge(base, over){
   }
   return (over!==undefined)? over : base;
 }
+/* FUENTE ÚNICA DE PRECIOS (hotfix): los precios mostrados provienen SIEMPRE
+   del catálogo canónico horneado (window.GHA_DEFAULT, espejo verificado del
+   catálogo del servidor server/lib/tour-catalog.js). El editor de contenido
+   local (localStorage) puede cambiar textos/imágenes pero NUNCA el precio:
+   aquí se reimponen los precios canónicos por id. Ids sin catálogo → 0. */
+function reconcilePrices(S){
+  const def = window.GHA_DEFAULT || {};
+  const map = function(arr){ const m={}; (arr||[]).forEach(function(x){ if(x&&x.id!=null) m[x.id]=x; }); return m; };
+  const dp=map(def.packages), dt=map(def.tours), dfr=map(def.fishing&&def.fishing.trips);
+  (S.packages||[]).forEach(function(p){ p.price = dp[p.id]?dp[p.id].price:0; });
+  (S.tours||[]).forEach(function(t){ t.price = dt[t.id]?dt[t.id].price:0; });
+  if(S.fishing&&S.fishing.trips) S.fishing.trips.forEach(function(f){ f.price = dfr[f.id]?dfr[f.id].price:0; });
+  return S;
+}
 function loadContent(){
   let stored=null;
   try{ stored=JSON.parse(localStorage.getItem(CKEY)||'null'); }catch(e){}
-  return stored ? deepMerge(window.GHA_DEFAULT, stored) : window.GHA_DEFAULT;
+  const merged = stored ? deepMerge(window.GHA_DEFAULT, stored) : window.GHA_DEFAULT;
+  return reconcilePrices(merged);
 }
 let S = loadContent();
 let L = localStorage.getItem(LKEY) || 'en';
@@ -263,10 +278,17 @@ function esc(s){ return String(s==null?'':s).replace(/"/g,'&quot;'); }
 function bookBtn(name, price, unit, cls, label, min, tourId){
   return '<button type="button" class="'+cls+' js-book" data-name="'+esc(name)+'" data-price="'+(price||0)+'" data-unit="'+unit+'" data-min="'+(min||1)+'" data-tour-id="'+esc(tourId||'')+'">'+label+'</button>';
 }
+/* ===== Checkout de PAQUETES ACTIVO. La contención temporal (bug de display
+   100x del total del modal) se resolvió: pricing-preview y create-payment-intent
+   coinciden y el total se muestra en dólares (÷100 una sola vez). Precios
+   canónicos 2026 vigentes. Poner en true reactivaría la contención (tarjeta con
+   "Contáctenos" + guard server-side) sin afectar tours de día ni cotizaciones. */
+var PKG_CHECKOUT_PAUSED = false;
+function isPackageTour(id){ return !!(S && S.packages && S.packages.some(function(p){ return p.id===id; })); }
 function bookables(){
   const PK=L==='es'?'Paquetes':'Packages', TO=L==='es'?'Tours':'Tours', FI=L==='es'?'Pesca deportiva':'Sport fishing';
   const out=[];
-  S.packages.forEach(p=>{ if(p.price) out.push({tourId:p.id, label:t(p.name)+' · '+t(p.days), price:p.price, unit:'person', min:(p.minGuests||2), requiresQuote:false, group:PK}); });
+  if(!PKG_CHECKOUT_PAUSED) S.packages.forEach(p=>{ var ps=pkgPriceState(p.id); if(ps.state==='priced') out.push({tourId:p.id, label:t(p.name)+' · '+t(p.days), price:ps.price, unit:'person', min:(p.minGuests||2), requiresQuote:false, group:PK}); });
   S.tours.forEach(tr=>{ if(tr.price) out.push({tourId:tr.id, label:t(tr.name), price:tr.price, unit:'person', min:1, requiresQuote:false, group:TO}); });
   S.fishing.trips.forEach(tr=>{ if(tr.price) out.push({tourId:tr.id, label:t(tr.name), price:tr.price, unit:'boat', min:1, requiresQuote:false, group:FI}); });
   return out;
@@ -429,8 +451,12 @@ function updateBkSummary(){
   /* Total del servidor si ya llegó y coincide con tour+pax; si no, estimación
      local (bruto). El descuento y su etiqueta vienen del servidor. */
   const sp=(bkPricing.applied&&bkPricing.applied.tourId===bkState.tourId&&bkPricing.applied.guests===guests)?bkPricing.applied:null;
-  const amount= request?0:(sp?sp.amount:tot.gross);
-  const discount= sp?sp.discount:0;
+  /* UNIDADES: bkPricing.applied.amount/discount vienen del servidor (pricing-preview)
+     en CENTAVOS → se convierten a dólares UNA sola vez (÷100) para mostrarlos.
+     tot.gross ya está en dólares (estimación local base×pax): NO se divide.
+     El cobro real lo fija el servidor (create-payment-intent); esto es solo display. */
+  const amount= request?0:(sp?sp.amount/100:tot.gross);
+  const discount= sp?sp.discount/100:0;
   const promoRow=document.getElementById('bkPromoRow');
   if(promoRow){
     const show=!request&&discount>0;
@@ -481,6 +507,11 @@ function refreshPricing(){
   }).catch(function(){ if(mySeq!==bkPricing.seq) return; bkPricing.pending=false; bkPricing.applied=null; updateBkSummary(); });
 }
 function openBooking(opts){
+  /* HOTFIX contención: no abrir checkout de paquetes mientras el precio se estabiliza. */
+  if(PKG_CHECKOUT_PAUSED && isPackageTour(opts&&opts.tourId)){
+    if(window.GHA&&GHA.toast) GHA.toast(L==='es'?'Precio temporalmente no disponible. Contáctenos para completar su reserva.':'Price temporarily unavailable. Contact us to complete your reservation.');
+    return;
+  }
   buildBookingModal();
   const general=!opts.name;
   bkSubmitting=false; bkResetRequestId();
@@ -754,6 +785,51 @@ function policyAccordion(){
     +'<ul class="dt-policy-list">'+S.policies.items.map(i=>'<li>'+t(i)+'</li>').join('')+'</ul></details>';
 }
 
+/* ===== PRECIOS DE PAQUETES EN VIVO =========================================
+   Fuente de verdad = /api/pricing-preview (GET), que lee Supabase
+   (public.package_prices). content.js conserva textos/itinerarios pero NO es
+   autoridad del precio. Estados por tarjeta:
+     · loading      → aún sin respuesta del endpoint
+     · priced       → precio publicado por el servidor (se muestra y se reserva)
+     · unavailable  → sin precio publicado o endpoint caído → NO se muestra un
+                      fallback monetario y la reserva del paquete se desactiva.
+   El precio del modal y el cobro siguen siendo server-authoritative
+   (refreshPricing → pricing-preview → create-payment-intent). */
+var livePkgPrices = null;     // {package_id: display_price_cents} tras responder
+var livePkgLoaded = false;    // true una vez que el endpoint respondió (ok o error)
+function pkgPriceState(id){
+  if(!livePkgLoaded) return { state:'loading' };
+  var cents = livePkgPrices && livePkgPrices[id];
+  if(typeof cents==='number' && cents>0) return { state:'priced', price: cents/100, cents:cents };
+  return { state:'unavailable' };
+}
+function loadLivePackagePrices(){
+  return fetch('/api/pricing-preview',{headers:{Accept:'application/json'}})
+    .then(function(res){ return res.ok?res.json().catch(function(){return null;}):null; })
+    .then(function(data){
+      var map={};
+      if(data && Array.isArray(data.packages)){
+        data.packages.forEach(function(p){ if(p&&p.package_id!=null&&typeof p.display_price_cents==='number'&&p.display_price_cents>0) map[p.package_id]=p.display_price_cents; });
+      }
+      livePkgPrices=map; livePkgLoaded=true;         // fallo/!ok → map vacío = unavailable (sin fallback monetario)
+    })
+    .catch(function(){ livePkgPrices={}; livePkgLoaded=true; })
+    .then(function(){ renderPackages(); });          // repinta las tarjetas con el estado real
+}
+function pkgPriceBlock(p){
+  var ps=pkgPriceState(p.id);
+  if(ps.state==='priced') return '<div class="pkg-price"><small>'+(L==='es'?'Desde':'From')+'</small><b>'+money(ps.price)+'</b><em>/ '+(L==='es'?'persona':'person')+' · '+(L==='es'?'mín 2':'min 2')+'</em></div>';
+  if(ps.state==='loading') return '<div class="pkg-price"><small>'+(L==='es'?'Desde':'From')+'</small><b>…</b></div>';
+  return '<div class="pkg-price"><b style="font-size:15.5px;line-height:1.3;color:var(--ink)">'+(L==='es'?'Precio temporalmente no disponible':'Price temporarily unavailable')+'</b></div>';
+}
+function pkgBookControl(p, onIndex){
+  var ps=pkgPriceState(p.id);
+  if(PKG_CHECKOUT_PAUSED) return '<a class="btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block" href="contact.html">'+(L==='es'?'Contáctenos':'Contact us')+'</a>';
+  var label=onIndex?(L==='es'?'Consultar':'Enquire'):(L==='es'?'Reservar este viaje':'Book this trip');
+  if(ps.state==='priced') return bookBtn(t(p.name)+' · '+t(p.days), ps.price, 'person', 'btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block', label, (p.minGuests||2), p.id);
+  if(ps.state==='loading') return '<button type="button" class="btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block" disabled>'+(L==='es'?'Cargando…':'Loading…')+'</button>';
+  return '<button type="button" class="btn btn-ink btn-block" disabled title="'+(L==='es'?'Precio no disponible':'Price unavailable')+'">'+(L==='es'?'No disponible':'Unavailable')+'</button>';
+}
 function pkgCard(p){
   const onIndex = document.body.dataset.page==='index';
   const hasDetail = !!(window.GHA_DETAILS && GHA_DETAILS.packages && GHA_DETAILS.packages[p.id]);
@@ -762,11 +838,11 @@ function pkgCard(p){
     +'<div class="pkg-media'+(hasDetail?' js-detail':'')+'"'+(hasDetail?' data-type="package" data-id="'+esc(p.id)+'"':'')+'><img src="'+p.img+'" alt="'+t(p.name)+'" loading="lazy"></div>'
     +'<div class="pkg-head"><span class="days">'+t(p.days)+'</span> <span class="nights">/ '+t(p.nights)+'</span>'
       +'<div style="font-family:var(--display);font-weight:700;font-size:19px;margin-top:8px">'+t(p.name)+'</div></div>'
-    +(onIndex?'':'<div class="pkg-price"><small>'+(L==='es'?'Desde':'From')+'</small><b>'+money(p.price)+'</b><em>/ '+(L==='es'?'persona':'person')+' · '+(L==='es'?'mín 2':'min 2')+'</em></div>')
-    +'<ul class="pkg-includes">'+p.includes.map(i=>'<li>'+svg('check')+'<span>'+t(i)+'</span></li>').join('')+'</ul>'
+    +(onIndex?'':pkgPriceBlock(p))
+    +'<ul class="pkg-includes">'+(p.includes||[]).map(i=>'<li>'+svg('check')+'<span>'+t(i)+'</span></li>').join('')+'</ul>'
     +'<div class="pkg-foot">'
       +(hasDetail?detailBtn('package', p.id, 'btn btn-ghost btn-block', (L==='es'?'Ver itinerario':'View itinerary')):'')
-      +bookBtn(t(p.name)+' · '+t(p.days), p.price, 'person', 'btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block', (onIndex?(L==='es'?'Consultar':'Enquire'):(L==='es'?'Reservar este viaje':'Book this journey')), (p.minGuests||2), p.id)
+      +pkgBookControl(p, onIndex)
     +'</div>'
   +'</article>';
 }
@@ -934,6 +1010,9 @@ function render(){
 function init(){
   initReveal();
   render();
+  /* Hidrata los precios de las tarjetas de paquetes desde el servidor
+     (Supabase). Solo en páginas con grid; repinta al responder. */
+  if(document.getElementById('pkgGrid')) loadLivePackagePrices();
   initHeaderScroll();
   initReels();
   initForms();

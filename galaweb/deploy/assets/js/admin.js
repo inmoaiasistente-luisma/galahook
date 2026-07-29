@@ -116,6 +116,20 @@ function numField(label, obj, key){
   f.addEventListener('input',()=>{ obj[key]=parseInt(f.value||'0',10); setDirty(); });
   box.appendChild(f); wrap.appendChild(box); return wrap;
 }
+/* HOTFIX precios: el precio canónico lo administra el servidor (tour-catalog.js);
+   la edición desde el panel (localStorage) ya no controla el precio público.
+   Campo de precio de solo lectura con nota, hasta que exista la tabla de precios
+   editable en Supabase (trabajo separado). No bloquea textos/imágenes/itinerarios. */
+function readOnlyPriceField(label, obj, key){
+  const wrap=el('<div class="ed-field"><label>'+label+'</label></div>');
+  const box=el('<div class="price-in"><span>$</span></div>');
+  const f=document.createElement('input'); f.type='number'; f.value=obj[key]||0; f.readOnly=true; f.disabled=true;
+  box.appendChild(f); wrap.appendChild(box);
+  wrap.appendChild(el('<div class="bk-sub-hint" style="margin-top:6px">'+(ES
+    ? 'Precio administrado en el servidor. Los precios de PAQUETES se editan en la sección “Precios de paquetes”; este editor de contenido no cambia el precio.'
+    : 'Price managed by the server. PACKAGE prices are edited in the “Package pricing” section; this content editor does not change the price.')+'</div>'));
+  return wrap;
+}
 function imgField(label, obj, key){
   const wrap=el('<div class="ed-field"><label>'+label+'</label><div class="img-edit"></div></div>');
   const row=wrap.querySelector('.img-edit');
@@ -245,7 +259,7 @@ function panelPackages(){
       c.appendChild(imgField('Photo',it,'img'));
       const r=el('<div class="ed-row"></div>'); r.appendChild(biField('Days',it,'days')); r.appendChild(biField('Nights',it,'nights')); c.appendChild(r);
       const nm=biField('Name',it,'name'); nm.querySelectorAll('input').forEach(i=>i.addEventListener('input',onTitle)); c.appendChild(nm);
-      c.appendChild(numField('Price (per person)',it,'price'));
+      c.appendChild(readOnlyPriceField('Price (per person)',it,'price'));
       const pop=el('<div class="ed-field"><label style="display:flex;align-items:center;gap:9px;text-transform:none;letter-spacing:0;font-size:14px;cursor:pointer"><input type="checkbox" style="width:auto"> Mark as “Most Popular”</label></div>');
       const cb=pop.querySelector('input'); cb.checked=!!it.popular; cb.addEventListener('change',()=>{ if(cb.checked) W.packages.forEach(x=>x.popular=false); it.popular=cb.checked; setDirty(); });
       c.appendChild(pop);
@@ -267,7 +281,7 @@ function panelTours(){
       sel.addEventListener('change',()=>{it.cat=sel.value;setDirty();}); catWrap.appendChild(sel);
       r.appendChild(catWrap); r.appendChild(biField('Duration',it,'duration')); c.appendChild(r);
       c.appendChild(biField('Tag (badge)',it,'tag'));
-      const r2=el('<div class="ed-row"></div>'); r2.appendChild(numField('Price (0 = custom quote)',it,'price')); r2.appendChild(biField('Price label',it,'priceLabel')); c.appendChild(r2);
+      const r2=el('<div class="ed-row"></div>'); r2.appendChild(readOnlyPriceField('Price (0 = custom quote)',it,'price')); r2.appendChild(biField('Price label',it,'priceLabel')); c.appendChild(r2);
       c.appendChild(biField('Description',it,'blurb',true));
     }
   });
@@ -284,7 +298,7 @@ function panelFishing(){
   const sub=listPanel(f.trips,{
     addLabel:'Add charter', titleField:it=>it.name&&it.name.en?it.name.en:'Charter',
     template:()=>({id:'f'+Date.now(),name:{en:'New charter',es:''},duration:{en:'',es:''},price:0}),
-    build:(cc,it,idx,onTitle)=>{ const nm=biField('Name',it,'name'); nm.querySelectorAll('input').forEach(i=>i.addEventListener('input',onTitle)); cc.appendChild(nm); cc.appendChild(biField('Duration',it,'duration')); cc.appendChild(numField('Price',it,'price')); }
+    build:(cc,it,idx,onTitle)=>{ const nm=biField('Name',it,'name'); nm.querySelectorAll('input').forEach(i=>i.addEventListener('input',onTitle)); cc.appendChild(nm); cc.appendChild(biField('Duration',it,'duration')); cc.appendChild(readOnlyPriceField('Price',it,'price')); }
   });
   ct.appendChild(sub); p.appendChild(ct);
   const ci=card('Fishing photos','Shown in the rotating reel on the Sport Fishing page.');
@@ -1625,6 +1639,123 @@ function panelPassengers(role){
   return p;
 }
 
+/* ============ PRECIOS DE PAQUETES EN VIVO (rediseño owner = un clic) ============
+   Lista de tarjetas responsive (sin scroll horizontal). El owner escribe un
+   precio y pulsa "Update live price" → se publica al instante (RPC atómico).
+   Sin campo de razón (el backend pone 'owner_direct_update'), sin flujo
+   draft/publicar en dos pasos. Errores reales y claros. admin/staff: lectura.
+   Mantiene fuente de verdad (package_prices), versionado e historial. */
+function panelPackagePricing(role){
+  const canUpdate = role==='owner';   // cambiar el precio live: SOLO owner
+  const wrap=el('<div class="pp-wrap" style="max-width:900px"></div>');
+  wrap.appendChild(el('<p class="bk-sub-hint" style="margin:0 0 12px;font-size:13px">'+(ES
+    ? 'Cambia el precio de cada paquete en vivo. Se aplica al instante tras actualizar y NO afecta reservas ya creadas.'
+    : 'Change each package price live. It applies instantly after updating and does NOT affect existing bookings.')+'</p>'));
+
+  const bar=el('<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap"></div>');
+  const refreshBtn=el('<button class="mini-btn" type="button">'+(ES?'Actualizar':'Refresh')+'</button>');
+  bar.appendChild(refreshBtn);
+  if(!canUpdate) bar.appendChild(el('<span class="bk-sub-hint">'+(ES?'Solo lectura para tu rol.':'Read-only for your role.')+'</span>'));
+  wrap.appendChild(bar);
+
+  const notMig=el('<div class="bk-sub-hint" style="display:none;margin-bottom:12px;color:#b45309"></div>'); wrap.appendChild(notMig);
+  const list=el('<div style="display:flex;flex-direction:column;gap:12px"></div>'); wrap.appendChild(list);
+
+  function money(c){ return fin$(c); }
+  function fmtDate(iso){ if(!iso) return '—'; try{ return new Date(iso).toISOString().slice(0,10); }catch(e){ return '—'; } }
+
+  function loadHistory(pkgId, box){
+    box.innerHTML='<div class="bk-sub-hint">'+(ES?'Cargando…':'Loading…')+'</div>';
+    apiGet('/api/admin-package-price-history?package_id='+encodeURIComponent(pkgId)).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data){ box.innerHTML=''; return; }
+      const rows=(r.data.history||[]).map(function(h){
+        const chg=(h.old_price_cents!=null?money(h.old_price_cents):'—')+' → '+(h.new_price_cents!=null?money(h.new_price_cents):'—');
+        return '<tr><td>'+fmtDate(h.created_at)+'</td><td>'+escapeHtml(h.action)+'</td><td class="num">'+chg+'</td><td class="num">v'+(h.new_version!=null?h.new_version:'—')+'</td></tr>';
+      }).join('');
+      box.innerHTML='<div style="overflow-x:auto"><table class="bk-table" style="width:100%"><thead><tr><th>'+(ES?'Fecha':'Date')+'</th><th>'+(ES?'Acción':'Action')+'</th><th>'+(ES?'Cambio':'Change')+'</th><th>Ver.</th></tr></thead><tbody>'
+        +(rows||'<tr><td colspan="4" class="bk-sub-hint">'+(ES?'Sin historial.':'No history.')+'</td></tr>')+'</tbody></table></div>';
+    }).catch(function(){ box.innerHTML=''; });
+  }
+
+  function card(pk){
+    const pub=pk.published, curCents=pub?pub.base_price_cents:null;
+    const c=el('<div style="border:1px solid rgba(0,0,0,.12);border-radius:12px;padding:14px 16px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04)"></div>');
+    const head=el('<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap"></div>');
+    head.appendChild(el('<div><div style="font-weight:700;font-size:15px">'+escapeHtml(pk.name)+'</div><div class="bk-sub-hint" style="text-transform:uppercase;letter-spacing:.04em">'+escapeHtml(pk.package_id)+'</div></div>'));
+    head.appendChild(el('<div style="text-align:right"><div style="font-weight:700;font-size:20px">'+(pub?money(curCents):(ES?'— sin precio':'— no price'))+'</div><div class="bk-sub-hint">'+(pub?('v'+pub.pricing_version+' · '+fmtDate(pub.published_at)):(ES?'sin publicar':'unpublished'))+'</div></div>'));
+    c.appendChild(head);
+
+    const editRow=el('<div style="display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap"></div>');
+    const inWrap=el('<div style="display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(0,0,0,.18);border-radius:9px;padding:2px 10px;background:#fafafa"><span style="color:#555;font-weight:600">$</span></div>');
+    const input=el('<input type="number" min="1" step="1" inputmode="numeric" style="width:120px;border:none;outline:none;background:transparent;font-size:16px;padding:8px 0" value="'+(curCents!=null?Math.round(curCents/100):'')+'"'+(canUpdate?'':' disabled')+'>');
+    inWrap.appendChild(input);
+    const delta=el('<span class="bk-sub-hint" style="min-width:84px;font-weight:600"></span>');
+    editRow.appendChild(inWrap); editRow.appendChild(delta);
+    let btn=null;
+    if(canUpdate){ btn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-left:auto">'+(ES?'Actualizar precio en vivo':'Update live price')+'</button>'); editRow.appendChild(btn); }
+    c.appendChild(editRow);
+    const msg=el('<div class="bk-sub-hint" style="margin-top:8px;min-height:0"></div>'); c.appendChild(msg);
+
+    function newCents(){ var v=parseFloat(input.value); return (isFinite(v)&&v>0)?Math.round(v*100):0; }
+    function sync(){
+      const nc=newCents();
+      if(nc<=0){ delta.textContent=''; if(btn) btn.disabled=true; return; }
+      if(curCents!=null){ const d=nc-curCents; delta.textContent = d===0?(ES?'sin cambios':'no change'):((d>0?'+':'−')+money(Math.abs(d))); }
+      else delta.textContent='';
+      if(btn) btn.disabled = (nc<=0)||(nc===curCents);
+    }
+    input.addEventListener('input',sync); sync();
+
+    if(btn) btn.addEventListener('click',function(){
+      const nc=newCents();
+      if(nc<=0){ msg.textContent=ES?'Escribe un precio válido.':'Enter a valid price.'; return; }
+      if(nc===curCents){ msg.textContent=ES?'No hay cambios.':'No changes.'; return; }
+      btn.disabled=true; msg.textContent=ES?'Actualizando…':'Updating…';
+      apiPost('/api/admin-package-price-update',{package_id:pk.package_id, base_price_cents:nc}).then(function(r){
+        if(r.status===401){ onUnauthorized(); return; }
+        if(!r.ok){
+          const code=(r.data&&r.data.error)||''; const bmsg=(r.data&&r.data.message)||'';
+          const text = code==='NO_CHANGE'?(ES?'Ese precio ya está en vivo.':'That price is already live.')
+            : code==='INVALID_PRICE'?(ES?'Precio inválido (debe ser mayor que 0).':'Invalid price (must be greater than 0).')
+            : code==='INVALID_PACKAGE'?(ES?'Paquete no reconocido.':'Unknown package.')
+            : code==='NOT_MIGRATED'?(ES?'Falta aplicar la migración 0013 en Supabase para activar la actualización en vivo.':'Apply migration 0013 in Supabase to enable live updates.')
+            : code==='FORBIDDEN'?(ES?'No tienes permiso para cambiar precios.':'You are not allowed to change prices.')
+            : (bmsg||code||(ES?'No se pudo actualizar el precio.':'Could not update the price.'));
+          btn.disabled=false; msg.textContent=text; adminToast(text); return;
+        }
+        adminToast(ES?'Precio actualizado en vivo':'Live price updated'); load();
+      }).catch(function(){ btn.disabled=false; msg.textContent=ES?'Error de conexión.':'Connection error.'; adminToast(msg.textContent); });
+    });
+
+    const histBtn=el('<button class="mini-btn" type="button" style="margin-top:10px">'+(ES?'Ver historial':'View history')+'</button>');
+    const histBox=el('<div style="display:none;margin-top:8px"></div>');
+    histBtn.addEventListener('click',function(){ if(histBox.style.display==='none'){ loadHistory(pk.package_id,histBox); histBox.style.display=''; histBtn.textContent=ES?'Ocultar historial':'Hide history'; } else { histBox.style.display='none'; histBtn.textContent=ES?'Ver historial':'View history'; } });
+    c.appendChild(histBtn); c.appendChild(histBox);
+    return c;
+  }
+
+  function load(){
+    list.innerHTML='<div class="bk-sub-hint">'+(ES?'Cargando…':'Loading…')+'</div>'; notMig.style.display='none';
+    apiGet('/api/admin-package-prices-list').then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.status===403){ list.innerHTML='<div class="bk-sub-hint">'+(ES?'Sin acceso.':'No access.')+'</div>'; return; }
+      if(!r.ok||!r.data){ list.innerHTML=''; return; }
+      if(r.data.migrated===false){
+        list.innerHTML=''; notMig.style.display='';
+        notMig.textContent=ES?'La migración de precios aún no está aplicada en Supabase.':'The pricing migration is not applied in Supabase yet.';
+        return;
+      }
+      list.innerHTML='';
+      (r.data.packages||[]).forEach(function(pk){ list.appendChild(card(pk)); });
+    }).catch(function(){ list.innerHTML=''; });
+  }
+
+  refreshBtn.addEventListener('click',load);
+  load();
+  return wrap;
+}
+
 function panelsFor(role){
   if(role==='staff'){
     return [
@@ -1635,6 +1766,7 @@ function panelsFor(role){
   const panels=[
     {id:'bookings',label:(ES?'Reservas':'Bookings'), build:panelBookings},
     {id:'finance', label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinance(role); }},
+    {id:'pkgpricing', label:(ES?'Precios de paquetes':'Package pricing'), build:function(){ return panelPackagePricing(role); }},
     {id:'notes', label:(ES?'Notas de paquetes':'Package notes'), build:function(){ return panelPackageNotes(role); }},
     {id:'passengers', label:(ES?'Pasajeros y logística':'Passengers & logistics'), build:function(){ return panelPassengers(role); }},
     {id:'hotels', label:(ES?'Hoteles preferidos':'Preferred hotels'), build:function(){ return panelHotelPreferences(role); }},

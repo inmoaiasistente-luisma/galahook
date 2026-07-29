@@ -15,16 +15,34 @@ const { sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUn
 const catalog = require('../server/lib/tour-catalog');
 const { computeWebPricing } = require('../server/lib/pricing-engine');
 const { getPublicNotesForTour } = require('../server/lib/tour-notes');
+const { publicPackagePriceList } = require('../server/lib/package-pricing');
 
 const ALLOWED_KEYS = ['tour_id', 'guests'];
 const MAX_GUESTS = 20;
 
 module.exports = async function handler(req, res) {
-  if (req.method !== 'POST') return methodNotAllowed(res);
+  /* El precio canónico NUNCA se cachea: cada consulta refleja el precio vivo. */
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
 
   let tenant;
   try { tenant = getTenantId(); }
   catch (e) { logServer('pricing-preview', e.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to price'); }
+
+  /* GET → lista PÚBLICA de precios de paquetes publicados (para las tarjetas).
+     Solo campos visibles; nunca costos, márgenes, borradores ni historial. */
+  if (req.method === 'GET') {
+    try {
+      const r = await publicPackagePriceList(tenant);
+      if (!r || !r.ok) return sendError(res, 503, 'PRICES_UNAVAILABLE', 'Prices are temporarily unavailable');
+      return sendJson(res, 200, { packages: r.packages, source: r.source });
+    } catch (e) {
+      logServer('pricing-preview:list', e && e.message);
+      return sendError(res, 503, 'PRICES_UNAVAILABLE', 'Prices are temporarily unavailable');
+    }
+  }
+
+  if (req.method !== 'POST') return methodNotAllowed(res);
 
   let body;
   try { body = await readJsonBody(req); } catch (e) { return sendError(res, 400, 'INVALID_JSON', 'Invalid JSON'); }
@@ -65,12 +83,16 @@ module.exports = async function handler(req, res) {
       amountCents: p.amountCents,
       currency: catalog.CURRENCY,
       discountLabel: p.appliedDiscount ? p.appliedDiscount.name : null,
+      pricingVersion: p.packagePricing ? p.packagePricing.pricingVersion : null,
+      publishedAt: p.packagePricing ? p.packagePricing.publishedAt : null,
+      priceSource: p.packagePricing ? p.packagePricing.source : 'catalog',
       notes: notes.notes,
       notesVersion: notes.notes_version,
       requiresAcknowledgement: notes.requires_acknowledgement
     });
   } catch (err) {
     if (err && err.message === 'QUOTE_ONLY') return sendError(res, 400, 'QUOTE_REQUIRED', 'This experience requires a quote request');
+    if (err && err.message === 'PACKAGE_PRICE_UNAVAILABLE') return sendError(res, 409, 'PACKAGE_PRICE_UNAVAILABLE', 'Package price is not available');
     logServer('pricing-preview', err && err.message);
     return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to price');
   }

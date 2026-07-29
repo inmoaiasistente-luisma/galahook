@@ -64,7 +64,7 @@ window.GHA_DEFAULT = {
       id: "p3",
       img: "assets/img/lagoon.jpg",
       days: { en: "4 Days", es: "4 Días" }, nights: { en: "3 Nights", es: "3 Noches" },
-      price: 2799, popular: false, minGuests: 2,
+      price: 3499, popular: false, minGuests: 2,
       name: { en: "Island Escape", es: "Escape Isleño" },
       blurb: { en: "A perfect first taste of San Cristóbal.", es: "Una primera probada perfecta de San Cristóbal." },
       includes: [
@@ -79,7 +79,7 @@ window.GHA_DEFAULT = {
       id: "p4",
       img: "assets/img/kicker-day.jpg",
       days: { en: "5 Days", es: "5 Días" }, nights: { en: "4 Nights", es: "4 Noches" },
-      price: 3499, popular: true, minGuests: 2,
+      price: 3999, popular: true, minGuests: 2,
       name: { en: "Hook Signature", es: "Hook Signature" },
       blurb: { en: "Our most-loved balance of ocean & land.", es: "Nuestro equilibrio más querido de mar y tierra." },
       includes: [
@@ -95,7 +95,7 @@ window.GHA_DEFAULT = {
       id: "p7",
       img: "assets/img/sea-cave.jpg",
       days: { en: "7 Days", es: "7 Días" }, nights: { en: "6 Nights", es: "6 Noches" },
-      price: 4899, popular: false, minGuests: 2,
+      price: 4799, popular: false, minGuests: 2,
       name: { en: "Wild Galápagos", es: "Galápagos Salvaje" },
       blurb: { en: "The full enchanted-isles immersion.", es: "La inmersión completa en las islas encantadas." },
       includes: [
