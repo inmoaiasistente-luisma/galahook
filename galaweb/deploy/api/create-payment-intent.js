@@ -14,6 +14,7 @@ const { getStripe } = require('../server/lib/stripe');
 const { getSupabase } = require('../server/lib/supabase');
 const catalog = require('../server/lib/tour-catalog');
 const { computeWebPricing } = require('../server/lib/pricing-engine');
+const { resolveNotesForBooking } = require('../server/lib/tour-notes');
 const { isStripeTestMode } = require('../server/lib/runtime-mode');
 const {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
@@ -22,7 +23,7 @@ const {
 } = require('../server/lib/http');
 
 const ALLOWED_KEYS = ['request_id', 'tour_id', 'booking_date', 'guests',
-  'customer_name', 'customer_email', 'customer_phone', 'notes'];
+  'customer_name', 'customer_email', 'customer_phone', 'notes', 'notes_ack'];
 const MAX_GUESTS = 20;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I ambiguos
 const MAX_CODE_TRIES = 6;
@@ -131,6 +132,19 @@ module.exports = async function handler(req, res) {
     let freshlyInserted = false;
 
     if (!row) {
+      /* Gate + snapshot de notas (server-authoritative): si alguna nota activa
+         exige aceptación y no se aceptó (o la versión no coincide), se rechaza.
+         El snapshot se congela en la reserva; cambiar notas después no la altera. */
+      const ackIn = (body.notes_ack && typeof body.notes_ack === 'object') ? body.notes_ack : {};
+      let notesResolved;
+      try {
+        notesResolved = await resolveNotesForBooking({
+          tenant: tenant, tourId: tour.id,
+          acknowledged: ackIn.acknowledged === true, ackVersion: ackIn.version
+        });
+      } catch (e) { logServer('notes', e && e.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to load booking notes'); }
+      if (notesResolved.error) return sendError(res, 400, notesResolved.error, 'Please review and accept the important notes');
+
       const year = todayInGalapagos().slice(0, 4);
       let insertConflict = false;
       for (let attempt = 0; attempt < MAX_CODE_TRIES; attempt++) {
@@ -157,7 +171,10 @@ module.exports = async function handler(req, res) {
           currency: catalog.CURRENCY,
           payment_status: 'pending',
           booking_status: 'pending_payment',
-          is_test: isStripeTestMode()   // TRUE mientras el sistema use Stripe TEST; false en LIVE
+          is_test: isStripeTestMode(),   // TRUE mientras el sistema use Stripe TEST; false en LIVE
+          important_notes_snapshot: notesResolved.snapshot,
+          notes_acknowledged_at: notesResolved.acknowledgedAt,
+          notes_acknowledgement_version: notesResolved.acknowledgementVersion
         };
         const { data: inserted, error } = await supabase.from('bookings').insert(candidate).select().single();
         if (!error) { row = inserted; freshlyInserted = true; break; }

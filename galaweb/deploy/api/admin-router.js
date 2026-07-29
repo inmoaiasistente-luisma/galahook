@@ -54,6 +54,19 @@ ROUTES['test-data-mark'] = require('../server/admin-handlers/test-data-mark');
 ROUTES['test-data-archive'] = require('../server/admin-handlers/test-data-archive');
 ROUTES['notifications-list'] = require('../server/admin-handlers/notifications-list');
 ROUTES['notifications-retry-batch'] = require('../server/admin-handlers/notifications-retry-batch');
+/* Etapa 8 — notas de paquetes, intake de pasajeros, alojamiento y hoteles. */
+ROUTES['tour-notes-list'] = require('../server/admin-handlers/tour-notes-list');
+ROUTES['tour-notes-save'] = require('../server/admin-handlers/tour-notes-save');
+ROUTES['passenger-intakes-list'] = require('../server/admin-handlers/passenger-intakes-list');
+ROUTES['passenger-intake-detail'] = require('../server/admin-handlers/passenger-intake-detail');
+ROUTES['passenger-intake-review'] = require('../server/admin-handlers/passenger-intake-review');
+ROUTES['passenger-intake-request-changes'] = require('../server/admin-handlers/passenger-intake-request-changes');
+ROUTES['passenger-intake-renew'] = require('../server/admin-handlers/passenger-intake-renew');
+ROUTES['passenger-document-reveal'] = require('../server/admin-handlers/passenger-document-reveal');
+ROUTES['lodging-requirements-save'] = require('../server/admin-handlers/lodging-requirements-save');
+ROUTES['hotel-preferences-list'] = require('../server/admin-handlers/hotel-preferences-list');
+ROUTES['hotel-preferences-save'] = require('../server/admin-handlers/hotel-preferences-save');
+/* Precios de paquetes en vivo (main / migraciones 0012–0013). */
 ROUTES['package-prices-list'] = require('../server/admin-handlers/package-prices-list');
 ROUTES['package-price-draft-save'] = require('../server/admin-handlers/package-price-draft-save');
 ROUTES['package-price-publish'] = require('../server/admin-handlers/package-price-publish');

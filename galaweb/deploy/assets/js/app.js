@@ -298,6 +298,10 @@ let bkState={tourId:'',name:'',price:0,unit:'person',min:1,requiresQuote:false};
    muestra una estimación local (bruto) al instante y la reemplaza por el
    total del servidor cuando llega. `seq` descarta respuestas fuera de orden. */
 let bkPricing={seq:0, applied:null, pending:false};
+/* Notas importantes del tour (de /api/pricing-preview). Si alguna exige
+   aceptación, el botón se bloquea hasta marcar la casilla. El gate real lo
+   reaplica el servidor en create-payment-intent / quote-request. */
+let bkNotesState={tourId:null, notes:[], version:null, requiresAck:false};
 /* ---- idempotencia del formulario (Fase 3) ---- */
 let bkRequestId=null, bkFingerprint=null, bkSubmitting=false;
 function bkUuid(){
@@ -361,6 +365,7 @@ function buildBookingModal(){
          +'<div class="field"><label id="bkLabDate">Travel date</label><input type="date" id="bkDate" required></div>'
          +'<div class="field" id="bkGuestsWrap"><label id="bkLabGuests">Guests</label><input type="number" id="bkGuests" min="1" max="20" value="2"></div>'
        +'</div>'
+       +'<div class="bk-notes" id="bkNotes" style="display:none"></div>'
        +'<div class="bk-pay" id="bkPay">'
          +'<h4 id="bkPayTitle">'+svg('shield')+'Payment</h4>'
          +'<div class="bk-cards"><span>VISA</span><span>Mastercard</span><span>Amex</span></div>'
@@ -409,6 +414,28 @@ function applyBookingLang(){
   set('bkLabMsg', es?'Tu mensaje':'Your message');
   const pt=document.getElementById('bkPayTitle'); if(pt) pt.innerHTML=svg('shield')+(es?'Pago':'Payment');
   set('bkSecure', es?'🔒 Pago seguro · procesado por Stripe':'🔒 Secure checkout · powered by Stripe');
+  renderBkNotes();   // relocaliza cabecera y casilla de notas
+}
+/* Renderiza las notas importantes activas del tour y, si corresponde, la
+   casilla obligatoria de aceptación (conserva su estado al re-renderizar). */
+function renderBkNotes(){
+  const box=document.getElementById('bkNotes'); if(!box) return;
+  const es=L==='es';
+  const notes=bkNotesState.notes||[];
+  if(!notes.length){ box.style.display='none'; box.innerHTML=''; return; }
+  const prev=document.getElementById('bkNotesAck'); const wasChecked=!!(prev&&prev.checked);
+  let html='<div class="bk-notes-head">'+(es?'Notas importantes':'Important notes')+'</div>';
+  notes.forEach(function(n){
+    const title=es?(n.title_es||n.title_en):(n.title_en||n.title_es);
+    const content=es?(n.content_es||n.content_en):(n.content_en||n.content_es);
+    html+='<div class="bk-note">'+(title?'<b>'+esc(title)+'</b>':'')+'<p>'+esc(content||'').replace(/\n/g,'<br>')+'</p></div>';
+  });
+  if(bkNotesState.requiresAck){
+    html+='<label class="bk-note-ack"><input type="checkbox" id="bkNotesAck"'+(wasChecked?' checked':'')+'> <span>'
+      +(es?'He leído y acepto las notas importantes.':'I have read and accept the important notes.')+'</span></label>';
+  }
+  box.innerHTML=html; box.style.display='';
+  const cb=document.getElementById('bkNotesAck'); if(cb) cb.addEventListener('change', updateBkSummary);
 }
 function updateBkSummary(){
   if(!document.getElementById('bkDrop')) return;
@@ -443,6 +470,8 @@ function updateBkSummary(){
   document.getElementById('bkSumGuestsRow').style.display=bkState.unit==='boat'?'none':'';
   const pb=document.getElementById('bkPayBtn'); pb.disabled=false; if(pb.dataset.idle) delete pb.dataset.idle;
   pb.textContent= request?(es?'Enviar solicitud':'Send request'):((es?'Pagar ':'Pay ')+money2(amount));
+  /* Gate de notas: si exige aceptación y la casilla no está marcada, se bloquea. */
+  if(bkNotesState.requiresAck){ const cb=document.getElementById('bkNotesAck'); if(!cb||!cb.checked) pb.disabled=true; }
 }
 /* Bruto local para la estimación inmediata (base × pax). Los descuentos ya
    NO viven en el frontend: los calcula el servidor con reglas configurables
@@ -454,16 +483,25 @@ function bkTotal(guests){
 /* Pide el precio autorizado al servidor. Descarta respuestas viejas (seq) y,
    si falla la red, deja la estimación local (el cobro real lo fija igualmente
    create-payment-intent en el servidor). */
+/* Llama a pricing-preview para TODOS los tours: en pagables trae precio+notas;
+   en cotización trae 400 QUOTE_REQUIRED pero con las notas en el cuerpo. */
 function refreshPricing(){
-  if(bkState.requiresQuote){ bkPricing.applied=null; bkPricing.pending=false; updateBkSummary(); return; }
   const guests=Math.max(bkState.min||1, parseInt(((document.getElementById('bkGuests')||{}).value||'1'),10));
   const tourId=bkState.tourId; const mySeq=++bkPricing.seq;
   bkPricing.pending=true;
   bkPost('/api/pricing-preview',{tour_id:tourId, guests:guests}).then(function(r){
     if(mySeq!==bkPricing.seq) return;                 // respuesta fuera de orden → ignorar
     bkPricing.pending=false;
-    if(r&&r.ok&&r.data&&typeof r.data.amountCents==='number'){
-      bkPricing.applied={tourId:tourId, guests:guests, gross:r.data.grossAmountCents, discount:r.data.discountCents, amount:r.data.amountCents, label:r.data.discountLabel};
+    const data=(r&&r.data)||{};
+    /* Notas: vienen tanto en 200 (pagable) como en 400 QUOTE_REQUIRED. */
+    if(data && (Array.isArray(data.notes) || data.notesVersion!=null)){
+      bkNotesState={tourId:tourId, notes:data.notes||[], version:data.notesVersion||null, requiresAck:!!data.requiresAcknowledgement};
+      renderBkNotes();
+    } else if(tourId!==bkNotesState.tourId){
+      bkNotesState={tourId:tourId, notes:[], version:null, requiresAck:false}; renderBkNotes();
+    }
+    if(r&&r.ok&&typeof data.amountCents==='number'){
+      bkPricing.applied={tourId:tourId, guests:guests, gross:data.grossAmountCents, discount:data.discountCents, amount:data.amountCents, label:data.discountLabel};
     } else { bkPricing.applied=null; }
     updateBkSummary();
   }).catch(function(){ if(mySeq!==bkPricing.seq) return; bkPricing.pending=false; bkPricing.applied=null; updateBkSummary(); });
@@ -479,6 +517,7 @@ function openBooking(opts){
   bkSubmitting=false; bkResetRequestId();
   if(window.GHAPayments) GHAPayments.unmount();   // re-montaje limpio en cada apertura (sin duplicados)
   bkPricing.applied=null; bkPricing.pending=false;
+  bkNotesState={tourId:null, notes:[], version:null, requiresAck:false}; renderBkNotes();
   bkState={tourId:opts.tourId||'', name:opts.name||'', price:+opts.price||0, unit:opts.unit||'person', min:+opts.min||1, requiresQuote:!(+opts.price>0)};
   document.getElementById('bkSuccess').classList.remove('show');
   document.getElementById('bkGrid').style.display='';
@@ -610,10 +649,13 @@ async function submitBooking(){
   if(!name||!email||!dt){ GHA.toast(es?'Completa nombre, correo y fecha':'Please add name, email and date'); return; }
   const guests=Math.max(bkState.min||1, parseInt((document.getElementById('bkGuests').value||'1'),10));
   const notesEl=document.getElementById('bkMsg'); const notes=notesEl&&notesEl.value?notesEl.value.trim():'';
+  /* Gate de notas: si exigen aceptación y no se marcó la casilla, no se envía. */
+  if(bkNotesState.requiresAck){ const cb=document.getElementById('bkNotesAck'); if(!cb||!cb.checked){ GHA.toast(es?'Debes aceptar las notas importantes.':'Please accept the important notes.'); return; } }
 
   // Solo tour_id / fecha / guests / datos de contacto van al backend. NUNCA amount/price/total ni datos de tarjeta.
   const payload={ request_id:bkEnsureRequestId(), tour_id:bkState.tourId, booking_date:dt, guests:guests, customer_name:name, customer_email:email };
   if(notes) payload.notes=notes;
+  if(bkNotesState.requiresAck) payload.notes_ack={ acknowledged:true, version:bkNotesState.version };
 
   bkSubmitting=true; setPayBusy(true);
 

@@ -596,6 +596,15 @@ select option:disabled{ color:rgba(251,248,241,.5); }
 .bk-form{padding:34px 34px 30px;}
 .bk-form h4{font-family:var(--body);font-weight:700;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin:24px 0 14px;display:flex;align-items:center;gap:8px;}
 .bk-form h4 svg{width:15px;height:15px;color:var(--sea);flex:0 0 auto;}
+/* Notas importantes en el modal (alto contraste sobre tarjeta clara). */
+.bk-notes{margin:16px 0 4px;border:1px solid var(--line);border-radius:10px;background:#fbf5e8;padding:13px 15px;}
+.bk-notes-head{font-weight:800;color:var(--ink);font-size:11px;letter-spacing:.09em;text-transform:uppercase;margin-bottom:9px;}
+.bk-note{margin-bottom:10px;}
+.bk-note:last-of-type{margin-bottom:0;}
+.bk-note b{display:block;color:var(--ink);font-size:14px;margin-bottom:2px;}
+.bk-note p{margin:0;color:var(--ink-soft);font-size:13.5px;line-height:1.5;}
+.bk-note-ack{display:flex;align-items:flex-start;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line);color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;}
+.bk-note-ack input{width:20px;height:20px;flex:0 0 auto;margin-top:1px;accent-color:var(--gold-soft);}
 .bk-pay{border-top:1px solid var(--line);margin-top:14px;padding-top:6px;}
 .bk-cards{display:flex;gap:8px;margin-bottom:14px;}
 .bk-cards span{font-size:11px;font-weight:800;letter-spacing:.04em;padding:5px 9px;border-radius:5px;background:var(--foam);color:var(--sea-deep);}

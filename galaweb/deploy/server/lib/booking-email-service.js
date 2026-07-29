@@ -3,38 +3,37 @@
 /* =========================================================
    LOAN-IX Booking Engine — servicio idempotente de correo
    ---------------------------------------------------------
-   Un correo por (booking_id, notification_type, recipient_email).
-   La unicidad la garantiza la base de datos (migraciones 0007 y 0009)
-   y el reclamo del envío se hace con un compare-and-swap sobre
-   `status`, de modo que dos ejecuciones concurrentes nunca envían dos
-   veces.
+   Idempotencia por EVENTO LOGICO mediante idempotency_key
+   (unico por tenant). Ejemplos de clave:
+     invitation:{form_id}:v{token_version}
+     submitted:{form_id}:v{submission_version}
+     changes_requested:{form_id}:cycle:{review_cycle}
+     completed:{form_id}
+     <type>:{booking_id}:{recipient}   (por defecto para los correos previos)
 
-   NORMALIZACIÓN: el destinatario se pasa por trim() + toLowerCase()
-   ANTES de validarlo, y a partir de ahí se usa EXCLUSIVAMENTE la forma
-   normalizada para insertar, buscar, comparar, enviar y aplicar la
-   idempotencia. Así "Cliente@Email.com", "cliente@email.com" y
-   " cliente@email.com " son el mismo destinatario y generan una única
-   notificación.
+   · Un evento con envio exitoso NO se reenvia (retry idempotente).
+   · Una ronda nueva usa una idempotency_key distinta -> evento nuevo.
+   · Cada INTENTO se registra en email_notification_attempts
+     (attempt_number unico por notificacion), con resultado y error
+     saneado. El reclamo atomico sobre `status` serializa la concurrencia.
 
-   NUNCA lanza hacia arriba: quien lo llama (webhook, cotización,
-   venta directa) jamás debe fallar por culpa de un correo.
+   NORMALIZACION del destinatario: trim() + toLowerCase() ANTES de validar;
+   a partir de ahi solo se usa la forma normalizada.
+
+   NUNCA lanza hacia arriba: quien lo llama (webhook, cotizacion, venta
+   directa, intake) jamas debe fallar por culpa de un correo.
    ========================================================= */
 
 const { getSupabase } = require('./supabase');
 const { getResend, getMailConfig } = require('./resend');
 const { TEMPLATES } = require('./email-templates');
 const { ensureBookingQrAccess, generateBookingQrPng } = require('./booking-qr');
-const { logServer, normalizeEmail, isEmail } = require('./http');
+const { logServer, normalizeEmail, isEmail, maskEmail } = require('./http');
 
 const QR_CID = 'booking-qr';
 
 function sanitize(msg) { return String(msg == null ? '' : msg).replace(/\s+/g, ' ').slice(0, 300); }
 
-/* Convierte el error del SDK de Resend en un texto ÚTIL y seguro.
-   Resend devuelve { name, message, statusCode }. Con solo `.message`
-   se perdía el tipo/código, que es justo lo que explica el fallo
-   (p. ej. "validation_error · HTTP 403 · The <dominio> domain is not
-   verified"). Nunca incluye la API key ni el cuerpo del correo. */
 function describeResendError(error) {
   if (!error) return '';
   if (typeof error === 'string') return sanitize(error);
@@ -45,9 +44,6 @@ function describeResendError(error) {
   return sanitize(parts.join(' · ')) || 'resend error';
 }
 
-/* Diagnóstico server-side SEGURO: solo metadatos de entrega. NUNCA la
-   API key, el cuerpo del correo, el adjunto ni el token del QR. Aparece
-   en los logs de Vercel para ver de un vistazo por qué falló un envío. */
 function emailDiag(booking, type, status, extra) {
   extra = extra || {};
   const info = {
@@ -60,16 +56,47 @@ function emailDiag(booking, type, status, extra) {
   logServer('email-service', 'diag ' + JSON.stringify(info));
 }
 
+/* clave de idempotencia por defecto (comportamiento previo). */
+function defaultIdempotencyKey(type, bookingId, recipient) {
+  return String(type) + ':' + String(bookingId) + ':' + String(recipient);
+}
+
+/* Registro de intentos (best-effort: nunca rompe el envio). */
+async function insertAttempt(supabase, tenant, notificationId, attemptNumber, recipient) {
+  try {
+    await supabase.from('email_notification_attempts').insert({
+      notification_id: notificationId, tenant_id: tenant,
+      attempt_number: attemptNumber, status: 'pending',
+      recipient_masked: maskEmail(recipient)
+    });
+  } catch (e) { /* best-effort */ }
+}
+async function finishAttempt(supabase, notificationId, attemptNumber, status, extra) {
+  extra = extra || {};
+  try {
+    await supabase.from('email_notification_attempts')
+      .update({
+        status: status,
+        provider_message_id: extra.providerMessageId || null,
+        sanitized_error: extra.error || null
+      })
+      .eq('notification_id', notificationId).eq('attempt_number', attemptNumber);
+  } catch (e) { /* best-effort */ }
+}
+
 /**
- * @param {object} o { booking, type, recipient }
+ * @param {object} o { booking, type, recipient, idempotencyKey?, ctx? }
  * @returns {Promise<{sent?:boolean, duplicate?:boolean, skipped?:boolean, failed?:boolean, reason?:string}>}
  */
 async function sendBookingEmail(o) {
   const booking = o && o.booking;
   const type = o && o.type;
-  /* Normalizar PRIMERO; validar DESPUÉS. A partir de aquí solo existe
-     `recipient`: la forma sin normalizar no vuelve a usarse. */
   const recipient = normalizeEmail((o && o.recipient) || '');
+  const extraCtx = (o && o.ctx) || {};
+
+  let notifId = null;
+  let attemptNumber = null;
+  let supabaseRef = null;
 
   try {
     if (!booking || !booking.id) return { skipped: true, reason: 'no_booking' };
@@ -77,11 +104,14 @@ async function sendBookingEmail(o) {
     if (!isEmail(recipient)) return { skipped: true, reason: 'no_recipient' };
 
     const supabase = getSupabase();
+    supabaseRef = supabase;
+    const idem = (o && o.idempotencyKey) || defaultIdempotencyKey(type, booking.id, recipient);
 
-    /* 1) Reservar el registro (idempotencia a nivel de base de datos). */
+    /* 1) Reservar el registro (idempotencia por idempotency_key). */
     const ins = await supabase.from('email_notifications').insert({
       booking_id: booking.id, tenant_id: booking.tenant_id,
-      notification_type: type, recipient_email: recipient, status: 'pending'
+      notification_type: type, recipient_email: recipient, status: 'pending',
+      idempotency_key: idem
     }).select().maybeSingle();
 
     let row = ins.error ? null : ins.data;
@@ -91,24 +121,33 @@ async function sendBookingEmail(o) {
     }
     if (!row) {
       const found = await supabase.from('email_notifications').select('*')
-        .eq('booking_id', booking.id).eq('notification_type', type)
-        .eq('recipient_email', recipient).maybeSingle();
-      if (found.error || !found.data) return { failed: true, reason: 'ledger_lookup' };
-      row = found.data;
+        .eq('tenant_id', booking.tenant_id).eq('idempotency_key', idem).maybeSingle();
+      if (!found.error && found.data) row = found.data;
+      if (!row) {
+        /* Compatibilidad: filas anteriores a idempotency_key (o durante la
+           transición del backfill) se localizan por (booking_id, tipo, recipient). */
+        const alt = await supabase.from('email_notifications').select('*')
+          .eq('booking_id', booking.id).eq('notification_type', type).eq('recipient_email', recipient).maybeSingle();
+        if (!alt.error && alt.data) row = alt.data;
+      }
+      if (!row) return { failed: true, reason: 'ledger_lookup' };
     }
 
     if (row.status === 'sent') return { duplicate: true };
     if (row.status === 'sending') return { skipped: true, reason: 'in_progress' };
 
-    /* 2) Reclamo ATÓMICO: solo gana quien logre pasar de `status` a 'sending'.
-          Si otra ejecución concurrente ya lo tomó, aquí salen 0 filas. */
+    /* 2) Reclamo ATOMICO: solo gana quien logre pasar de `status` a 'sending'. */
+    attemptNumber = (row.attempts || 0) + 1;
     const claim = await supabase.from('email_notifications')
-      .update({ status: 'sending', attempts: (row.attempts || 0) + 1 })
+      .update({ status: 'sending', attempts: attemptNumber })
       .eq('id', row.id).eq('status', row.status)
       .select();
     if (claim.error || !claim.data || claim.data.length !== 1) return { skipped: true, reason: 'claimed_elsewhere' };
 
-    /* 3) QR si la plantilla lo requiere (best-effort: si falla, se envía sin él). */
+    notifId = row.id;
+    await insertAttempt(supabase, booking.tenant_id, notifId, attemptNumber, recipient);
+
+    /* 3) QR si la plantilla lo requiere (best-effort). */
     let ctx = {};
     const attachments = [];
     if (TEMPLATES[type].qr) {
@@ -123,7 +162,7 @@ async function sendBookingEmail(o) {
     }
 
     /* 4) Enviar. */
-    const tpl = TEMPLATES[type].build(booking, ctx);
+    const tpl = TEMPLATES[type].build(booking, Object.assign({}, ctx, extraCtx));
     const cfg = getMailConfig();
     const payload = {
       from: cfg.from, to: [recipient], subject: tpl.subject, html: tpl.html, text: tpl.text
@@ -132,8 +171,6 @@ async function sendBookingEmail(o) {
     if (attachments.length) payload.attachments = attachments;
 
     const resp = await getResend().emails.send(payload);
-    /* Éxito SOLO si hay data válida. Un error, o una respuesta vacía, se
-       tratan como fallo con un mensaje útil — nunca como envío correcto. */
     if (!resp || resp.error) throw new Error(describeResendError(resp && resp.error) || 'resend error');
     if (!resp.data || !resp.data.id) throw new Error('resend: respuesta sin id de mensaje');
     const messageId = resp.data.id;
@@ -142,6 +179,7 @@ async function sendBookingEmail(o) {
       status: 'sent', provider_message_id: messageId,
       sent_at: new Date().toISOString(), last_error: null
     }).eq('id', row.id);
+    await finishAttempt(supabase, notifId, attemptNumber, 'sent', { providerMessageId: messageId });
 
     emailDiag(booking, type, 'sent', { hasId: true });
     return { sent: true, notificationId: row.id, providerMessageId: messageId };
@@ -149,26 +187,22 @@ async function sendBookingEmail(o) {
     const msg = sanitize(err && err.message);
     emailDiag(booking, type, 'failed', { error: msg });
     try {
-      const supabase = getSupabase();
-      const found = await supabase.from('email_notifications').select('id')
-        .eq('booking_id', booking && booking.id).eq('notification_type', type)
-        .eq('recipient_email', recipient).maybeSingle();
-      if (found.data) {
+      const supabase = supabaseRef || getSupabase();
+      if (notifId) {
         await supabase.from('email_notifications')
           .update({ status: 'failed', last_error: msg, sent_at: null })
-          .eq('id', found.data.id);
+          .eq('id', notifId);
+        if (attemptNumber) await finishAttempt(supabase, notifId, attemptNumber, 'failed', { error: msg });
       }
     } catch (e) { /* nunca propagar */ }
     return { failed: true, reason: 'send_error' };
   }
 }
 
-/** Envía cliente + interno sin que un fallo afecte al llamador. */
+/** Envia cliente + interno sin que un fallo afecte al llamador. */
 async function notifyBooking(booking, customerType, ownerType) {
   const out = { customer: null, owner: null };
   try {
-    /* También aquí se normaliza antes de decidir: un email que solo
-       contenga espacios no cuenta como destinatario. */
     const customer = normalizeEmail((booking && booking.customer_email) || '');
     out.customer = customer
       ? await sendBookingEmail({ booking: booking, type: customerType, recipient: customer })

@@ -1398,12 +1398,247 @@ function panelTestData(role){
   return p;
 }
 
-/* ============ PRECIOS DE PAQUETES EN VIVO ============
-   Fuente de verdad: Supabase (public.package_prices) vía endpoints
-   server-side. owner: ver/draft/publicar/rollback/activar-desactivar.
-   admin: ver + crear/editar draft (NO publica, NO rollback). staff: sin
-   acceso (la sección no se genera). Publicar surte efecto al recargar el
-   sitio (pricing-preview usa no-store). No recalcula dinero en el navegador. */
+/* ============ ETAPA 8 — NOTAS DE PAQUETES (owner + admin) ============ */
+function panelPackageNotes(role){
+  const p=el('<div class="bk-screen"></div>');
+  p.appendChild(el('<p class="bk-sub-hint">'+(ES?'Notas que verá el cliente en el paquete, el checkout, la confirmación y el correo. Si marcas “requiere aceptación”, el cliente debe aceptarlas antes de pagar o cotizar. Cambiarlas no afecta reservas anteriores.':'Notes shown to the customer on the package, checkout, confirmation and email. If you mark “requires acknowledgement”, the customer must accept them before paying or requesting a quote. Editing them does not affect past bookings.')+'</p>'));
+
+  const tourRow=el('<div class="ed-row"></div>');
+  const tourIn=el('<div class="ed-field"><label>Tour ID</label><input placeholder="p3, p4, kicker, t360, private, half, full, expedition…"></div>');
+  const loadBtn=el('<button class="mini-btn" type="button">'+(ES?'Cargar notas':'Load notes')+'</button>');
+  const lbw=el('<div class="ed-field"><label>&nbsp;</label></div>'); lbw.appendChild(loadBtn);
+  tourRow.appendChild(tourIn); tourRow.appendChild(lbw); p.appendChild(tourRow);
+  const list=el('<div style="margin:8px 0 14px"></div>'); p.appendChild(list);
+
+  const form=el('<div class="fin-sec"><h4>'+(ES?'Nueva / editar nota':'New / edit note')+'</h4></div>');
+  const cur={id:null};
+  const tEn=el('<div class="ed-field"><label>Title (EN)</label><input></div>');
+  const tEs=el('<div class="ed-field"><label>Título (ES)</label><input></div>');
+  const cEn=el('<div class="ed-field"><label>Content (EN)</label><textarea style="min-height:64px"></textarea></div>');
+  const cEs=el('<div class="ed-field"><label>Contenido (ES)</label><textarea style="min-height:64px"></textarea></div>');
+  const ord=el('<div class="ed-field"><label>'+(ES?'Orden':'Order')+'</label><input type="number" value="0" style="max-width:120px"></div>');
+  const ack=el('<label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-weight:600;margin:6px 0"><input type="checkbox"> '+(ES?'Requiere aceptación':'Requires acknowledgement')+'</label>');
+  const act=el('<label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-weight:600;margin:6px 0"><input type="checkbox" checked> '+(ES?'Activa':'Active')+'</label>');
+  const saveBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">'+(ES?'Guardar nota':'Save note')+'</button>');
+  const newBtn=el('<button class="mini-btn" type="button" style="margin-left:8px">'+(ES?'Nueva':'New')+'</button>');
+  const r1=el('<div class="ed-row"></div>'); r1.appendChild(tEn); r1.appendChild(tEs);
+  form.appendChild(r1); form.appendChild(cEn); form.appendChild(cEs);
+  const r2=el('<div class="ed-row"></div>'); r2.appendChild(ord); form.appendChild(r2);
+  form.appendChild(ack); form.appendChild(act);
+  const bw=el('<div></div>'); bw.appendChild(saveBtn); bw.appendChild(newBtn); form.appendChild(bw);
+  p.appendChild(form);
+
+  function tourId(){ return tourIn.querySelector('input').value.trim(); }
+  function fillForm(n){
+    cur.id=n?n.id:null;
+    tEn.querySelector('input').value=n?(n.title_en||''):'';
+    tEs.querySelector('input').value=n?(n.title_es||''):'';
+    cEn.querySelector('textarea').value=n?(n.content_en||''):'';
+    cEs.querySelector('textarea').value=n?(n.content_es||''):'';
+    ord.querySelector('input').value=n?(n.display_order||0):0;
+    ack.querySelector('input').checked=n?!!n.requires_acknowledgement:false;
+    act.querySelector('input').checked=n?!!n.active:true;
+  }
+  function render(notes){
+    list.innerHTML='';
+    if(!notes.length){ list.appendChild(el('<p class="bk-sub-hint">'+(ES?'Sin notas para este tour.':'No notes for this tour.')+'</p>')); return; }
+    notes.forEach(function(n){
+      const c=el('<div class="fin-sec" style="margin-bottom:8px"></div>');
+      c.appendChild(el('<div><b>'+escapeHtml(n.title_es||n.title_en||'—')+'</b> '+(n.active?'<span class="notif-badge notif-sent">'+(ES?'activa':'active')+'</span>':'<span class="notif-badge">'+(ES?'inactiva':'inactive')+'</span>')+(n.requires_acknowledgement?' <span class="notif-badge notif-sending">'+(ES?'aceptación':'ack')+'</span>':'')+'</div>'));
+      c.appendChild(el('<div class="bk-sub-hint">'+escapeHtml(String(n.content_es||n.content_en||'').slice(0,160))+'</div>'));
+      const eb=el('<button class="mini-btn" type="button">'+(ES?'Editar':'Edit')+'</button>');
+      eb.addEventListener('click',function(){ fillForm(n); try{form.scrollIntoView({behavior:'smooth'});}catch(e){} });
+      c.appendChild(eb); list.appendChild(c);
+    });
+  }
+  function load(){
+    const tid=tourId(); if(!tid){ list.innerHTML=''; return; }
+    apiGet('/api/admin-tour-notes?tour_id='+encodeURIComponent(tid)).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.ok&&r.data) render(r.data.notes||[]); else list.textContent=(ES?'No se pudo cargar.':'Could not load.');
+    });
+  }
+  loadBtn.addEventListener('click',load);
+  newBtn.addEventListener('click',function(){ fillForm(null); });
+  saveBtn.addEventListener('click',function(){
+    const tid=tourId(); if(!tid){ adminToast(ES?'Escribe el Tour ID.':'Enter the Tour ID.'); return; }
+    const body={ id:cur.id||undefined, tour_id:tid,
+      title_en:tEn.querySelector('input').value, title_es:tEs.querySelector('input').value,
+      content_en:cEn.querySelector('textarea').value, content_es:cEs.querySelector('textarea').value,
+      active:act.querySelector('input').checked, requires_acknowledgement:ack.querySelector('input').checked,
+      display_order:parseInt(ord.querySelector('input').value||'0',10)||0 };
+    saveBtn.disabled=true;
+    apiPost('/api/admin-tour-notes-save',body).then(function(r){
+      saveBtn.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.ok&&r.data&&r.data.saved){ adminToast(ES?'Nota guardada':'Note saved'); fillForm(null); load(); }
+      else adminToast(ES?'Revisa los campos de la nota.':'Check the note fields.');
+    }).catch(function(){ saveBtn.disabled=false; });
+  });
+  return p;
+}
+
+/* ============ ETAPA 8 — HOTELES PREFERIDOS (owner + admin) ============ */
+function panelHotelPreferences(role){
+  const p=el('<div class="bk-screen"></div>');
+  p.appendChild(el('<p class="bk-sub-hint">'+(ES?'Hoteles preferidos por destino. El conector de búsqueda intentará primero los de mayor prioridad; si no cumplen, buscará alternativas comparables.':'Preferred hotels by destination. The search connector tries the highest priority first; if they do not fit, it looks for comparable alternatives.')+'</p>'));
+  const list=el('<div style="margin:8px 0 14px"></div>'); p.appendChild(list);
+
+  const DESTS=[['quito','Quito'],['guayaquil','Guayaquil'],['san_cristobal','San Cristóbal'],['santa_cruz','Santa Cruz'],['isabela','Isabela']];
+  const form=el('<div class="fin-sec"><h4>'+(ES?'Nuevo / editar hotel':'New / edit hotel')+'</h4></div>');
+  const cur={id:null};
+  const dSel=el('<div class="ed-field"><label>'+(ES?'Destino':'Destination')+'</label><select>'+DESTS.map(function(d){return '<option value="'+d[0]+'">'+d[1]+'</option>';}).join('')+'</select></div>');
+  const nm=el('<div class="ed-field"><label>'+(ES?'Nombre del hotel':'Hotel name')+'</label><input></div>');
+  const pr=el('<div class="ed-field"><label>'+(ES?'Prioridad':'Priority')+'</label><input type="number" value="1" style="max-width:120px"></div>');
+  const nt=el('<div class="ed-field"><label>'+(ES?'Notas':'Notes')+'</label><input></div>');
+  const ac=el('<label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-weight:600;margin:6px 0"><input type="checkbox" checked> '+(ES?'Activo':'Active')+'</label>');
+  const sb=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">'+(ES?'Guardar':'Save')+'</button>');
+  const nb=el('<button class="mini-btn" type="button" style="margin-left:8px">'+(ES?'Nuevo':'New')+'</button>');
+  const r1=el('<div class="ed-row"></div>'); r1.appendChild(dSel); r1.appendChild(pr); form.appendChild(r1);
+  form.appendChild(nm); form.appendChild(nt); form.appendChild(ac);
+  const bw=el('<div></div>'); bw.appendChild(sb); bw.appendChild(nb); form.appendChild(bw); p.appendChild(form);
+
+  function fill(h){ cur.id=h?h.id:null; dSel.querySelector('select').value=h?h.destination:'quito'; nm.querySelector('input').value=h?h.hotel_name:''; pr.querySelector('input').value=h?(h.priority||1):1; nt.querySelector('input').value=h?(h.preference_notes||''):''; ac.querySelector('input').checked=h?!!h.active:true; }
+  function render(rows){
+    list.innerHTML='';
+    if(!rows.length){ list.appendChild(el('<p class="bk-sub-hint">'+(ES?'Sin hoteles configurados.':'No hotels configured.')+'</p>')); return; }
+    rows.forEach(function(h){
+      const label=(DESTS.find(function(d){return d[0]===h.destination;})||[])[1]||h.destination;
+      const c=el('<div class="fin-sec" style="margin-bottom:8px"></div>');
+      c.appendChild(el('<div><b>'+escapeHtml(label)+'</b> · '+escapeHtml(h.hotel_name)+' <span class="notif-badge">#'+escapeHtml(h.priority)+'</span> '+(h.active?'':'<span class="notif-badge">'+(ES?'inactivo':'inactive')+'</span>')+'</div>'));
+      if(h.preference_notes) c.appendChild(el('<div class="bk-sub-hint">'+escapeHtml(h.preference_notes)+'</div>'));
+      const eb=el('<button class="mini-btn" type="button">'+(ES?'Editar':'Edit')+'</button>'); eb.addEventListener('click',function(){ fill(h); try{form.scrollIntoView({behavior:'smooth'});}catch(e){} });
+      c.appendChild(eb); list.appendChild(c);
+    });
+  }
+  function load(){ apiGet('/api/admin-hotel-preferences').then(function(r){ if(r.status===401){ onUnauthorized(); return; } if(r.ok&&r.data) render(r.data.preferences||[]); }); }
+  nb.addEventListener('click',function(){ fill(null); });
+  sb.addEventListener('click',function(){
+    const body={ id:cur.id||undefined, destination:dSel.querySelector('select').value, hotel_name:nm.querySelector('input').value,
+      priority:parseInt(pr.querySelector('input').value||'1',10)||1, active:ac.querySelector('input').checked,
+      preference_notes:nt.querySelector('input').value||null };
+    sb.disabled=true;
+    apiPost('/api/admin-hotel-preferences-save',body).then(function(r){ sb.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.ok&&r.data&&r.data.saved){ adminToast(ES?'Hotel guardado':'Hotel saved'); fill(null); load(); }
+      else adminToast(ES?'Revisa los campos.':'Check the fields.');
+    }).catch(function(){ sb.disabled=false; });
+  });
+  load();
+  return p;
+}
+
+/* ============ ETAPA 8 — PASAJEROS Y LOGÍSTICA ============ */
+function panelPassengers(role){
+  const isStaff=role==='staff';
+  const p=el('<div class="bk-screen"></div>');
+  const listWrap=el('<div></div>'); p.appendChild(listWrap);
+
+  function backToList(){ p.innerHTML=''; p.appendChild(listWrap); loadList(); }
+
+  function loadList(){
+    listWrap.innerHTML='<p class="bk-sub-hint">'+(ES?'Cargando…':'Loading…')+'</p>';
+    apiGet('/api/admin-passenger-intakes').then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data){ listWrap.innerHTML='<p class="bk-sub-hint">'+(ES?'No se pudo cargar.':'Could not load.')+'</p>'; return; }
+      renderList(r.data.intakes||[]);
+    });
+  }
+  function alertText(a){ const m={ missing_passengers:(ES?'faltan pasajeros':'missing passengers'), connection_tbd_unresolved:(ES?'ciudad por definir':'city to resolve'), missing_arrival:(ES?'falta llegada':'missing arrival') }; return m[a]||a; }
+  function renderList(rows){
+    listWrap.innerHTML='';
+    if(!rows.length){ listWrap.appendChild(el('<p class="bk-sub-hint">'+(ES?'Aún no hay formularios de pasajeros.':'No passenger forms yet.')+'</p>')); return; }
+    rows.forEach(function(it){
+      const c=el('<div class="fin-sec" style="margin-bottom:8px;cursor:pointer"></div>');
+      const alerts=(it.alerts||[]).map(function(a){ return '<span class="notif-badge notif-failed">'+escapeHtml(alertText(a))+'</span>'; }).join(' ');
+      c.appendChild(el('<div><b>'+escapeHtml(it.booking_code||'—')+'</b> · '+escapeHtml(it.customer_name||'')+' <span class="notif-badge">'+escapeHtml(it.status)+'</span></div>'));
+      c.appendChild(el('<div class="bk-sub-hint">'+escapeHtml(it.tour_name||'')+' · '+escapeHtml(it.booking_date||'')+' · '+(ES?'Pax ':'Pax ')+it.pax_completed+'/'+it.pax_expected+' · '+(ES?'Ciudad ':'City ')+escapeHtml(it.preferred_connection_city||'—')+' '+alerts+'</div>'));
+      c.addEventListener('click',function(){ openDetail(it.form_id); });
+      listWrap.appendChild(c);
+    });
+  }
+
+  function openDetail(formId){
+    apiGet('/api/admin-passenger-intake-detail?form_id='+encodeURIComponent(formId)).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data){ adminToast(ES?'No se pudo abrir.':'Could not open.'); return; }
+      renderDetail(r.data);
+    });
+  }
+  function renderDetail(d){
+    p.innerHTML='';
+    const back=el('<button class="mini-btn" type="button">‹ '+(ES?'Volver':'Back')+'</button>'); back.addEventListener('click',backToList); p.appendChild(back);
+    const f=d.form||{}, b=d.booking||{};
+    const head=el('<div class="fin-sec"></div>');
+    head.appendChild(el('<div><b>'+escapeHtml(b.booking_code||'')+'</b> · '+escapeHtml(b.customer_name||'')+' <span class="notif-badge">'+escapeHtml(f.status||'')+'</span></div>'));
+    head.appendChild(el('<div class="bk-sub-hint">'+escapeHtml(b.tour_name||'')+' · '+escapeHtml(b.booking_date||'')+' · Pax '+escapeHtml(b.guests||'')+' · '+(ES?'Ciudad ':'City ')+escapeHtml(f.preferred_connection_city||'—')+' · '+(ES?'Llegada ':'Arrival ')+escapeHtml(f.ecuador_arrival_date||'—')+' '+escapeHtml(f.arrival_airport||'')+'</div>'));
+    p.appendChild(head);
+
+    // pasajeros
+    (d.passengers||[]).forEach(function(pax){
+      const c=el('<div class="fin-sec" style="margin-bottom:8px"></div>');
+      c.appendChild(el('<div><b>'+(ES?'Pasajero ':'Passenger ')+escapeHtml(pax.passenger_number)+'</b> · '+escapeHtml([pax.legal_first_name,pax.legal_last_name].filter(Boolean).join(' ')||'—')+'</div>'));
+      const bits=[];
+      if(pax.nationality) bits.push((ES?'Nac.: ':'Nat.: ')+escapeHtml(pax.nationality));
+      if(pax.document_type) bits.push((ES?'Doc: ':'Doc: ')+escapeHtml(pax.document_type)+(pax.document_masked?(' '+escapeHtml(pax.document_masked)):''));
+      if(pax.dietary_requirements) bits.push((ES?'Dieta: ':'Diet: ')+escapeHtml(pax.dietary_requirements));
+      if(pax.special_assistance) bits.push((ES?'Asist.: ':'Assist.: ')+escapeHtml(pax.special_assistance));
+      if(pax.accessibility_or_mobility_needs) bits.push((ES?'Movilidad: ':'Mobility: ')+escapeHtml(pax.accessibility_or_mobility_needs));
+      c.appendChild(el('<div class="bk-sub-hint">'+bits.join(' · ')+'</div>'));
+      if(!isStaff && pax.has_document && pax.passenger_id){
+        const rv=el('<button class="mini-btn" type="button">'+(ES?'Ver documento':'Reveal document')+'</button>');
+        rv.addEventListener('click',function(){ revealDoc(pax.passenger_id, rv); });
+        c.appendChild(rv);
+      }
+      p.appendChild(c);
+    });
+
+    // lodging
+    if((d.lodging||[]).length){
+      const lh=el('<div class="fin-sec"><h4>'+(ES?'Alojamiento':'Lodging')+'</h4></div>');
+      (d.lodging||[]).forEach(function(l){
+        lh.appendChild(el('<div class="bk-sub-hint"><b>'+escapeHtml(l.destination)+'</b> · '+escapeHtml(l.status)+' · '+(l.lodging_required?(ES?'requiere':'required'):(ES?'no requiere':'not required'))+(l.nights?(' · '+l.nights+(ES?' noches':' nights')):'')+(l.rooms_required?(' · '+l.rooms_required+(ES?' hab':' rooms')):'')+' · '+escapeHtml(l.source)+'</div>'));
+      });
+      p.appendChild(lh);
+    }
+
+    if(!isStaff) renderActions(d, f, b);
+  }
+
+  function revealDoc(passengerId, btn){
+    const reason=window.prompt(ES?'Motivo para ver el documento (obligatorio):':'Reason to reveal the document (required):');
+    if(!reason||!reason.trim()) return;
+    btn.disabled=true;
+    apiPost('/api/admin-passenger-document-reveal',{passenger_id:passengerId, reason:reason.trim()}).then(function(r){
+      btn.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.ok&&r.data&&r.data.document_number){ adminToast((ES?'Documento: ':'Document: ')+r.data.document_number); }
+      else if(r.ok&&r.data&&r.data.has_document===false){ adminToast(ES?'Sin documento guardado.':'No document saved.'); }
+      else adminToast(ES?'No se pudo revelar.':'Could not reveal.');
+    }).catch(function(){ btn.disabled=false; });
+  }
+
+  function renderActions(d, f, b){
+    const box=el('<div class="fin-sec"><h4>'+(ES?'Acciones':'Actions')+'</h4></div>');
+    const noteIn=el('<div class="ed-field"><label>'+(ES?'Nota de cambios (para el cliente)':'Changes note (to the customer)')+'</label><input></div>'); box.appendChild(noteIn);
+    const row=el('<div style="display:flex;gap:8px;flex-wrap:wrap"></div>');
+    const rc=el('<button class="mini-btn" type="button">'+(ES?'Solicitar cambios':'Request changes')+'</button>');
+    const rv=el('<button class="mini-btn" type="button">'+(ES?'Marcar revisado':'Mark reviewed')+'</button>');
+    const cp=el('<button class="mini-btn" type="button">'+(ES?'Marcar completo':'Mark complete')+'</button>');
+    const rn=el('<button class="mini-btn" type="button">'+(ES?'Renovar enlace':'Renew link')+'</button>');
+    row.appendChild(rc); row.appendChild(rv); row.appendChild(cp); row.appendChild(rn); box.appendChild(row);
+    p.appendChild(box);
+    function act(url, body, okMsg){ apiPost(url, body).then(function(r){ if(r.status===401){ onUnauthorized(); return; } if(r.ok&&r.data&&(r.data.saved||r.data.renewed)){ adminToast(okMsg); if(r.data.form_url) window.prompt(ES?'Nuevo enlace del formulario:':'New form link:', r.data.form_url); openDetail(f.form_id); } else adminToast(ES?'No se pudo aplicar.':'Could not apply.'); }); }
+    rc.addEventListener('click',function(){ act('/api/admin-passenger-intake-request-changes',{form_id:f.form_id, note:noteIn.querySelector('input').value||''}, ES?'Cambios solicitados':'Changes requested'); });
+    rv.addEventListener('click',function(){ act('/api/admin-passenger-intake-review',{form_id:f.form_id, action:'reviewed'}, ES?'Marcado revisado':'Marked reviewed'); });
+    cp.addEventListener('click',function(){ act('/api/admin-passenger-intake-review',{form_id:f.form_id, action:'complete'}, ES?'Marcado completo':'Marked complete'); });
+    rn.addEventListener('click',function(){ act('/api/admin-passenger-intake-renew',{form_id:f.form_id}, ES?'Enlace renovado':'Link renewed'); });
+  }
+
+  loadList();
+  return p;
+}
+
 /* ============ PRECIOS DE PAQUETES EN VIVO (rediseño owner = un clic) ============
    Lista de tarjetas responsive (sin scroll horizontal). El owner escribe un
    precio y pulsa "Update live price" → se publica al instante (RPC atómico).
@@ -1523,12 +1758,18 @@ function panelPackagePricing(role){
 
 function panelsFor(role){
   if(role==='staff'){
-    return [{id:'schedule', label:(ES?'Agenda de reservas':'Booking schedule'), build:panelStaffSchedule}];
+    return [
+      {id:'schedule', label:(ES?'Agenda de reservas':'Booking schedule'), build:panelStaffSchedule},
+      {id:'passengers', label:(ES?'Pasajeros':'Passengers'), build:function(){ return panelPassengers('staff'); }}
+    ];
   }
   const panels=[
     {id:'bookings',label:(ES?'Reservas':'Bookings'), build:panelBookings},
     {id:'finance', label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinance(role); }},
     {id:'pkgpricing', label:(ES?'Precios de paquetes':'Package pricing'), build:function(){ return panelPackagePricing(role); }},
+    {id:'notes', label:(ES?'Notas de paquetes':'Package notes'), build:function(){ return panelPackageNotes(role); }},
+    {id:'passengers', label:(ES?'Pasajeros y logística':'Passengers & logistics'), build:function(){ return panelPassengers(role); }},
+    {id:'hotels', label:(ES?'Hoteles preferidos':'Preferred hotels'), build:function(){ return panelHotelPreferences(role); }},
     {id:'notifications', label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }}
   ];
   // Datos de prueba: SOLO owner (no se genera en el DOM para admin ni staff).
