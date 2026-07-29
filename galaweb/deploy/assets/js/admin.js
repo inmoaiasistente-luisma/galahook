@@ -126,8 +126,8 @@ function readOnlyPriceField(label, obj, key){
   const f=document.createElement('input'); f.type='number'; f.value=obj[key]||0; f.readOnly=true; f.disabled=true;
   box.appendChild(f); wrap.appendChild(box);
   wrap.appendChild(el('<div class="bk-sub-hint" style="margin-top:6px">'+(ES
-    ? 'Precio canónico administrado en el servidor. La edición permanente desde el panel estará disponible próximamente.'
-    : 'Canonical price managed by the server. Permanent price editing from the admin panel will be available soon.')+'</div>'));
+    ? 'Precio administrado en el servidor. Los precios de PAQUETES se editan en la sección “Precios de paquetes”; este editor de contenido no cambia el precio.'
+    : 'Price managed by the server. PACKAGE prices are edited in the “Package pricing” section; this content editor does not change the price.')+'</div>'));
   return wrap;
 }
 function imgField(label, obj, key){
@@ -1398,6 +1398,209 @@ function panelTestData(role){
   return p;
 }
 
+/* ============ PRECIOS DE PAQUETES EN VIVO ============
+   Fuente de verdad: Supabase (public.package_prices) vía endpoints
+   server-side. owner: ver/draft/publicar/rollback/activar-desactivar.
+   admin: ver + crear/editar draft (NO publica, NO rollback). staff: sin
+   acceso (la sección no se genera). Publicar surte efecto al recargar el
+   sitio (pricing-preview usa no-store). No recalcula dinero en el navegador. */
+function panelPackagePricing(role){
+  const canEdit = role==='owner' || role==='admin';   // ambos editan borrador
+  const canPublish = role==='owner';                  // publicar/rollback/toggle: solo owner
+  const wrap=el('<div class="fin-wrap"></div>');
+
+  wrap.appendChild(el('<p class="bk-sub-hint">'+(ES
+    ? 'Precios de paquetes administrados en vivo (fuente de verdad: Supabase). Publicar surte efecto en el sitio al recargar. Cambiar un precio NO altera reservas ya creadas.'
+    : 'Live-managed package prices (source of truth: Supabase). Publishing takes effect on the site after a reload. Changing a price does NOT alter existing bookings.')+'</p>'));
+
+  const bar=el('<div class="ed-row" style="align-items:center;gap:10px"></div>');
+  const refreshBtn=el('<button class="mini-btn" type="button">'+(ES?'Actualizar precios en página':'Refresh prices on page')+'</button>');
+  bar.appendChild(refreshBtn);
+  if(!canPublish) bar.appendChild(el('<span class="bk-sub-hint">'+(ES?'Tu rol puede editar borradores, no publicar.':'Your role can edit drafts, not publish.')+'</span>'));
+  wrap.appendChild(bar);
+
+  const notMig=el('<div class="bk-sub-hint" style="display:none;margin:8px 0"></div>'); wrap.appendChild(notMig);
+  const tableWrap=el('<div class="bk-table-wrap"></div>'); wrap.appendChild(tableWrap);
+
+  function fmtDate(iso){ if(!iso) return '—'; try{ return new Date(iso).toISOString().slice(0,10); }catch(e){ return '—'; } }
+  function dollars(cents){ return Math.round((cents||0)/100); }
+
+  function load(){
+    tableWrap.innerHTML='<div class="bk-sub-hint">'+(ES?'Cargando…':'Loading…')+'</div>';
+    notMig.style.display='none';
+    apiGet('/api/admin-package-prices-list').then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.status===403){ tableWrap.innerHTML='<div class="bk-sub-hint">'+(ES?'Sin acceso.':'No access.')+'</div>'; return; }
+      if(!r.ok||!r.data){ tableWrap.innerHTML=''; return; }
+      if(r.data.migrated===false){
+        tableWrap.innerHTML='';
+        notMig.style.display='';
+        notMig.textContent=ES
+          ? 'La migración 0012 (precios en vivo) aún no está aplicada en Supabase. Aplícala para administrar precios desde aquí. Mientras tanto el sitio usa el catálogo del servidor.'
+          : 'Migration 0012 (live pricing) is not applied in Supabase yet. Apply it to manage prices here. Meanwhile the site uses the server catalog.';
+        return;
+      }
+      renderTable(r.data.packages||[]);
+    }).catch(function(){ tableWrap.innerHTML=''; });
+  }
+
+  function sendAction(url, payload, btn, doneMsg){
+    if(btn) btn.disabled=true;
+    apiPost(url,payload).then(function(rr){
+      if(btn) btn.disabled=false;
+      if(rr.status===401){ onUnauthorized(); return; }
+      if(!rr.ok){
+        const code=(rr.data&&rr.data.error)||'';
+        adminToast(
+          code==='REASON_REQUIRED'?(ES?'Motivo obligatorio (mínimo 5 caracteres).':'Reason required (min 5 characters).'):
+          code==='INVALID_PRICE'?(ES?'Precio inválido.':'Invalid price.'):
+          code==='NO_PREVIOUS'?(ES?'No hay versión anterior para revertir.':'No previous version to roll back to.'):
+          code==='NOT_MIGRATED'?(ES?'Aplica la migración 0012 primero.':'Apply migration 0012 first.'):
+          (ES?'No se pudo completar.':'Could not complete.'));
+        return;
+      }
+      adminToast(doneMsg); load();
+    }).catch(function(){ if(btn) btn.disabled=false; adminToast(ES?'Error de conexión.':'Connection error.'); });
+  }
+
+  function renderTable(packages){
+    tableWrap.innerHTML='<table class="bk-table"><thead><tr>'
+      +'<th>'+(ES?'Paquete':'Package')+'</th>'
+      +'<th>'+(ES?'Precio publicado':'Published price')+'</th>'
+      +'<th>'+(ES?'Ver.':'Ver.')+'</th>'
+      +'<th>'+(ES?'Publicado':'Published')+'</th>'
+      +'<th>'+(ES?'Nuevo precio ($)':'New price ($)')+'</th>'
+      +'<th>'+(ES?'Δ':'Δ')+'</th>'
+      +'<th></th></tr></thead><tbody></tbody></table>';
+    const tbody=tableWrap.querySelector('tbody');
+
+    packages.forEach(function(pk){
+      const pub=pk.published, draft=pk.draft;
+      const pubCents = pub? pub.base_price_cents : null;
+      const start = draft? dollars(draft.base_price_cents) : (pub? dollars(pub.base_price_cents) : dollars(pk.catalog_price_cents));
+
+      const tr=document.createElement('tr');
+      const tdName=document.createElement('td'); tdName.innerHTML='<b>'+escapeHtml(pk.name)+'</b><br><span class="bk-sub-hint">'+escapeHtml(pk.package_id)+'</span>';
+      const tdPub=document.createElement('td'); tdPub.className='num'; tdPub.textContent= pub? fin$(pubCents) : (ES?'— (bloqueado)':'— (blocked)');
+      const tdVer=document.createElement('td'); tdVer.className='num'; tdVer.textContent= (pub&&pub.pricing_version!=null)? ('v'+pub.pricing_version) : '—';
+      const tdDate=document.createElement('td'); tdDate.textContent= pub? fmtDate(pub.published_at) : '—';
+
+      const tdInput=document.createElement('td');
+      const priceInput=el('<input type="number" min="1" step="1" style="width:120px" value="'+start+'"'+(canEdit?'':' disabled')+'>');
+      tdInput.appendChild(priceInput);
+      if(draft) tdInput.appendChild(el('<div class="bk-sub-hint">'+(ES?'borrador':'draft')+' '+fin$(draft.base_price_cents)+'</div>'));
+
+      const tdDelta=document.createElement('td'); tdDelta.className='num';
+      function recalc(){ const nv=Math.round((parseFloat(priceInput.value)||0)*100); if(pubCents==null){ tdDelta.textContent='—'; return; } const d=nv-pubCents; tdDelta.textContent=(d===0?'=':(d>0?'+':'−')+fin$(Math.abs(d))); }
+      priceInput.addEventListener('input',recalc); recalc();
+
+      const tdAct=document.createElement('td'); tdAct.style.whiteSpace='nowrap';
+
+      // fila expandible (confirmación con motivo / historial)
+      const exTr=document.createElement('tr'); exTr.style.display='none';
+      const exTd=document.createElement('td'); exTd.colSpan=7; exTr.appendChild(exTd);
+
+      function closeEx(){ exTr.style.display='none'; exTd.innerHTML=''; }
+      function openConfirm(mode){
+        exTr.style.display=''; exTd.innerHTML='';
+        const box=el('<div class="ed-field" style="padding:10px;background:rgba(0,0,0,.03);border-radius:8px"></div>');
+        const label = mode==='publish'?(ES?'PUBLICAR NUEVOS PRECIOS':'PUBLISH NEW PRICES')
+                    : mode==='rollback'?(ES?'REVERTIR PRECIO':'ROLL BACK PRICE')
+                    : mode==='deactivate'?(ES?'DESACTIVAR PRECIO':'DEACTIVATE PRICE')
+                    : (ES?'REACTIVAR PRECIO':'REACTIVATE PRICE');
+        const desc = mode==='publish'?(ES?'Se publicará $'+ (parseFloat(priceInput.value)||0) +' para '+pk.name+'.':'Publishing $'+(parseFloat(priceInput.value)||0)+' for '+pk.name+'.')
+                    : mode==='rollback'?(ES?'Se publicará el precio de la versión anterior como una nueva versión.':'The previous version price will be published as a new version.')
+                    : mode==='deactivate'?(ES?'El paquete quedará SIN precio publicado y su reserva se bloqueará.':'The package will have NO published price and booking will be blocked.')
+                    : (ES?('Se volverá a publicar la versión v'+((pk.last_archived&&pk.last_archived.pricing_version)||'?')+' ('+fin$((pk.last_archived&&pk.last_archived.base_price_cents)||0)+') como una nueva versión.')
+                         :('Version v'+((pk.last_archived&&pk.last_archived.pricing_version)||'?')+' ('+fin$((pk.last_archived&&pk.last_archived.base_price_cents)||0)+') will be republished as a new version.'));
+        box.appendChild(el('<p class="bk-sub-hint" style="margin:0 0 6px">'+escapeHtml(desc)+'</p>'));
+        const reason=el('<input type="text" placeholder="'+(ES?'Motivo (mínimo 5 caracteres)':'Reason (min 5 characters)')+'" maxlength="500" style="width:100%;max-width:420px">');
+        box.appendChild(reason);
+        const btnRow=el('<div style="margin-top:8px;display:flex;gap:8px">');
+        const confirm=el('<button class="btn btn-gold btn-sm" type="button">'+label+'</button>');
+        const cancel=el('<button class="mini-btn" type="button">'+(ES?'Cancelar':'Cancel')+'</button>');
+        btnRow.appendChild(confirm); btnRow.appendChild(cancel); box.appendChild(btnRow);
+        exTd.appendChild(box);
+        cancel.addEventListener('click',closeEx);
+        confirm.addEventListener('click',function(){
+          const reasonVal=(reason.value||'').trim();
+          if(reasonVal.length<5){ adminToast(ES?'Motivo obligatorio (mínimo 5 caracteres).':'Reason required (min 5 characters).'); return; }
+          if(mode==='publish'){
+            const cents=Math.round((parseFloat(priceInput.value)||0)*100);
+            if(!(cents>0)){ adminToast(ES?'Precio inválido.':'Invalid price.'); return; }
+            /* Se PERSISTE el draft (idempotente: 1 draft/paquete) y se publica ESE
+               draft por id — el precio publicado se lee del draft en el servidor. */
+            confirm.disabled=true;
+            apiPost('/api/admin-package-price-draft-save',{package_id:pk.package_id, base_price_cents:cents}).then(function(dr){
+              if(dr.status===401){ onUnauthorized(); return; }
+              if(!dr.ok||!dr.data||!dr.data.draft||!dr.data.draft.id){ confirm.disabled=false; adminToast(ES?'No se pudo preparar el borrador.':'Could not prepare the draft.'); return; }
+              sendAction('/api/admin-package-price-publish',{package_id:pk.package_id, draft_id:dr.data.draft.id, change_reason:reasonVal}, confirm, ES?'Precio publicado':'Price published');
+            }).catch(function(){ confirm.disabled=false; adminToast(ES?'Error de conexión.':'Connection error.'); });
+          } else if(mode==='rollback'){
+            sendAction('/api/admin-package-price-rollback',{package_id:pk.package_id, change_reason:reasonVal}, confirm, ES?'Precio revertido':'Price rolled back');
+          } else if(mode==='reactivate'){
+            if(!pk.last_archived||!pk.last_archived.id){ adminToast(ES?'No hay versión para reactivar.':'No version to reactivate.'); return; }
+            sendAction('/api/admin-package-price-toggle',{package_id:pk.package_id, action:'reactivate', change_reason:reasonVal, source_price_id:pk.last_archived.id}, confirm, ES?'Precio reactivado':'Price reactivated');
+          } else {
+            sendAction('/api/admin-package-price-toggle',{package_id:pk.package_id, action:'deactivate', change_reason:reasonVal}, confirm, ES?'Precio desactivado':'Price deactivated');
+          }
+        });
+      }
+      function openHistory(){
+        exTr.style.display=''; exTd.innerHTML='<div class="bk-sub-hint">'+(ES?'Cargando historial…':'Loading history…')+'</div>';
+        apiGet('/api/admin-package-price-history?package_id='+encodeURIComponent(pk.package_id)).then(function(r){
+          if(r.status===401){ onUnauthorized(); return; }
+          if(!r.ok||!r.data){ exTd.innerHTML=''; return; }
+          const rows=(r.data.history||[]).map(function(h){
+            const chg=(h.old_price_cents!=null?fin$(h.old_price_cents):'—')+' → '+(h.new_price_cents!=null?fin$(h.new_price_cents):'—');
+            const ver=(h.old_version!=null?('v'+h.old_version):'—')+'→'+(h.new_version!=null?('v'+h.new_version):'—');
+            return '<tr><td>'+fmtDate(h.created_at)+'</td><td>'+escapeHtml(h.action)+'</td><td class="num">'+chg+'</td><td class="num">'+ver+'</td><td>'+escapeHtml(h.change_reason||'')+'</td></tr>';
+          }).join('');
+          exTd.innerHTML='<table class="bk-table"><thead><tr><th>'+(ES?'Fecha':'Date')+'</th><th>'+(ES?'Acción':'Action')+'</th><th>'+(ES?'Cambio':'Change')+'</th><th>'+(ES?'Versión':'Version')+'</th><th>'+(ES?'Motivo':'Reason')+'</th></tr></thead><tbody>'
+            +(rows||'<tr><td colspan="5" class="bk-sub-hint">'+(ES?'Sin historial.':'No history.')+'</td></tr>')+'</tbody></table>';
+        }).catch(function(){ exTd.innerHTML=''; });
+      }
+
+      if(canEdit){
+        const saveB=el('<button class="mini-btn" type="button">'+(ES?'Guardar borrador':'Save draft')+'</button>');
+        saveB.addEventListener('click',function(){
+          const cents=Math.round((parseFloat(priceInput.value)||0)*100);
+          if(!(cents>0)){ adminToast(ES?'Precio inválido.':'Invalid price.'); return; }
+          sendAction('/api/admin-package-price-draft-save',{package_id:pk.package_id, base_price_cents:cents}, saveB, ES?'Borrador guardado':'Draft saved');
+        });
+        tdAct.appendChild(saveB);
+      }
+      if(canPublish){
+        const pubB=el('<button class="mini-btn" type="button" style="margin-left:6px">'+(ES?'Publicar':'Publish')+'</button>');
+        pubB.addEventListener('click',function(){ openConfirm('publish'); });
+        tdAct.appendChild(pubB);
+        if(pub){
+          const rbB=el('<button class="mini-btn" type="button" style="margin-left:6px">'+(ES?'Revertir':'Roll back')+'</button>');
+          rbB.addEventListener('click',function(){ openConfirm('rollback'); });
+          tdAct.appendChild(rbB);
+          const offB=el('<button class="mini-btn" type="button" style="margin-left:6px">'+(ES?'Desactivar':'Deactivate')+'</button>');
+          offB.addEventListener('click',function(){ openConfirm('deactivate'); });
+          tdAct.appendChild(offB);
+        } else if(pk.last_archived&&pk.last_archived.id){
+          const onB=el('<button class="mini-btn" type="button" style="margin-left:6px">'+(ES?'Reactivar':'Reactivate')+'</button>');
+          onB.addEventListener('click',function(){ openConfirm('reactivate'); });
+          tdAct.appendChild(onB);
+        }
+      }
+      const histB=el('<button class="mini-btn" type="button" style="margin-left:6px">'+(ES?'Historial':'History')+'</button>');
+      histB.addEventListener('click',function(){ if(exTr.style.display==='none'){ openHistory(); } else { closeEx(); } });
+      tdAct.appendChild(histB);
+
+      tr.appendChild(tdName); tr.appendChild(tdPub); tr.appendChild(tdVer); tr.appendChild(tdDate); tr.appendChild(tdInput); tr.appendChild(tdDelta); tr.appendChild(tdAct);
+      tbody.appendChild(tr); tbody.appendChild(exTr);
+    });
+  }
+
+  refreshBtn.addEventListener('click',load);
+  load();
+  return wrap;
+}
+
 function panelsFor(role){
   if(role==='staff'){
     return [{id:'schedule', label:(ES?'Agenda de reservas':'Booking schedule'), build:panelStaffSchedule}];
@@ -1405,6 +1608,7 @@ function panelsFor(role){
   const panels=[
     {id:'bookings',label:(ES?'Reservas':'Bookings'), build:panelBookings},
     {id:'finance', label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinance(role); }},
+    {id:'pkgpricing', label:(ES?'Precios de paquetes':'Package pricing'), build:function(){ return panelPackagePricing(role); }},
     {id:'notifications', label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }}
   ];
   // Datos de prueba: SOLO owner (no se genera en el DOM para admin ni staff).

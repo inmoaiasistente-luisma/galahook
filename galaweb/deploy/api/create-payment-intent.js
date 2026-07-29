@@ -120,6 +120,9 @@ module.exports = async function handler(req, res) {
     try { pricing = await computeWebPricing({ tenantId: tenant, tourId: tour.id, guests: guests }); }
     catch (e) {
       if (e && e.message === 'QUOTE_ONLY') return sendError(res, 400, 'QUOTE_REQUIRED', 'This experience requires a quote request');
+      /* Paquete sin precio publicado (ni fallback válido): se BLOQUEA aquí,
+         ANTES de crear la reserva o el PaymentIntent. No se cobra nada. */
+      if (e && e.message === 'PACKAGE_PRICE_UNAVAILABLE') return sendError(res, 409, 'PACKAGE_PRICE_UNAVAILABLE', 'Package price is not available');
       logServer('pricing', e && e.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to price the booking');
     }
 
