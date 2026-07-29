@@ -71,7 +71,7 @@ async function reclaimExpiredLeases(tenant) {
   const supabase = getSupabase();
   const r = await supabase.rpc('milu_reclaim_expired_leases', { p_tenant: tenant });
   if (r.error) return { ok: false, error: r.error };
-  return { ok: true, reclaimed: (r.data && r.data.reclaimed) || 0 };
+  return { ok: true, requeued: (r.data && r.data.requeued) || 0, failed: (r.data && r.data.failed) || 0 };
 }
 
 /* ---------------- job helpers ---------------- */
@@ -139,31 +139,53 @@ function hotelRow(job, o) {
   };
 }
 
-async function upsertFlightOptions(job, opts) {
+/* Clave estable por opción (dedup). El adapter la provee; si no, se deriva. */
+function flightKey(o) { return o.provider_result_key || (o.provider + ':flight:' + (o.origin || '') + ':' + (o.destination || '') + ':' + (o.source_reference || '')); }
+function hotelKey(o) { return o.provider_result_key || (o.provider + ':hotel:' + (o.destination || '') + ':' + (o.hotel_name || '')); }
+
+/* Upsert idempotente: una fila ACTIVA por clave lógica. Retry → actualiza la
+   activa (no duplica). Refresh → expira la activa y crea result_version+1
+   (conserva historia). */
+async function upsertFlightOptions(job, opts, opts2) {
   const supabase = getSupabase();
+  const refresh = !!(opts2 && opts2.refresh);
   for (var i = 0; i < opts.length; i++) {
     const o = opts[i];
-    const rows = (await supabase.from('travel_flight_options').select('*').eq('search_job_id', job.id).eq('provider', o.provider)).data || [];
-    const match = rows.filter(function (r) {
-      return (r.origin || '') === (o.origin || '') && (r.destination || '') === (o.destination || '') && (r.source_reference || '') === (o.source_reference || '');
-    })[0];
-    const payload = flightRow(job, o);
-    if (match) await supabase.from('travel_flight_options').update(payload).eq('id', match.id);
-    else await supabase.from('travel_flight_options').insert(Object.assign({ tenant_id: job.tenant_id, search_job_id: job.id, booking_id: job.booking_id, active: true }, payload));
+    const key = flightKey(o);
+    const rows = (await supabase.from('travel_flight_options').select('*').eq('search_job_id', job.id).eq('provider', o.provider).eq('active', true)).data || [];
+    const actives = rows.filter(function (r) { return (r.provider_result_key || '') === key; });
+    const payload = flightRow(job, o); payload.provider_result_key = key;
+    if (refresh && actives.length) {
+      var maxV = 0;
+      for (var a = 0; a < actives.length; a++) { maxV = Math.max(maxV, actives[a].result_version || 1); await supabase.from('travel_flight_options').update({ active: false, availability_status: 'expired' }).eq('id', actives[a].id); }
+      await supabase.from('travel_flight_options').insert(Object.assign({ tenant_id: job.tenant_id, search_job_id: job.id, booking_id: job.booking_id, active: true, result_version: maxV + 1 }, payload));
+    } else if (actives.length) {
+      await supabase.from('travel_flight_options').update(payload).eq('id', actives[0].id);
+    } else {
+      await supabase.from('travel_flight_options').insert(Object.assign({ tenant_id: job.tenant_id, search_job_id: job.id, booking_id: job.booking_id, active: true, result_version: 1 }, payload));
+    }
   }
 }
 
-async function upsertHotelOptions(job, opts) {
+async function upsertHotelOptions(job, opts, opts2) {
   const supabase = getSupabase();
+  const refresh = !!(opts2 && opts2.refresh);
   for (var i = 0; i < opts.length; i++) {
     const o = opts[i];
-    const rows = (await supabase.from('travel_hotel_options').select('*').eq('search_job_id', job.id).eq('provider', o.provider)).data || [];
-    const match = rows.filter(function (r) {
-      return (r.destination || '') === (o.destination || '') && (r.hotel_name || '') === (o.hotel_name || '');
-    })[0];
-    const payload = hotelRow(job, o);
-    if (match) await supabase.from('travel_hotel_options').update(payload).eq('id', match.id);
-    else await supabase.from('travel_hotel_options').insert(Object.assign({ tenant_id: job.tenant_id, search_job_id: job.id, booking_id: job.booking_id, active: true }, payload));
+    const key = hotelKey(o);
+    const lrid = o.lodging_requirement_id || null;
+    const rows = (await supabase.from('travel_hotel_options').select('*').eq('search_job_id', job.id).eq('provider', o.provider).eq('active', true)).data || [];
+    const actives = rows.filter(function (r) { return (r.provider_result_key || '') === key && (r.lodging_requirement_id || null) === lrid; });
+    const payload = hotelRow(job, o); payload.provider_result_key = key; payload.lodging_requirement_id = lrid;
+    if (refresh && actives.length) {
+      var maxV2 = 0;
+      for (var b = 0; b < actives.length; b++) { maxV2 = Math.max(maxV2, actives[b].result_version || 1); await supabase.from('travel_hotel_options').update({ active: false, availability_status: 'expired' }).eq('id', actives[b].id); }
+      await supabase.from('travel_hotel_options').insert(Object.assign({ tenant_id: job.tenant_id, search_job_id: job.id, booking_id: job.booking_id, active: true, result_version: maxV2 + 1 }, payload));
+    } else if (actives.length) {
+      await supabase.from('travel_hotel_options').update(payload).eq('id', actives[0].id);
+    } else {
+      await supabase.from('travel_hotel_options').insert(Object.assign({ tenant_id: job.tenant_id, search_job_id: job.id, booking_id: job.booking_id, active: true, result_version: 1 }, payload));
+    }
   }
 }
 
@@ -195,7 +217,7 @@ async function runSubtask(subtask, deps) {
     if (subtask.kind === 'flights_duffel') {
       const adapter = getFlightAdapter(deps.flightProvider || 'stub');
       const opts = adapter.searchFlights(buildFlightReq(snapshot));
-      await upsertFlightOptions(job, opts);
+      await upsertFlightOptions(job, opts, { refresh: deps.refresh });
       return { status: usable(opts) ? 'completed' : 'partial', count: opts.length, reason: usable(opts) ? null : 'provider_not_connected' };
     }
 
@@ -209,7 +231,7 @@ async function runSubtask(subtask, deps) {
         const part = adapter.searchHotels(lodg[i], snapshot.hotel_search_preferences || [], deps.settings);
         for (var k = 0; k < part.length; k++) all.push(part[k]);
       }
-      await upsertHotelOptions(job, all);
+      await upsertHotelOptions(job, all, { refresh: deps.refresh });
       return { status: usable(all) ? 'completed' : 'partial', count: all.length, reason: usable(all) ? null : 'provider_not_connected' };
     }
 

@@ -27,6 +27,7 @@ function searchFlights(req) {
   // Sin proveedor automático conectado: no hay contenido que devolver.
   return [{
     provider: PROVIDER,
+    provider_result_key: 'manual:flight:' + ((req && req.origin) || '') + ':' + ((req && req.destination) || ''),
     airline: null,
     source_reference: null,
     origin: (req && req.origin) || null,
@@ -68,7 +69,8 @@ function searchHotels(lodging, prefs, settings) {
 
   if (!forDest.length) {
     return [{
-      provider: PROVIDER, destination: dest, hotel_name: '(sin hotel preferido configurado)',
+      provider: PROVIDER, provider_result_key: 'manual:hotel:' + (dest || '') + ':none',
+      destination: dest, hotel_name: '(sin hotel preferido configurado)',
       is_preferred: false, is_airbnb: false,
       check_in_date: lodging.check_in_date || null, check_out_date: lodging.check_out_date || null,
       nights: lodging.nights || null, rooms: lodging.rooms_required || null, guest_count: lodging.guest_count || null,
@@ -91,6 +93,7 @@ function searchHotels(lodging, prefs, settings) {
     var boutique = GALAPAGOS_BOUTIQUE.indexOf(dest) !== -1;
     return {
       provider: PROVIDER,
+      provider_result_key: 'manual:hotel:' + (dest || '') + ':' + h.hotel_name,
       destination: dest,
       hotel_name: h.hotel_name,
       is_preferred: true,

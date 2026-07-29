@@ -156,19 +156,35 @@ async function startSearch(bookingId, userId, searchType) {
   return { job: job, created: true, snapshot: built.snapshot, flightDates: built.flightDates };
 }
 
-async function cancelSearch(bookingId, jobId) {
+async function cancelSearch(bookingId, jobId, actor) {
   const supabase = getSupabase();
   const tenant = getTenantId();
+  // Job → cancelled + inactivo: la cola ya no lo reclama (ver milu_claim_next_subtask).
   await supabase.from('travel_search_jobs').update({ status: 'cancelled', active: false }).eq('id', jobId).eq('tenant_id', tenant);
   const subs = await supabase.from('travel_search_subtasks').select('id,status').eq('job_id', jobId);
   const rows = (subs.data || []);
+  var cancelled = 0;
   for (var i = 0; i < rows.length; i++) {
     var s = rows[i];
     if (s.status === 'queued' || s.status === 'partial' || s.status === 'running') {
-      await supabase.from('travel_search_subtasks').update({ status: 'expired', locked_by: null }).eq('id', s.id);
+      await supabase.from('travel_search_subtasks').update({
+        status: 'cancelled', locked_by: null, locked_at: null, lease_expires_at: null,
+        heartbeat_at: null, finished_at: new Date().toISOString()
+      }).eq('id', s.id);
+      cancelled++;
     }
   }
-  return { cancelled: true };
+  // Auditoría de cancelación (append-only). Los resultados ya guardados se conservan.
+  const at = (actor && (actor.role === 'owner' || actor.role === 'admin')) ? actor.role : 'system';
+  try {
+    await supabase.from('travel_search_audit').insert({
+      tenant_id: tenant, booking_id: bookingId, search_job_id: jobId,
+      actor_type: at, actor_id: (actor && actor.userId) || null,
+      action: 'cancel_search', source: 'admin', result: 'success',
+      sanitized_details: { subtasks_cancelled: cancelled }
+    });
+  } catch (e) { /* la auditoría nunca rompe la cancelación */ }
+  return { cancelled: true, subtasks_cancelled: cancelled };
 }
 
 /** Ajuste de fechas de vuelo por owner/admin — requiere motivo. */

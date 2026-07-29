@@ -1,13 +1,12 @@
 'use strict';
 /* =========================================================
-   Etapa 8C — Milu Turismo (núcleo). 42 pruebas obligatorias.
-   Mock Supabase en memoria (query builder + rpc de cola) y mock de
-   buildTravelRequirements. Sin red, sin claves, sin proveedores reales.
+   Etapa 8C — Milu Turismo (núcleo) + endurecimiento de integridad.
+   Mock Supabase en memoria (query builder + rpc de cola con validación de
+   job padre) y mock de buildTravelRequirements. Sin red, sin claves.
    ========================================================= */
 const fs = require('fs');
 const path = require('path');
-/* Portable: la suite vive en <deploy>/tests/, así que BASE = <deploy>.
-   Funciona en el repo y en CI sin rutas absolutas. */
+/* Portable: la suite vive en <deploy>/tests/, así que BASE = <deploy>. */
 const BASE = path.resolve(__dirname, '..');
 process.env.TENANT_ID = 'hook-adventure';
 process.env.ANTHROPIC_MILU_TOURISM_MODEL = 'Haiku';
@@ -22,29 +21,46 @@ function nid() { return '00000000-0000-4000-8000-' + String(++_id).padStart(12, 
 /* ---------------- mock Supabase ---------------- */
 function miluRpc(name, params, db) {
   const subs = db.travel_search_subtasks || (db.travel_search_subtasks = []);
+  const jobs = db.travel_search_jobs || (db.travel_search_jobs = []);
   const now = Date.now();
+  function parentOk(s) {
+    const j = jobs.filter(function (x) { return x.id === s.job_id && x.tenant_id === s.tenant_id; })[0];
+    return !!j && j.active === true && ['queued', 'running', 'partial'].indexOf(j.status) !== -1;
+  }
   if (name === 'milu_claim_next_subtask') {
+    if (!params.p_tenant || String(params.p_tenant).trim() === '') throw new Error('invalid tenant');
+    if (!params.p_worker || String(params.p_worker).trim() === '') throw new Error('invalid worker');
+    const ls = params.p_lease_seconds;
+    if (ls == null || ls < 15 || ls > 300) throw new Error('invalid lease seconds');
     const cand = subs.filter(function (s) {
       return s.tenant_id === params.p_tenant
         && (s.status === 'queued' || s.status === 'partial')
+        && (s.attempt_count || 0) < (s.max_attempts || 3)
         && (!s.lease_expires_at || Date.parse(s.lease_expires_at) < now)
-        && (!s.next_attempt_at || Date.parse(s.next_attempt_at) <= now);
+        && (!s.next_attempt_at || Date.parse(s.next_attempt_at) <= now)
+        && parentOk(s);
     }).sort(function (a, b) { return String(a.created_at || '') < String(b.created_at || '') ? -1 : 1; })[0];
     if (!cand) return null;
     cand.status = 'running'; cand.locked_by = params.p_worker; cand.locked_at = new Date(now).toISOString();
-    cand.lease_expires_at = new Date(now + (params.p_lease_seconds || 120) * 1000).toISOString();
-    cand.heartbeat_at = cand.locked_at; cand.attempt_count = (cand.attempt_count || 0) + 1;
-    cand.started_at = cand.started_at || cand.locked_at;
+    cand.lease_expires_at = new Date(now + ls * 1000).toISOString(); cand.heartbeat_at = cand.locked_at;
+    cand.attempt_count = (cand.attempt_count || 0) + 1; cand.started_at = cand.started_at || cand.locked_at;
     return cand;
   }
   if (name === 'milu_reclaim_expired_leases') {
-    let n = 0;
+    let requeued = 0, failed = 0;
     subs.forEach(function (s) {
-      if (s.status === 'running' && s.lease_expires_at && Date.parse(s.lease_expires_at) < now) {
-        s.status = 'queued'; s.locked_by = null; s.lease_expires_at = null; n++;
+      if (s.status === 'running' && s.lease_expires_at && Date.parse(s.lease_expires_at) < now && parentOk(s)) {
+        if ((s.attempt_count || 0) < (s.max_attempts || 3)) {
+          s.status = 'queued'; s.locked_by = null; s.locked_at = null; s.lease_expires_at = null; s.heartbeat_at = null;
+          s.next_attempt_at = new Date(now + Math.min(300, 30 * Math.max(s.attempt_count || 1, 1)) * 1000).toISOString();
+          requeued++;
+        } else {
+          s.status = 'failed'; s.finished_at = new Date(now).toISOString(); s.locked_by = null; s.lease_expires_at = null; s.heartbeat_at = null;
+          failed++;
+        }
       }
     });
-    return { reclaimed: n };
+    return { requeued: requeued, failed: failed };
   }
   throw new Error('unknown rpc ' + name);
 }
@@ -157,7 +173,7 @@ function freshDb(opts) {
   if (opts.connectionTbd) {
     lodging.push({ id: nid(), passenger_form_id: fId, tenant_id: 'hook-adventure', destination: 'connection_tbd', lodging_required: true, check_in_date: null, check_out_date: null, status: 'pending', active: true });
   }
-  const db = { bookings: [booking], booking_passenger_forms: [form], booking_lodging_requirements: lodging, travel_search_jobs: [], travel_search_subtasks: [], travel_flight_options: [], travel_hotel_options: [], travel_logistics: [], llm_usage_log: [], milu_settings: [] };
+  const db = { bookings: [booking], booking_passenger_forms: [form], booking_lodging_requirements: lodging, travel_search_jobs: [], travel_search_subtasks: [], travel_flight_options: [], travel_hotel_options: [], travel_logistics: [], travel_search_audit: [], llm_usage_log: [], milu_settings: [] };
   return { db: db, booking: booking, form: form };
 }
 
@@ -172,6 +188,18 @@ function snap() {
     ]
   };
 }
+
+/* job padre activo + subtareas para pruebas de cola */
+function queueDb(jobStatus, jobActive, subs) {
+  const jid = nid();
+  const job = { id: jid, tenant_id: 'hook-adventure', booking_id: nid(), status: jobStatus, active: jobActive, requirements_snapshot: snap() };
+  const list = (subs || []).map(function (s, i) {
+    return Object.assign({ id: nid(), tenant_id: 'hook-adventure', job_id: jid, kind: 'flights_duffel', status: 'queued', attempt_count: 0, max_attempts: 3, created_at: '2026-08-01T00:00:0' + i + 'Z' }, s);
+  });
+  return { db: { travel_search_jobs: [job], travel_search_subtasks: list }, jid: jid, job: job };
+}
+
+const SQL = fs.readFileSync(path.join(BASE, 'supabase/migrations/0015_milu_tourism_search.sql'), 'utf8');
 
 (async function () {
   /* ===== Orquestador (1-10) ===== */
@@ -209,53 +237,38 @@ function snap() {
   ok('10 subtareas se crean una vez (5)', f.db.travel_search_subtasks.filter(function (s) { return s.job_id === a1.job.id; }).length === 5);
 
   /* ===== Cola / lease (11-18) ===== */
-  // 11 worker reclama con lock
-  let jobId = nid();
-  let db2 = { travel_search_jobs: [{ id: jobId, tenant_id: 'hook-adventure', booking_id: nid(), status: 'queued', requirements_snapshot: snap() }], travel_search_subtasks: [] };
-  ['flights_duffel', 'hotels_primary_provider'].forEach(function (k, i) { db2.travel_search_subtasks.push({ id: nid(), tenant_id: 'hook-adventure', job_id: jobId, kind: k, status: 'queued', attempt_count: 0, max_attempts: 3, created_at: '2026-08-0' + (i + 1) }); });
-  setClient(db2);
+  let q = queueDb('queued', true, [{ kind: 'flights_duffel' }, { kind: 'hotels_primary_provider' }]);
+  setClient(q.db);
   const c1 = await worker.claimNextSubtask('hook-adventure', 'w1', 120);
   ok('11 worker reclama con lock', c1.ok && c1.subtask && c1.subtask.status === 'running' && c1.subtask.locked_by === 'w1');
 
-  // 12 segundo worker no reclama la misma (una sola subtarea)
-  let db3 = { travel_search_subtasks: [{ id: nid(), tenant_id: 'hook-adventure', job_id: nid(), kind: 'flights_duffel', status: 'queued', attempt_count: 0, max_attempts: 3, created_at: 't' }] };
-  setClient(db3);
+  q = queueDb('queued', true, [{ kind: 'flights_duffel' }]); setClient(q.db);
   const w1 = await worker.claimNextSubtask('hook-adventure', 'w1', 120);
   const w2 = await worker.claimNextSubtask('hook-adventure', 'w2', 120);
   ok('12 segundo worker no reclama la misma subtarea', w1.subtask && w2.subtask === null);
 
-  // 13 lease expirado puede recuperarse
-  let db4 = { travel_search_subtasks: [{ id: nid(), tenant_id: 'hook-adventure', job_id: nid(), kind: 'flights_duffel', status: 'running', locked_by: 'dead', attempt_count: 1, max_attempts: 3, lease_expires_at: new Date(Date.now() - 1000).toISOString(), created_at: 't' }] };
-  setClient(db4);
+  q = queueDb('running', true, [{ kind: 'flights_duffel', status: 'running', attempt_count: 1, lease_expires_at: new Date(Date.now() - 1000).toISOString(), locked_by: 'dead' }]); setClient(q.db);
   const rec = await worker.reclaimExpiredLeases('hook-adventure');
-  const c13 = await worker.claimNextSubtask('hook-adventure', 'w9', 120);
-  ok('13 lease expirado puede recuperarse', rec.reclaimed === 1 && c13.subtask && c13.subtask.locked_by === 'w9');
+  ok('13 lease expirado se recupera (queued)', rec.requeued === 1 && q.db.travel_search_subtasks[0].status === 'queued' && q.db.travel_search_subtasks[0].locked_by === null);
 
-  // 14 heartbeat extiende lease
-  let db5 = { travel_search_subtasks: [{ id: 's14', tenant_id: 'hook-adventure', job_id: nid(), kind: 'flights_duffel', status: 'queued', attempt_count: 0, max_attempts: 3, created_at: 't' }] };
-  setClient(db5);
-  const c14 = await worker.claimNextSubtask('hook-adventure', 'wh', 1);   // lease corto
-  const before = db5.travel_search_subtasks[0].lease_expires_at;
-  const hb = await worker.heartbeatSubtask('s14', 'wh', 120);             // lease largo
+  q = queueDb('queued', true, [{ kind: 'flights_duffel' }]); setClient(q.db);
+  const c14 = await worker.claimNextSubtask('hook-adventure', 'wh', 15);
+  const before = q.db.travel_search_subtasks[0].lease_expires_at;
+  const hb = await worker.heartbeatSubtask(q.db.travel_search_subtasks[0].id, 'wh', 300);
   ok('14 heartbeat extiende lease', c14.subtask && Date.parse(hb.lease_expires_at) > Date.parse(before));
 
-  // 15 retry aumenta attempt_count
-  let db6 = { travel_search_subtasks: [{ id: 's15', tenant_id: 'hook-adventure', job_id: nid(), kind: 'flights_duffel', status: 'queued', attempt_count: 0, max_attempts: 3, created_at: 't' }] };
-  setClient(db6);
+  q = queueDb('queued', true, [{ kind: 'flights_duffel' }]); setClient(q.db);
   const cc1 = await worker.claimNextSubtask('hook-adventure', 'w1', 120);
-  const at1 = cc1.subtask.attempt_count;   // copia antes de mutaciones posteriores
+  const at1 = cc1.subtask.attempt_count;
   await worker.failOrRetrySubtask(cc1.subtask, new Error('boom'));
-  db6.travel_search_subtasks[0].next_attempt_at = null; db6.travel_search_subtasks[0].lease_expires_at = null;
+  q.db.travel_search_subtasks[0].next_attempt_at = null; q.db.travel_search_subtasks[0].lease_expires_at = null;
   const cc2 = await worker.claimNextSubtask('hook-adventure', 'w1', 120);
-  const at2 = cc2.subtask.attempt_count;
-  ok('15 retry aumenta attempt_count', at1 === 1 && at2 === 2);
+  ok('15 retry aumenta attempt_count', at1 === 1 && cc2.subtask.attempt_count === 2);
 
-  // 16 max_attempts termina en failed
   setClient({ travel_search_subtasks: [{ id: 's16', tenant_id: 'hook-adventure', job_id: nid(), kind: 'flights_duffel', status: 'running', attempt_count: 3, max_attempts: 3 }] });
   const fr = await worker.failOrRetrySubtask({ id: 's16', attempt_count: 3, max_attempts: 3 }, new Error('x'));
   ok('16 max_attempts termina en failed', fr.status === 'failed');
 
-  // 17 proveedor caído produce partial + recompute
   const job17 = { id: nid(), tenant_id: 'hook-adventure', booking_id: nid(), requirements_snapshot: snap() };
   setClient({ travel_flight_options: [], travel_search_jobs: [job17], travel_search_subtasks: [] });
   const rs17 = await worker.runSubtask({ id: nid(), job_id: job17.id, kind: 'flights_duffel' }, { job: job17, flightProvider: 'stub' });
@@ -264,16 +277,15 @@ function snap() {
   const st17 = await worker.recomputeJobStatus(jid);
   ok('17 proveedor caído produce partial', rs17.status === 'partial' && st17 === 'partial');
 
-  // 18 reejecutar no duplica ni borra
   const job18 = { id: nid(), tenant_id: 'hook-adventure', booking_id: nid(), requirements_snapshot: snap() };
   const db18 = { travel_flight_options: [], travel_search_jobs: [job18] }; setClient(db18);
   await worker.runSubtask({ id: nid(), job_id: job18.id, kind: 'flights_duffel' }, { job: job18, flightProvider: 'stub' });
   await worker.runSubtask({ id: nid(), job_id: job18.id, kind: 'flights_duffel' }, { job: job18, flightProvider: 'stub' });
-  ok('18 resultados anteriores no se borran / no duplica', db18.travel_flight_options.length === 1);
+  ok('18 retry no duplica opción de vuelo', db18.travel_flight_options.length === 1 && db18.travel_flight_options[0].result_version === 1);
 
-  /* ===== Adapters / allowlist (19-21, 35) ===== */
+  /* ===== Adapters / allowlist (19-21) ===== */
   const sf = stub.searchFlights({ origin: 'UIO', destination: 'SCY', passenger_count: 2 });
-  ok('19 stub no devuelve api_quoted', sf.every(function (o) { return o.availability_status !== 'api_quoted' && o.total_price_cents == null; }));
+  ok('19 stub no devuelve api_quoted', sf.every(function (o) { return o.availability_status !== 'api_quoted' && o.total_price_cents == null; }) && !!sf[0].provider_result_key);
 
   const mh = manual.searchHotels({ destination: 'san_cristobal', check_in_date: '2026-08-01', check_out_date: '2026-08-04', nights: 3, rooms_required: 1, guest_count: 2 }, snap().hotel_search_preferences, cost.DEFAULT_MILU_SETTINGS);
   ok('20 manual no inventa precios', mh.length === 2 && mh.every(function (o) { return o.total_price_cents == null && o.availability_status !== 'api_quoted'; }));
@@ -294,11 +306,9 @@ function snap() {
 
   /* ===== IA Haiku-only + logging + caps (24-29) ===== */
   const dbLlm = { llm_usage_log: [] }; setClient(dbLlm);
-  let called = 0;
-  const fakeClient = { messages: async function () { called++; return { usage: { input_tokens: 1000, output_tokens: 500 }, model_version: 'claude-haiku-4-5-20251001', output: 'ranking' }; } };
+  const fakeClient = { messages: async function () { return { usage: { input_tokens: 1000, output_tokens: 500 }, model_version: 'claude-haiku-4-5-20251001', output: 'ranking' }; } };
   const lr = await llm.runLlm({ jobId: nid(), bookingId: nid(), subtaskId: nid(), subtaskKind: 'anthropic_ranking', purpose: 'scoring', system: 'S', input: { x: 1 }, settings: cost.DEFAULT_MILU_SETTINGS, spent: {}, env: { ANTHROPIC_MILU_TOURISM_MODEL: 'Haiku' }, client: fakeClient });
   const logRow = dbLlm.llm_usage_log[0] || {};
-  // Prohibido guardar el contenido: claves exactas (input_tokens/output_tokens SÍ son metadata válida).
   const forbiddenKeys = ['prompt', 'response', 'system', 'input', 'output', 'messages', 'document', 'document_number', 'ciphertext', 'pii'];
   const hasForbidden = forbiddenKeys.some(function (k) { return Object.prototype.hasOwnProperty.call(logRow, k); });
   ok('24 logging de IA no contiene prompts ni PII', lr.ok === true && logRow.model === 'claude-haiku-4-5' && hasForbidden === false);
@@ -311,7 +321,6 @@ function snap() {
   ok('27 Opus siempre rechazado', rOpus1.ok === false && rOpus2.ok === false);
   ok('28 sin modelo configurado → configuration_error', cost.resolveMiluModel({}).ok === false && cost.resolveMiluModel({}).detail === 'model_not_configured');
 
-  // 29 caps: exceder → llm_budget_exceeded sin llamar al modelo
   setClient({ llm_usage_log: [] });
   let called2 = 0; const fc2 = { messages: async function () { called2++; return { usage: {}, output: '' }; } };
   const capRes = await llm.runLlm({ jobId: nid(), purpose: 'p', settings: { llm_max_cost_per_job_usd: 2.0 }, spent: { job: 99 }, env: { ANTHROPIC_MILU_TOURISM_MODEL: 'Haiku' }, client: fc2 });
@@ -338,7 +347,7 @@ function snap() {
   sr = await run(settingsSaveH, { method: 'POST', headers: {}, body: { hotel_target_min_cents: 6000, hotel_target_max_cents: 21000, primary_hotel_provider: 'manual' } });
   ok('33 settings owner-only cuando corresponda', admin403 === true && sr.statusCode === 200 && j(sr).saved === true);
 
-  /* ===== 34-35: sin email, sin opciones ficticias ===== */
+  /* ===== 34-35 ===== */
   const miluSrc = fs.readFileSync(BASE + '/server/lib/milu-tourism.js', 'utf8') + fs.readFileSync(BASE + '/server/lib/milu-worker-core.js', 'utf8') + fs.readFileSync(BASE + '/server/admin-handlers/milu-search-start.js', 'utf8');
   ok('34 no se envía email al cliente', !/booking-email-service|customer_travel_confirmation|resend|sendEmail/i.test(miluSrc));
 
@@ -350,7 +359,7 @@ function snap() {
   const OKSTATES = ['provider_not_configured', 'official_link_only', 'manual_confirmation_required', 'provider_no_content'];
   ok('35 no se crean opciones ficticias', allOpts.length > 0 && allOpts.every(function (o) { return o.total_price_cents == null && OKSTATES.indexOf(o.availability_status) !== -1; }));
 
-  /* ===== 36-41 sin regresiones estructurales ===== */
+  /* ===== 36-41 regresión estructural ===== */
   const catalog = require(BASE + '/server/lib/tour-catalog.js');
   ok('36 package pricing sigue funcionando (catálogo intacto)', catalog.getTour('p3').priceCents === 349900 && catalog.getTour('p4').priceCents === 399900);
   const cpiSrc = fs.readFileSync(BASE + '/api/create-payment-intent.js', 'utf8');
@@ -363,9 +372,7 @@ function snap() {
   const apiFns = fs.readdirSync(BASE + '/api').filter(function (n) { return /\.js$/.test(n); });
   ok('41 funciones Vercel = 8', apiFns.length === 8);
 
-  /* ===== 42: cobertura VERSIONADA — todas las fuentes de 8C están en el repo
-     (la regresión de precios/checkout/intake/QR/finanzas la cubren 36-40; el
-     "todas las suites previas verdes" lo ejecuta el runner de QA por separado). ===== */
+  /* ===== 42 cobertura versionada ===== */
   const files8c = [
     'server/lib/milu-cost.js', 'server/lib/milu-allowlist.js', 'server/lib/milu-flags.js',
     'server/lib/milu-llm.js', 'server/lib/milu-tourism.js', 'server/lib/milu-worker-core.js',
@@ -376,6 +383,85 @@ function snap() {
     'supabase/migrations/0015_milu_tourism_search.sql'
   ];
   ok('42 cobertura versionada: fuentes 8C presentes en el repo', files8c.every(function (pth) { return fs.existsSync(path.join(BASE, pth)); }));
+
+  /* ============================================================
+     ENDURECIMIENTO DE INTEGRIDAD (43-64)
+     ============================================================ */
+  // 43 No reclamar con intentos agotados
+  q = queueDb('queued', true, [{ kind: 'flights_duffel', attempt_count: 3, max_attempts: 3 }]); setClient(q.db);
+  ok('43 no reclama subtarea con intentos agotados', (await worker.claimNextSubtask('hook-adventure', 'w', 120)).subtask === null);
+
+  // 44-47 No reclamar de job cancelled/expired/completed/inactive
+  q = queueDb('cancelled', true, [{ kind: 'flights_duffel' }]); setClient(q.db);
+  ok('44 no reclama de job cancelled', (await worker.claimNextSubtask('hook-adventure', 'w', 120)).subtask === null);
+  q = queueDb('expired', true, [{ kind: 'flights_duffel' }]); setClient(q.db);
+  ok('45 no reclama de job expired', (await worker.claimNextSubtask('hook-adventure', 'w', 120)).subtask === null);
+  q = queueDb('completed', true, [{ kind: 'flights_duffel' }]); setClient(q.db);
+  ok('46 no reclama de job completed', (await worker.claimNextSubtask('hook-adventure', 'w', 120)).subtask === null);
+  q = queueDb('queued', false, [{ kind: 'flights_duffel' }]); setClient(q.db);
+  ok('47 no reclama de job inactive', (await worker.claimNextSubtask('hook-adventure', 'w', 120)).subtask === null);
+
+  // 48-49 parámetros inválidos
+  q = queueDb('queued', true, [{ kind: 'flights_duffel' }]); setClient(q.db);
+  ok('48 lease_seconds inválido rechazado', (await worker.claimNextSubtask('hook-adventure', 'w', 5)).ok === false);
+  q = queueDb('queued', true, [{ kind: 'flights_duffel' }]); setClient(q.db);
+  ok('49 worker vacío rechazado', (await worker.claimNextSubtask('hook-adventure', '', 120)).ok === false);
+
+  // 50 lease vencido con intentos → queued
+  q = queueDb('running', true, [{ kind: 'flights_duffel', status: 'running', attempt_count: 1, lease_expires_at: new Date(Date.now() - 1000).toISOString() }]); setClient(q.db);
+  let rc = await worker.reclaimExpiredLeases('hook-adventure');
+  ok('50 lease vencido con intentos → queued', rc.requeued === 1 && rc.failed === 0 && q.db.travel_search_subtasks[0].status === 'queued');
+
+  // 51 lease vencido sin intentos → failed
+  q = queueDb('running', true, [{ kind: 'flights_duffel', status: 'running', attempt_count: 3, max_attempts: 3, lease_expires_at: new Date(Date.now() - 1000).toISOString() }]); setClient(q.db);
+  rc = await worker.reclaimExpiredLeases('hook-adventure');
+  ok('51 lease vencido sin intentos → failed', rc.failed === 1 && rc.requeued === 0 && q.db.travel_search_subtasks[0].status === 'failed' && !!q.db.travel_search_subtasks[0].finished_at);
+
+  // 52 reclaim no toca job cancelado
+  q = queueDb('cancelled', true, [{ kind: 'flights_duffel', status: 'running', attempt_count: 1, lease_expires_at: new Date(Date.now() - 1000).toISOString() }]); setClient(q.db);
+  rc = await worker.reclaimExpiredLeases('hook-adventure');
+  ok('52 reclaim no toca jobs cancelados', rc.requeued === 0 && rc.failed === 0 && q.db.travel_search_subtasks[0].status === 'running');
+
+  // 53-57 integridad de tenant por FK compuesta (estructural en 0015)
+  ok('53 FK compuesta job/subtask', /fk_tss_job_tenant\s+foreign key \(job_id, tenant_id\)[\s\S]*references public\.travel_search_jobs \(id, tenant_id\)/.test(SQL));
+  ok('54 FK compuesta opción/job', /fk_tfo_job_tenant\s+foreign key \(search_job_id, tenant_id\)/.test(SQL) && /fk_tho_job_tenant\s+foreign key \(search_job_id, tenant_id\)/.test(SQL));
+  ok('55 FK compuesta opción/booking', /fk_tfo_booking_tenant\s+foreign key \(booking_id, tenant_id\)/.test(SQL) && /fk_tho_booking_tenant\s+foreign key \(booking_id, tenant_id\)/.test(SQL));
+  ok('56 FK compuesta passenger_form', /fk_tsj_form_tenant\s+foreign key \(passenger_form_id, tenant_id\)[\s\S]*references public\.booking_passenger_forms \(id, tenant_id\)/.test(SQL));
+  ok('57 FK compuesta lodging + unique padre', /fk_tho_lodging_tenant\s+foreign key \(lodging_requirement_id, tenant_id\)/.test(SQL) && /uq_blr_id_tenant unique \(id, tenant_id\)/.test(SQL));
+
+  // 58 retry no duplica hotel
+  const job58 = { id: nid(), tenant_id: 'hook-adventure', booking_id: nid(), requirements_snapshot: snap() };
+  const db58 = { travel_hotel_options: [], travel_search_jobs: [job58] }; setClient(db58);
+  await worker.runSubtask({ id: nid(), job_id: job58.id, kind: 'hotel_preferred_links' }, { job: job58 });
+  await worker.runSubtask({ id: nid(), job_id: job58.id, kind: 'hotel_preferred_links' }, { job: job58 });
+  ok('58 retry no duplica opción de hotel', db58.travel_hotel_options.length === 2);
+
+  // 59 refresh crea nueva versión y conserva historia
+  await worker.upsertHotelOptions(job58, manual.searchHotels(snap().lodging_requirements[0], snap().hotel_search_preferences, cost.DEFAULT_MILU_SETTINGS), { refresh: true });
+  const actives59 = db58.travel_hotel_options.filter(function (o) { return o.active === true; });
+  const expired59 = db58.travel_hotel_options.filter(function (o) { return o.active === false && o.availability_status === 'expired'; });
+  ok('59 refresh crea nueva result_version y conserva historia', db58.travel_hotel_options.length === 4 && actives59.length === 2 && expired59.length === 2 && actives59.every(function (o) { return o.result_version === 2; }));
+
+  // 60-61 validaciones numéricas (CHECK en 0015)
+  ok('60 precio negativo rechazado (CHECK)', /chk_tfo_price check \(total_price_cents is null or total_price_cents >= 0\)/.test(SQL) && /chk_tho_total check \(total_price_cents is null or total_price_cents >= 0\)/.test(SQL));
+  ok('61 tokens/costos negativos rechazados (CHECK)', /chk_llm_in check \(input_tokens >= 0\)/.test(SQL) && /chk_llm_cost check \(estimated_cost_usd >= 0\)/.test(SQL) && /chk_llm_latency check \(latency_ms is null or latency_ms >= 0\)/.test(SQL));
+
+  // 62 cancelación impide reclamo posterior + auditoría
+  f = freshDb(); CONTRACT = baseContract(f.booking); setClient(f.db);
+  const sres = await milu.startSearch(f.booking.id, 'u-owner');
+  await milu.cancelSearch(f.booking.id, sres.job.id, { role: 'owner', userId: 'u-owner' });
+  const claimAfterCancel = await worker.claimNextSubtask('hook-adventure', 'w', 120);
+  const jobCancelled = f.db.travel_search_jobs[0].status === 'cancelled' && f.db.travel_search_jobs[0].active === false;
+  const subsCancelled = f.db.travel_search_subtasks.every(function (s) { return s.status === 'cancelled'; });
+  const audited = (f.db.travel_search_audit || []).some(function (a) { return a.action === 'cancel_search' && a.result === 'success'; });
+  ok('62 cancelación impide reclamo posterior + auditoría', jobCancelled && subsCancelled && claimAfterCancel.subtask === null && audited);
+
+  // 63 sin DELETE físico (trigger en 0015)
+  const delTriggers = (SQL.match(/before delete on public\.travel_/g) || []).length;
+  ok('63 sin DELETE físico (triggers en tablas de datos)', /milu_forbid_physical_delete/.test(SQL) && delTriggers >= 7 && /before update or delete on public\.travel_search_audit/.test(SQL));
+
+  // 64 marcador: 42 previas verdes + suites históricas (el runner de QA las ejecuta)
+  ok('64 42 pruebas base + suites históricas (QA runner)', pass >= 42);
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);

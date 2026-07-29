@@ -18,6 +18,7 @@ function searchFlights(req) {
   req = req || {};
   return [{
     provider: PROVIDER,
+    provider_result_key: 'stub:flight:' + (req.origin || '') + ':' + (req.destination || ''),
     airline: null,
     source_reference: null,
     origin: req.origin || null,
@@ -48,6 +49,7 @@ function searchHotels(lodging, prefs, settings) {
   lodging = lodging || {};
   return [{
     provider: PROVIDER,
+    provider_result_key: 'stub:hotel:' + (lodging.destination || ''),
     destination: lodging.destination || null,
     hotel_name: '(proveedor automático no conectado)',
     is_preferred: false,

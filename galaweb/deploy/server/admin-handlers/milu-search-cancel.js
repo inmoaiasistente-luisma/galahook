@@ -24,8 +24,8 @@ module.exports = async function handler(req, res) {
   if (!isUuid(body.booking_id) || !isUuid(body.job_id)) return sendError(res, 400, 'INVALID_BODY', 'Invalid ids');
 
   try {
-    await milu.cancelSearch(body.booking_id, body.job_id);
-    return sendJson(res, 200, { cancelled: true });
+    const r = await milu.cancelSearch(body.booking_id, body.job_id, { role: session.role, userId: session.user_id });
+    return sendJson(res, 200, { cancelled: true, subtasks_cancelled: r.subtasks_cancelled });
   } catch (err) {
     logServer('milu-search-cancel', err && err.message);
     return sendError(res, 500, 'INTERNAL_ERROR', 'Server error');
