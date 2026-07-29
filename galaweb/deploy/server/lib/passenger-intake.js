@@ -182,7 +182,7 @@ async function buildTravelRequirements(bookingId) {
     passengers = pq.data || [];
 
     const lq = await supabase.from('booking_lodging_requirements')
-      .select('destination,lodging_required,check_in_date,check_out_date,nights,guest_count,rooms_required,room_preferences,approximate_budget_cents,accessibility_notes,status,active')
+      .select('id,destination,lodging_required,check_in_date,check_out_date,nights,guest_count,rooms_required,room_preferences,approximate_budget_cents,accessibility_notes,status,active')
       .eq('passenger_form_id', form.id).eq('active', true)
       .neq('status', 'not_required')
       .order('destination', { ascending: true });
@@ -227,6 +227,7 @@ async function buildTravelRequirements(bookingId) {
     }),
     lodging_requirements: lodging.map(function (l) {
       return {
+        id: l.id,                                     // liga cada opción de hotel a su requerimiento
         destination: l.destination,
         lodging_required: l.lodging_required,
         check_in_date: l.check_in_date,

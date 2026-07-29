@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "test": "node tests/milu-tests.js",
+    "test:milu": "node tests/milu-tests.js"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
     "qrcode": "^1.5.4",

@@ -1756,6 +1756,60 @@ function panelPackagePricing(role){
   return wrap;
 }
 
+/* ============ ETAPA 8C — MILU TURISMO ============ */
+function panelMiluTourism(role){
+  const p=el('<div class="bk-screen"></div>');
+  p.appendChild(el('<p class="bk-sub-hint">'+(ES
+    ?'Milu Turismo busca automáticamente vuelos y hoteles reales y prepara opciones SOLO para owner/admin. La compra y la reserva son siempre internas. Modelo de IA: Haiku (v1).'
+    :'Milu Tourism automatically searches real flights and hotels and prepares options for owner/admin ONLY. Buying and booking are always internal. AI model: Haiku (v1).')+'</p>'));
+
+  const state=el('<div class="fin-sec"><h4>'+(ES?'Estado del módulo':'Module status')+'</h4></div>');
+  p.appendChild(state);
+  const box=el('<div style="margin:8px 0 14px"></div>'); p.appendChild(box);
+
+  // Configuración (rango objetivo + límites de costo + proveedor). Límites: solo owner.
+  const cfg=el('<div class="fin-sec"><h4>'+(ES?'Configuración':'Settings')+'</h4></div>');
+  const rangeMin=el('<div class="ed-field"><label>'+(ES?'Rango objetivo mín (USD pp/noche)':'Target min (USD pp/night)')+'</label><input type="number" min="1" style="max-width:160px"></div>');
+  const rangeMax=el('<div class="ed-field"><label>'+(ES?'Rango objetivo máx (USD pp/noche)':'Target max (USD pp/night)')+'</label><input type="number" min="1" style="max-width:160px"></div>');
+  const provSel=el('<div class="ed-field"><label>'+(ES?'Proveedor hotelero':'Hotel provider')+'</label><select><option value="manual">manual</option><option value="duffel_stays">duffel_stays</option><option value="hotelbeds">hotelbeds</option><option value="expedia_rapid">expedia_rapid</option></select></div>');
+  const rr=el('<div class="ed-row"></div>'); rr.appendChild(rangeMin); rr.appendChild(rangeMax); cfg.appendChild(rr); cfg.appendChild(provSel);
+  const saveBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">'+(ES?'Guardar configuración':'Save settings')+'</button>');
+  cfg.appendChild(saveBtn); p.appendChild(cfg);
+
+  function providerLabel(s){ return s==='live'?(ES?'conectado (live)':'connected (live)'):(s==='sandbox'?'sandbox':(ES?'no conectado':'not connected')); }
+  function render(d){
+    box.innerHTML='';
+    const m=(d&&d.model)||{}; const pr=(d&&d.providers)||{};
+    box.appendChild(el('<div><b>'+(ES?'Modelo de IA':'AI model')+':</b> '+escapeHtml((m.label||'Haiku'))+' '+(m.configured?'':'<span class="notif-badge notif-failed">'+(ES?'no configurado':'not configured')+'</span>')+'</div>'));
+    box.appendChild(el('<div class="bk-sub-hint">'+(ES?'Proveedor de vuelos':'Flights provider')+': '+escapeHtml(providerLabel(pr.flights||'not_connected'))+' · '+(ES?'Proveedor hotelero':'Hotel provider')+': '+escapeHtml(providerLabel(pr.hotels||'not_connected'))+'</div>'));
+    // Aviso claro: infraestructura lista, proveedor automático no activo.
+    if((pr.flights||'not_connected')!=='live' && (pr.flights||'not_connected')!=='sandbox'){
+      box.appendChild(el('<p class="bk-sub-hint" style="margin-top:8px"><b>'+(ES?'Proveedor automático todavía no conectado.':'Automatic provider is not connected yet.')+'</b> '+(ES?'La infraestructura está preparada; la búsqueda automática se habilitará en la siguiente fase.':'The infrastructure is ready; automatic search will be enabled in the next phase.')+'</p>'));
+    }
+    const s=(d&&d.settings)||{};
+    rangeMin.querySelector('input').value=Math.round((s.hotel_target_min_cents||5000)/100);
+    rangeMax.querySelector('input').value=Math.round((s.hotel_target_max_cents||20000)/100);
+    provSel.querySelector('select').value=s.primary_hotel_provider||'manual';
+    const canEdit=!!(d&&d.canEditLimits);
+    [rangeMin,rangeMax,provSel].forEach(function(f){ f.querySelector('input,select').disabled=!canEdit; });
+    saveBtn.style.display=canEdit?'':'none';
+  }
+  function load(){ apiGet('/api/admin-milu-settings').then(function(r){ if(r.status===401){ onUnauthorized(); return; } if(r.ok&&r.data) render(r.data); else box.innerHTML='<p class="bk-sub-hint">'+(ES?'No se pudo cargar.':'Could not load.')+'</p>'; }); }
+  saveBtn.addEventListener('click',function(){
+    const body={ hotel_target_min_cents:(parseInt(rangeMin.querySelector('input').value||'50',10)||50)*100,
+      hotel_target_max_cents:(parseInt(rangeMax.querySelector('input').value||'200',10)||200)*100,
+      primary_hotel_provider:provSel.querySelector('select').value };
+    saveBtn.disabled=true;
+    apiPost('/api/admin-milu-settings-save',body).then(function(r){ saveBtn.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.ok&&r.data&&r.data.saved){ adminToast(ES?'Configuración guardada':'Settings saved'); load(); }
+      else adminToast(ES?'Revisa los campos.':'Check the fields.');
+    }).catch(function(){ saveBtn.disabled=false; });
+  });
+  load();
+  return p;
+}
+
 function panelsFor(role){
   if(role==='staff'){
     return [
@@ -1770,6 +1824,7 @@ function panelsFor(role){
     {id:'notes', label:(ES?'Notas de paquetes':'Package notes'), build:function(){ return panelPackageNotes(role); }},
     {id:'passengers', label:(ES?'Pasajeros y logística':'Passengers & logistics'), build:function(){ return panelPassengers(role); }},
     {id:'hotels', label:(ES?'Hoteles preferidos':'Preferred hotels'), build:function(){ return panelHotelPreferences(role); }},
+    {id:'milu', label:(ES?'Milu Turismo':'Milu Tourism'), build:function(){ return panelMiluTourism(role); }},
     {id:'notifications', label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }}
   ];
   // Datos de prueba: SOLO owner (no se genera en el DOM para admin ni staff).
