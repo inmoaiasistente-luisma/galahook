@@ -424,12 +424,12 @@ async function rerunResearch(bookingId, jobId, actor) {
   }
 
   const newCount = (job.rerun_count || 0) + 1;
-  const nextStatus = (job.status === 'completed' || job.status === 'partial') ? 'running' : job.status;
+  // El job queda en 'queued' para que el runner tome la siguiente subtarea (#4).
   // Rerun LIMPIO (#6): resetea los contadores de investigación → presupuesto fresco
   // ($0.30, 6 búsquedas, 2 fetches) para la nueva pasada; el historial de costo
   // vive en llm_usage_log (append-only). Evita reusar contadores de una corrida previa.
   await supabase.from('travel_search_jobs').update({
-    rerun_count: newCount, status: nextStatus, active: true,
+    rerun_count: newCount, status: 'queued', active: true,
     web_search_count: 0, web_fetch_count: 0, research_cost_usd: 0
   }).eq('id', jobId);
 
@@ -443,7 +443,12 @@ async function rerunResearch(bookingId, jobId, actor) {
     });
   } catch (e) { /* la auditoría nunca rompe el rerun */ }
 
-  return { rerun: true, rerun_count: newCount, requeued: requeued, remaining: Math.max(0, MAX_RERUNS_PER_JOB - newCount) };
+  // Devuelve el estado reseteado para que la UI lo muestre de inmediato (#5).
+  return {
+    rerun: true, rerun_count: newCount, requeued: requeued,
+    remaining: Math.max(0, MAX_RERUNS_PER_JOB - newCount),
+    status: 'queued', web_search_count: 0, web_fetch_count: 0, research_cost_usd: 0
+  };
 }
 
 /* ---------------- web research: revisión humana (aprobar / rechazar) ---------------- */

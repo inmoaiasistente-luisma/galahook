@@ -925,13 +925,16 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   ok('139 start: sin Stripe ni email al cliente',
     !/booking-email-service|customer_travel_confirmation|\bresend\b|sendEmail|require\(['"][^'"]*stripe|stripe\.(?:paymentIntents|charges|checkout)|PaymentIntent|create-payment-intent/i.test(startSrc));
 
-  // 140 admin.js: botón Start visible + cableado; Load/Search again requieren job
+  // 140 admin.js: Start + Search Again cableados; Search Again visible solo en estado terminal
   const adminSrc = fs.readFileSync(BASE + '/assets/js/admin.js', 'utf8');
-  ok('140 admin.js: Start visible + gating de botones',
+  ok('140 admin.js: Start + Search Again visible por estado del job',
     /Start travel research|Iniciar investigación de viaje/.test(adminSrc) &&
     /admin-milu-search-start/.test(adminSrc) &&
-    /loadBtn\.disabled=!currentJobId/.test(adminSrc) &&
-    /rerunBtn\.disabled=!currentJobId/.test(adminSrc));
+    /admin-milu-research-rerun/.test(adminSrc) &&
+    /Search Again|Buscar nuevamente/.test(adminSrc) &&
+    /function refreshRerunVisibility/.test(adminSrc) &&
+    /TERMINAL_JOB\s*=\s*\['partial'\s*,\s*'failed'\s*,\s*'completed'\]/.test(adminSrc) &&
+    /function refreshJobState/.test(adminSrc));
 
   // ── Itinerario: programa insular vs viaje completo continental (8D) ──
 
@@ -1184,6 +1187,43 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   const jobRR = dbRR.travel_search_jobs[0];
   ok('170 rerun limpio: contadores de investigación reseteados a 0 (no reusa la corrida previa)',
     rrRes.rerun === true && jobRR.web_search_count === 0 && jobRR.web_fetch_count === 0 && jobRR.research_cost_usd === 0);
+
+  // ── Search Again (rerun) end-to-end ──
+
+  // 171 (#7) partial → rerun → job queued + contadores 0 + rerun+1 + 2 subtareas
+  // re-encoladas + el runner encuentra la SIGUIENTE subtarea.
+  const jRQ = nid();
+  const dbRQ = {
+    travel_search_jobs: [{ id: jRQ, tenant_id: 'hook-adventure', booking_id: 'b-rq', status: 'partial', active: true, rerun_count: 0, web_search_count: 3, web_fetch_count: 3, research_cost_usd: 0.0798 }],
+    travel_search_subtasks: [
+      { id: nid(), tenant_id: 'hook-adventure', job_id: jRQ, kind: 'web_research_flights', status: 'partial', attempt_count: 1, max_attempts: 3, created_at: '2026-08-01T00:00:01Z' },
+      { id: nid(), tenant_id: 'hook-adventure', job_id: jRQ, kind: 'web_research_lodging', status: 'partial', attempt_count: 1, max_attempts: 3, created_at: '2026-08-01T00:00:02Z' }
+    ],
+    milu_settings: [{ tenant_id: 'hook-adventure', web_research_enabled: true }], travel_search_audit: []
+  };
+  process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED = 'true'; setClient(dbRQ);
+  const rq1 = await milu.rerunResearch('b-rq', jRQ, { role: 'owner', userId: 'u' });
+  const jobRQ = dbRQ.travel_search_jobs[0];
+  const requeuedQ = dbRQ.travel_search_subtasks.filter(function (s) { return /web_research/.test(s.kind) && s.status === 'queued'; }).length;
+  const claimRQ = await worker.claimNextSubtask('hook-adventure', 'w', 120);
+  ok('171 rerun: job queued + contadores 0 + rerun+1 + 2 subtareas re-encoladas + claim encuentra siguiente',
+    rq1.rerun === true && rq1.status === 'queued' && jobRQ.status === 'queued' &&
+    jobRQ.web_search_count === 0 && jobRQ.web_fetch_count === 0 && jobRQ.research_cost_usd === 0 &&
+    jobRQ.rerun_count === 1 && requeuedQ === 2 &&
+    !!claimRQ.subtask && /web_research/.test(claimRQ.subtask.kind));
+
+  // 172 (#6) doble clic no duplica subtareas (idempotente): sigue habiendo 2 web_research
+  const rq2 = await milu.rerunResearch('b-rq', jRQ, { role: 'owner', userId: 'u' });
+  const wrCount172 = dbRQ.travel_search_subtasks.filter(function (s) { return /web_research/.test(s.kind); }).length;
+  ok('172 rerun doble: no duplica subtareas (2) y rerun_count sube a 2',
+    rq2.rerun === true && wrCount172 === 2 && jobRQ.rerun_count === 2);
+  process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED = prevWrEnv;
+
+  // 173 handler rerun: staff 403
+  CURRENT_ROLE = 'staff';
+  const rerunStaff = await run(rerunH, { method: 'POST', headers: {}, body: { booking_id: nid(), job_id: nid() } });
+  CURRENT_ROLE = 'owner';
+  ok('173 rerun handler: staff 403', rerunStaff.statusCode === 403);
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);

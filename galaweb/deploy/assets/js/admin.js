@@ -1796,10 +1796,12 @@ function panelMiluTourism(role){
   // Resumen del itinerario (se calcula solo al elegir tipo/ciudad; no requiere botón).
   const itInfo=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); rsec.appendChild(itInfo);
 
-  // Acción principal.
+  // Acción principal + "Search Again" (VISIBLE solo con un job en partial/failed/completed).
   const startBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">'+(ES?'Iniciar investigación de viaje':'Start travel research')+'</button>');
-  rsec.appendChild(startBtn);
+  const rerunBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin:6px 0 0 8px;display:none">'+(ES?'Buscar nuevamente':'Search Again')+'</button>');
+  rsec.appendChild(startBtn); rsec.appendChild(rerunBtn);
   const startMsg=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); rsec.appendChild(startMsg);
+  const jobLine=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); rsec.appendChild(jobLine);   // estado del job (status/rerun/búsquedas/fetches/costo)
   const rInfo=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); const rTable=el('<div style="margin:8px 0"></div>');
   rsec.appendChild(rInfo); rsec.appendChild(rTable);
 
@@ -1811,22 +1813,44 @@ function panelMiluTourism(role){
   const advRow=el('<div class="ed-row" style="margin-top:8px"></div>'); advRow.appendChild(pnSel); advRow.appendChild(gsInput); adv.appendChild(advRow);
   const previewBtn=el('<button class="btn btn-sm" type="button" style="margin-top:6px">'+(ES?'Recalcular itinerario':'Recompute itinerary')+'</button>');
   const loadBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Cargar hallazgos':'Load findings')+'</button>');
-  const rerunBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Buscar nuevamente':'Search again')+'</button>');
-  adv.appendChild(previewBtn); adv.appendChild(loadBtn); adv.appendChild(rerunBtn);
+  adv.appendChild(previewBtn); adv.appendChild(loadBtn);
   adv.appendChild(cfg);   // configuración técnica (rango objetivo, proveedor, web research)
   rsec.appendChild(adv);
 
   p.appendChild(rsec);
 
-  var currentJobId=null, currentBooking=null;
+  var currentJobId=null, currentBooking=null, currentJobStatus=null;
+  const TERMINAL_JOB=['partial','failed','completed'];   // estados en los que se puede "Buscar nuevamente"
   const bkI=bkInput.querySelector('input');
   // UUID válido = suficiente para iniciar (no exige una reserva "cargada").
   const UUID_RE=/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
   function validUuid(){ return UUID_RE.test((bkI.value||'').trim()); }
-  // Start/Preview: con UUID válido. Load findings / Search again: solo con un job existente.
-  function refreshButtons(){ const uok=validUuid(); startBtn.disabled=!uok; previewBtn.disabled=!uok; loadBtn.disabled=!currentJobId; rerunBtn.disabled=!currentJobId; }
-  function setJob(id){ currentJobId=id||null; refreshButtons(); }
-  bkI.addEventListener('input',function(){ currentBooking=(bkI.value||'').trim()||null; currentJobId=null; startMsg.textContent=''; refreshButtons(); });
+  // Search Again visible SOLO con job en partial/failed/completed (owner/admin ya autenticado).
+  function refreshRerunVisibility(){ const show=!!currentJobId && TERMINAL_JOB.indexOf(currentJobStatus)!==-1; rerunBtn.style.display=show?'':'none'; rerunBtn.disabled=!show; }
+  // Start/Preview: con UUID válido. Load findings: con un job existente.
+  function refreshButtons(){ const uok=validUuid(); startBtn.disabled=!uok; previewBtn.disabled=!uok; loadBtn.disabled=!currentJobId; refreshRerunVisibility(); }
+  function setJob(id,status){ currentJobId=id||null; if(status!==undefined) currentJobStatus=status||null; refreshButtons(); }
+  function renderJobLine(wr){
+    if(!currentJobId){ jobLine.innerHTML=''; return; }
+    wr=wr||{};
+    jobLine.innerHTML='<b>Job</b> '+escapeHtml(String(currentJobId).slice(0,8))+' · <b>'+(ES?'estado':'status')+'</b> '+escapeHtml(currentJobStatus||'?')
+      +' · '+(ES?'búsquedas':'searches')+' '+(wr.searches_used!=null?wr.searches_used:0)+'/'+(wr.searches_max!=null?wr.searches_max:6)
+      +' · fetches '+(wr.fetches_used!=null?wr.fetches_used:0)+'/'+(wr.fetches_max!=null?wr.fetches_max:2)
+      +' · '+(ES?'costo':'cost')+' $'+Number(wr.research_cost_usd||0).toFixed(4)
+      +' · rerun '+(wr.rerun_count!=null?wr.rerun_count:0);
+  }
+  // Auto-descubre el job existente de la reserva (status + contadores) → muestra Search Again.
+  function refreshJobState(){
+    const bid=(bkI.value||'').trim();
+    if(!UUID_RE.test(bid)) return;
+    apiGet('/api/admin-milu-search-status?booking_id='+encodeURIComponent(bid)).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.ok&&r.data&&r.data.job){ currentJobId=r.data.job.id; currentJobStatus=r.data.job.status||null; renderJobLine(r.data.web_research||{}); }
+      else { currentJobId=null; currentJobStatus=null; jobLine.innerHTML=''; }
+      refreshButtons();
+    }).catch(function(){});
+  }
+  bkI.addEventListener('input',function(){ currentBooking=(bkI.value||'').trim()||null; currentJobId=null; currentJobStatus=null; startMsg.textContent=''; jobLine.innerHTML=''; refreshButtons(); });
 
   // Overrides del itinerario desde los controles (solo valores elegidos).
   function itOverrides(){
@@ -1868,7 +1892,7 @@ function panelMiluTourism(role){
   previewBtn.addEventListener('click',function(){ runPreview(false); });
   // Auto-preview: el resumen aparece solo al elegir tipo/ciudad/overrides o al cambiar la reserva.
   [ptSel,ccSel,pnSel,gsInput].forEach(function(f){ f.querySelector('select,input').addEventListener('change',function(){ if(validUuid()) runPreview(true); }); });
-  bkI.addEventListener('change',function(){ if(validUuid()) runPreview(true); });
+  bkI.addEventListener('change',function(){ if(validUuid()){ runPreview(true); refreshJobState(); } });
 
   function providerLabel(s){ return s==='live'?(ES?'conectado (live)':'connected (live)'):(s==='sandbox'?'sandbox':(ES?'no conectado':'not connected')); }
   function money(cents,c){ return (cents==null)?'—':('$'+(Number(cents)/100).toFixed(2)+' '+escapeHtml(c||'USD')); }
@@ -1955,7 +1979,8 @@ function panelMiluTourism(role){
     apiGet('/api/admin-milu-search-status?booking_id='+encodeURIComponent(bid)).then(function(sr){
       if(sr.status===401){ onUnauthorized(); return; }
       if(!(sr.ok&&sr.data)){ rInfo.textContent=(ES?'No se pudo cargar el estado.':'Could not load status.'); return; }
-      const status=sr.data; setJob((status.job&&status.job.id)||null);
+      const status=sr.data; setJob((status.job&&status.job.id)||null, (status.job&&status.job.status)||null);
+      if(currentJobId) renderJobLine(status.web_research||{});
       if(!currentJobId){ rTable.innerHTML=''; rInfo.textContent=(ES?'Sin job para esta reserva. Usa «Iniciar investigación de viaje».':'No job for this booking. Use "Start travel research".'); return; }
       apiGet('/api/admin-milu-options-list?job_id='+encodeURIComponent(currentJobId)).then(function(orr){
         if(orr.status===401){ onUnauthorized(); return; }
@@ -1974,7 +1999,7 @@ function panelMiluTourism(role){
       if(r.status===401){ onUnauthorized(); return; }
       if(r.status===403){ startMsg.textContent=(ES?'No autorizado (solo owner/admin).':'Not authorized (owner/admin only).'); adminToast(ES?'No autorizado':'Not authorized'); return; }
       if(r.ok&&r.data&&r.data.job){
-        const jb=r.data.job; setJob(jb.id);
+        const jb=r.data.job; setJob(jb.id, jb.status||'queued');
         startMsg.innerHTML=(r.data.created?(ES?'Job creado':'Job created'):(ES?'Job existente':'Existing job'))+': <b>'+escapeHtml(jb.id)+'</b> · '+(ES?'estado':'status')+' <b>'+escapeHtml(jb.status||'queued')+'</b>';
         if(r.data.itinerary) renderItinerary({itinerary:r.data.itinerary});
         adminToast(r.data.created?(ES?'Búsqueda iniciada (encolada)':'Search started (queued)'):(ES?'Ya existía un job; cargado':'Job already existed; loaded'));
@@ -1998,18 +2023,35 @@ function panelMiluTourism(role){
   });
 
   loadBtn.addEventListener('click',loadResearch);
+  // ---- Buscar nuevamente (rerun limpio: contadores a 0, +1 rerun, job → queued) ----
   rerunBtn.addEventListener('click',function(){
-    if(!currentBooking||!currentJobId){ adminToast(ES?'Inicia primero una investigación':'Start a research first'); return; }
-    rerunBtn.disabled=true;
-    apiPost('/api/admin-milu-research-rerun',{booking_id:currentBooking,job_id:currentJobId}).then(function(r){ rerunBtn.disabled=false;
+    if(!currentBooking||!currentJobId){ adminToast(ES?'No hay job para re-buscar':'No job to re-search'); return; }
+    rerunBtn.disabled=true; startMsg.textContent=(ES?'Re-encolando…':'Re-queuing…');   // bloquea doble clic
+    apiPost('/api/admin-milu-research-rerun',{booking_id:currentBooking,job_id:currentJobId}).then(function(r){
       if(r.status===401){ onUnauthorized(); return; }
-      if(r.ok&&r.data&&r.data.rerun){ adminToast((ES?'Re-encolado. Reruns: ':'Re-queued. Reruns: ')+r.data.rerun_count); loadResearch(); }
-      else adminToast(ES?'No se pudo re-buscar (¿compuerta doble activa?).':'Could not re-search (double gate active?).');
-    }).catch(function(){ rerunBtn.disabled=false; });
+      if(r.status===403){ startMsg.textContent=(ES?'No autorizado.':'Not authorized.'); adminToast(ES?'No autorizado':'Not authorized'); refreshRerunVisibility(); return; }
+      if(r.ok&&r.data&&r.data.rerun){
+        // Estado reseteado, mostrado de inmediato (#5). status queued → Search Again se oculta.
+        currentJobStatus=r.data.status||'queued';
+        renderJobLine({ searches_used:r.data.web_search_count||0, searches_max:6, fetches_used:r.data.web_fetch_count||0, fetches_max:2, research_cost_usd:r.data.research_cost_usd||0, rerun_count:r.data.rerun_count });
+        startMsg.innerHTML='<span class="notif-badge notif-sent">'+(ES?'Re-encolado':'Re-queued')+'</span> '+(ES?'estado':'status')+' <b>queued</b> · rerun '+r.data.rerun_count+' · '+(ES?'contadores en 0':'counters reset to 0');
+        adminToast((ES?'Re-encolado. Reruns: ':'Re-queued. Reruns: ')+r.data.rerun_count);
+        refreshRerunVisibility();   // queued → oculta el botón
+        loadResearch();
+        return;
+      }
+      const code=(r.data&&r.data.error)||'';
+      var msg=(ES?'No se pudo re-buscar.':'Could not re-search.');
+      if(code==='WEB_RESEARCH_DISABLED') msg=(ES?'Compuerta doble inactiva (ENV + DB).':'Double gate is off (ENV + DB).');
+      else if(code==='RERUN_LIMIT_REACHED') msg=(ES?'Límite de reruns alcanzado.':'Rerun limit reached.');
+      else if(code==='JOB_NOT_FOUND') msg=(ES?'Job no encontrado.':'Job not found.');
+      else if(code==='JOB_INACTIVE') msg=(ES?'El job no está activo.':'Job is not active.');
+      startMsg.textContent=msg; adminToast(msg); refreshRerunVisibility();
+    }).catch(function(){ startMsg.textContent=(ES?'Error de red.':'Network error.'); refreshRerunVisibility(); });
   });
 
   load();
-  refreshButtons();   // Start requiere UUID; Load/Search again requieren job
+  refreshButtons();   // Start requiere UUID; Search Again solo con job en partial/failed/completed
   return p;
 }
 
