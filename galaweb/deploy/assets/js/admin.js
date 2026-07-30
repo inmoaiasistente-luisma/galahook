@@ -1786,10 +1786,22 @@ function panelMiluTourism(role){
   // Investigación web (visor de hallazgos, owner/admin).
   const rsec=el('<div class="fin-sec"><h4>'+(ES?'Investigación web (owner/admin)':'Web research (owner/admin)')+'</h4></div>');
   const bkInput=el('<div class="ed-field"><label>booking_id</label><input type="text" placeholder="uuid" style="max-width:340px"></div>');
+  const brow=el('<div class="ed-row"></div>'); brow.appendChild(bkInput); rsec.appendChild(brow);
+
+  // Controles del itinerario (owner/admin): tipo de pasajero, ciudad de conexión, noche previa, fecha manual.
+  const ptSel=el('<div class="ed-field"><label>'+(ES?'Tipo de pasajero':'Passenger type')+'</label><select><option value="">'+(ES?'(auto)':'(auto)')+'</option><option value="international">'+(ES?'internacional':'international')+'</option><option value="domestic">'+(ES?'ya en Ecuador':'already in Ecuador')+'</option></select></div>');
+  const ccSel=el('<div class="ed-field"><label>'+(ES?'Ciudad de conexión':'Connection city')+'</label><select><option value="">'+(ES?'(auto)':'(auto)')+'</option><option value="quito">Quito (UIO)</option><option value="guayaquil">Guayaquil (GYE)</option></select></div>');
+  const pnSel=el('<div class="ed-field"><label>'+(ES?'Noche continental previa':'Mainland pre-night')+'</label><select><option value="">'+(ES?'(auto por tipo)':'(auto by type)')+'</option><option value="true">'+(ES?'incluir':'include')+'</option><option value="false">'+(ES?'quitar':'remove')+'</option></select></div>');
+  const gsInput=el('<div class="ed-field"><label>'+(ES?'Inicio programa (manual)':'Program start (manual)')+'</label><input type="date" style="max-width:170px"></div>');
+  const itWrap=el('<div class="ed-row" style="margin-top:8px"></div>'); [ptSel,ccSel,pnSel,gsInput].forEach(function(f){ itWrap.appendChild(f); }); rsec.appendChild(itWrap);
+  const previewBtn=el('<button class="btn btn-sm" type="button" style="margin-top:6px">'+(ES?'Previsualizar itinerario':'Preview itinerary')+'</button>');
+  rsec.appendChild(previewBtn);
+  const itInfo=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); rsec.appendChild(itInfo);
+
   const startBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">'+(ES?'Iniciar investigación de viaje':'Start travel research')+'</button>');
   const loadBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Cargar hallazgos':'Load findings')+'</button>');
   const rerunBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Buscar nuevamente':'Search again')+'</button>');
-  const brow=el('<div class="ed-row"></div>'); brow.appendChild(bkInput); rsec.appendChild(brow); rsec.appendChild(startBtn); rsec.appendChild(loadBtn); rsec.appendChild(rerunBtn);
+  rsec.appendChild(startBtn); rsec.appendChild(loadBtn); rsec.appendChild(rerunBtn);
   const startMsg=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); rsec.appendChild(startMsg);
   const rInfo=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); const rTable=el('<div style="margin:8px 0"></div>');
   rsec.appendChild(rInfo); rsec.appendChild(rTable); p.appendChild(rsec);
@@ -1799,10 +1811,47 @@ function panelMiluTourism(role){
   // UUID válido = suficiente para iniciar (no exige una reserva "cargada").
   const UUID_RE=/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
   function validUuid(){ return UUID_RE.test((bkI.value||'').trim()); }
-  // Start: con UUID válido. Load findings / Search again: solo con un job existente.
-  function refreshButtons(){ startBtn.disabled=!validUuid(); loadBtn.disabled=!currentJobId; rerunBtn.disabled=!currentJobId; }
+  // Start/Preview: con UUID válido. Load findings / Search again: solo con un job existente.
+  function refreshButtons(){ const uok=validUuid(); startBtn.disabled=!uok; previewBtn.disabled=!uok; loadBtn.disabled=!currentJobId; rerunBtn.disabled=!currentJobId; }
   function setJob(id){ currentJobId=id||null; refreshButtons(); }
   bkI.addEventListener('input',function(){ currentBooking=(bkI.value||'').trim()||null; currentJobId=null; startMsg.textContent=''; refreshButtons(); });
+
+  // Overrides del itinerario desde los controles (solo valores elegidos).
+  function itOverrides(){
+    const o={};
+    const pt=ptSel.querySelector('select').value; if(pt) o.passenger_type=pt;
+    const cc=ccSel.querySelector('select').value; if(cc) o.connection_city=cc;
+    const pn=pnSel.querySelector('select').value; if(pn==='true') o.include_mainland_pre_night=true; else if(pn==='false') o.include_mainland_pre_night=false;
+    const gs=(gsInput.querySelector('input').value||'').trim(); if(/^\d{4}-\d{2}-\d{2}$/.test(gs)) o.galapagos_start_date=gs;
+    return o;
+  }
+  function yn(b){ return b?'✓':'—'; }
+  function renderItinerary(pv){
+    const it=(pv&&pv.itinerary)||{};
+    const comp=it.included_components||{};
+    const lines=[
+      '<b>'+(ES?'Rango total del viaje':'Full trip range')+':</b> '+escapeHtml(it.full_itinerary_start_date||'—')+' → '+escapeHtml(it.full_itinerary_end_date||'—'),
+      '<b>'+(ES?'Programa en Galápagos':'Galápagos program')+':</b> '+escapeHtml(it.galapagos_start_date||'—')+' → '+escapeHtml(it.galapagos_end_date||'—')+' ('+(it.galapagos_days||'—')+'d / '+(it.galapagos_nights==null?'—':it.galapagos_nights)+'n)',
+      '<b>'+(ES?'Tipo':'Type')+':</b> '+escapeHtml(it.passenger_type||'—')+' · <b>'+(ES?'Conexión':'Connection')+':</b> '+escapeHtml(it.connection_city||'—')+' ('+escapeHtml(it.origin_airport||'—')+')',
+      '<b>'+(ES?'Noche continental previa':'Mainland pre-night')+':</b> '+(it.requires_mainland_pre_night?(ES?'sí':'yes'):(ES?'no':'no'))+' ('+(it.mainland_pre_nights||0)+') · '+(ES?'llegada continental':'mainland arrival')+' '+escapeHtml(it.mainland_arrival_date||'—'),
+      '<b>'+(ES?'Incluye':'Includes')+':</b> '+(ES?'hotel continental':'mainland hotel')+' '+yn(comp.mainland_hotel)+' · '+(ES?'vuelo continente↔Galápagos':'mainland↔Galápagos flight')+' '+yn(comp.mainland_to_galapagos_flight)+' · '+(ES?'hoteles Galápagos':'Galápagos hotels')+' '+yn(comp.galapagos_hotels)+' · '+(ES?'lancha interislas':'inter-island boat')+' '+yn(comp.inter_island_boat)+' · '+(ES?'upgrade vuelo interislas (opc.)':'inter-island flight upgrade (opt.)')+' '+yn(comp.optional_inter_island_flight_upgrade)
+    ];
+    var html=lines.join('<br>');
+    if(pv&&pv.missing&&pv.missing.length){ html+='<br><span class="notif-badge notif-failed">'+(ES?'faltan':'missing')+': '+escapeHtml(pv.missing.join(', '))+'</span>'; }
+    if(pv&&pv.form_ready===false){ html+=' <span class="notif-badge notif-failed">'+(ES?'formulario no listo':'form not ready')+'</span>'; }
+    itInfo.innerHTML=html;
+  }
+  previewBtn.addEventListener('click',function(){
+    const bid=(bkI.value||'').trim();
+    if(!UUID_RE.test(bid)){ adminToast(ES?'Ingresa un booking_id (UUID) válido':'Enter a valid booking_id (UUID)'); return; }
+    previewBtn.disabled=true; itInfo.textContent=(ES?'Calculando…':'Computing…');
+    apiPost('/api/admin-milu-itinerary-preview',Object.assign({booking_id:bid},itOverrides())).then(function(r){ refreshButtons();
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.status===403){ itInfo.textContent=(ES?'No autorizado.':'Not authorized.'); return; }
+      if(r.ok&&r.data){ renderItinerary(r.data); }
+      else { const code=(r.data&&r.data.error)||''; itInfo.textContent=(code==='BOOKING_NOT_FOUND')?(ES?'Reserva no encontrada o de otro tenant.':'Booking not found or from another tenant.'):(ES?'No se pudo previsualizar.':'Could not preview.'); }
+    }).catch(function(){ refreshButtons(); itInfo.textContent=(ES?'Error de red.':'Network error.'); });
+  });
 
   function providerLabel(s){ return s==='live'?(ES?'conectado (live)':'connected (live)'):(s==='sandbox'?'sandbox':(ES?'no conectado':'not connected')); }
   function money(cents,c){ return (cents==null)?'—':('$'+(Number(cents)/100).toFixed(2)+' '+escapeHtml(c||'USD')); }
@@ -1903,13 +1952,14 @@ function panelMiluTourism(role){
     if(!UUID_RE.test(bid)){ adminToast(ES?'Ingresa un booking_id (UUID) válido':'Enter a valid booking_id (UUID)'); return; }
     currentBooking=bid;
     startBtn.disabled=true; startMsg.textContent=(ES?'Iniciando…':'Starting…');   // bloquea doble clic
-    apiPost('/api/admin-milu-search-start',{booking_id:bid,search_type:'complete_trip'}).then(function(r){
+    apiPost('/api/admin-milu-search-start',Object.assign({booking_id:bid,search_type:'complete_trip'},itOverrides())).then(function(r){
       refreshButtons();
       if(r.status===401){ onUnauthorized(); return; }
       if(r.status===403){ startMsg.textContent=(ES?'No autorizado (solo owner/admin).':'Not authorized (owner/admin only).'); adminToast(ES?'No autorizado':'Not authorized'); return; }
       if(r.ok&&r.data&&r.data.job){
         const jb=r.data.job; setJob(jb.id);
         startMsg.innerHTML=(r.data.created?(ES?'Job creado':'Job created'):(ES?'Job existente':'Existing job'))+': <b>'+escapeHtml(jb.id)+'</b> · '+(ES?'estado':'status')+' <b>'+escapeHtml(jb.status||'queued')+'</b>';
+        if(r.data.itinerary) renderItinerary({itinerary:r.data.itinerary});
         adminToast(r.data.created?(ES?'Búsqueda iniciada (encolada)':'Search started (queued)'):(ES?'Ya existía un job; cargado':'Job already existed; loaded'));
         loadResearch();
         return;
@@ -1920,6 +1970,11 @@ function panelMiluTourism(role){
       else if(code==='FORM_NOT_READY') msg=(ES?'El formulario de pasajeros no está listo para esta reserva.':'Passenger form is not ready for this booking.');
       else if(code==='CONNECTION_TBD_UNRESOLVED') msg=(ES?'Resuelve primero la ciudad de conexión.':'Resolve the connection city first.');
       else if(code==='DESTINATION_DATES_MISSING') msg=(ES?'Faltan las fechas de destino.':'Destination dates are missing.');
+      else if(code==='PASSENGER_TYPE_REQUIRED') msg=(ES?'Elige el tipo de pasajero.':'Choose the passenger type.');
+      else if(code==='CONNECTION_CITY_REQUIRED') msg=(ES?'Elige la ciudad de conexión (pasajero internacional).':'Choose the connection city (international passenger).');
+      else if(code==='ORIGIN_REQUIRED') msg=(ES?'Falta la ciudad/aeropuerto de origen.':'Origin city/airport is required.');
+      else if(code==='GALAPAGOS_START_REQUIRED') msg=(ES?'Falta la fecha de inicio del programa.':'Program start date is required.');
+      else if(code==='PACKAGE_DURATION_REQUIRED') msg=(ES?'Falta la duración del paquete.':'Package duration is required.');
       else if(r.status===400||code==='INVALID_BOOKING') msg=(ES?'booking_id inválido.':'Invalid booking_id.');
       startMsg.textContent=msg; adminToast(msg);
     }).catch(function(){ refreshButtons(); startMsg.textContent=(ES?'Error de red.':'Network error.'); });

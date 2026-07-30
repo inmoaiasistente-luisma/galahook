@@ -119,14 +119,19 @@ function hotelFallback(lodging) {
 
 /* ---------------- entradas para el modelo (sin PII) ---------------- */
 function flightInput(snapshot) {
-  const city = snapshot && snapshot.preferred_connection_city;
-  const origin = city === 'quito' ? 'UIO' : (city === 'guayaquil' ? 'GYE' : 'UIO/GYE');
+  const it = (snapshot && snapshot.itinerary) || {};
+  const city = it.connection_city || (snapshot && snapshot.preferred_connection_city);
+  const origin = it.origin_airport || (city === 'quito' ? 'UIO' : (city === 'guayaquil' ? 'GYE' : 'UIO/GYE'));
   const fd = (snapshot && snapshot.flight_dates) || {};
+  const dep = it.mainland_to_galapagos_flight_date || fd.default_departure_date || null;   // vuelo continental → Galápagos
+  const ret = it.galapagos_return_flight_date || fd.default_return_date || null;
   return {
     kind: 'flights', origin: origin, destination: 'SCY (Baltra/San Cristóbal)',
-    departure_date: fd.default_departure_date || null, return_date: fd.default_return_date || null,
+    departure_date: dep, return_date: ret,
     passenger_count: (snapshot && snapshot.passenger_count) || null,
-    instruction: 'Investiga en dominios autorizados tarifas publicadas; extrae {source_url, price_cents, currency, airline} verificables.'
+    passenger_type: it.passenger_type || null,
+    requires_mainland_pre_night: !!it.requires_mainland_pre_night,
+    instruction: 'Investiga en dominios autorizados tarifas del vuelo continental → Galápagos; extrae {source_url, price_cents, currency, airline} verificables.'
   };
 }
 function lodgingInput(lodging, prefs) {

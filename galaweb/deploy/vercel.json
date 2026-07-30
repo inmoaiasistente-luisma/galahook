@@ -48,7 +48,8 @@
     { "source": "/api/admin-milu-settings", "destination": "/api/admin-router?action=milu-settings-get" },
     { "source": "/api/admin-milu-settings-save", "destination": "/api/admin-router?action=milu-settings-save" },
     { "source": "/api/admin-milu-research-rerun", "destination": "/api/admin-router?action=milu-research-rerun" },
-    { "source": "/api/admin-milu-research-approve", "destination": "/api/admin-router?action=milu-research-approve" }
+    { "source": "/api/admin-milu-research-approve", "destination": "/api/admin-router?action=milu-research-approve" },
+    { "source": "/api/admin-milu-itinerary-preview", "destination": "/api/admin-router?action=milu-itinerary-preview" }
   ],
   "headers": [
     { "source": "/assets/(.*)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" } ] },

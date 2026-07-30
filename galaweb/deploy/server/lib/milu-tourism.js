@@ -45,6 +45,127 @@ function computeFlightDates(travelDate, tourId) {
   return { default_departure_date: dep, default_return_date: ret, duration_days: dur };
 }
 
+/* ---------------- itinerario (programa insular vs viaje completo) ---------------- */
+/* La fecha de la reserva es el INICIO DEL PROGRAMA en Galápagos, no el inicio del
+   viaje total. Un pasajero internacional suma una noche de conexión continental
+   (Quito/Guayaquil) que NO reduce las noches del programa insular. */
+const CONNECTION_AIRPORTS = { quito: 'UIO', guayaquil: 'GYE' };
+const PASSENGER_TYPES = ['international', 'domestic'];
+const CONNECTION_CITIES = ['quito', 'guayaquil'];
+
+function isYmd(v) { return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v); }
+
+/**
+ * Deriva los insumos del itinerario desde el contrato + overrides del owner/admin.
+ * Sin señal clara de tipo de pasajero → null (el gate lo exige; el owner elige).
+ */
+function deriveItineraryInputs(contract, overrides) {
+  overrides = overrides || {};
+  const arrival = (contract && contract.arrival) || {};
+  let ptype = null;
+  if (PASSENGER_TYPES.indexOf(overrides.passenger_type) !== -1) ptype = overrides.passenger_type;
+  else if (arrival.international_flights_purchased === true || arrival.arrival_airport || arrival.ecuador_arrival_date) ptype = 'international';
+  // false/null sin datos de llegada = ambiguo → null (el owner debe confirmar).
+
+  let conn = null;
+  if (CONNECTION_CITIES.indexOf(overrides.connection_city) !== -1) conn = overrides.connection_city;
+  else if (contract && CONNECTION_CITIES.indexOf(contract.preferred_connection_city) !== -1) conn = contract.preferred_connection_city;
+
+  let pre;
+  if (typeof overrides.include_mainland_pre_night === 'boolean') pre = overrides.include_mainland_pre_night;
+  else pre = undefined;   // default por tipo (lo aplica computeItinerary)
+
+  return {
+    passenger_type: ptype,
+    connection_city: conn,
+    include_mainland_pre_night: pre,
+    mainland_post_nights: (typeof overrides.mainland_post_nights === 'number') ? overrides.mainland_post_nights : undefined,
+    manual_galapagos_start_date: isYmd(overrides.galapagos_start_date) ? overrides.galapagos_start_date : null
+  };
+}
+
+/**
+ * Itinerario completo: separa el PROGRAMA INSULAR (galapagos_*) de la LOGÍSTICA
+ * CONTINENTAL (full_itinerary_*, mainland_*). La noche continental es ADICIONAL.
+ * Campos null cuando falta el dato; nunca lanza (el gate valida aparte).
+ */
+function computeItinerary(opts) {
+  opts = opts || {};
+  const start = isYmd(opts.galapagosStartDate) ? opts.galapagosStartDate : null;
+  const dur = (typeof opts.durationDays === 'number' && opts.durationDays > 0)
+    ? opts.durationDays : (PACKAGE_DURATION_DAYS[opts.tourId] || null);
+
+  const gStart = start;
+  const gDays = dur;
+  const gNights = (dur != null) ? Math.max(0, dur - 1) : null;   // insular: días - 1 (NO se le resta la noche continental)
+  const gEnd = (start && dur) ? addDaysYmd(start, dur - 1) : null;
+
+  const ptype = (PASSENGER_TYPES.indexOf(opts.passengerType) !== -1) ? opts.passengerType : null;
+  const connection = (CONNECTION_CITIES.indexOf(opts.connectionCity) !== -1) ? opts.connectionCity : null;
+
+  // Noche continental previa: internacional → true por defecto; doméstico → false;
+  // el owner/admin puede forzarla o quitarla (includeMainlandPreNight).
+  const requiresPre = (typeof opts.includeMainlandPreNight === 'boolean')
+    ? opts.includeMainlandPreNight : (ptype === 'international');
+
+  const preNights = requiresPre ? 1 : 0;
+  const postNights = (typeof opts.mainlandPostNights === 'number' && opts.mainlandPostNights >= 0) ? Math.round(opts.mainlandPostNights) : 0;
+
+  const fullStart = start ? (preNights > 0 ? addDaysYmd(start, -preNights) : start) : null;
+  const fullEnd = gEnd ? (postNights > 0 ? addDaysYmd(gEnd, postNights) : gEnd) : null;
+  const originAirport = connection ? CONNECTION_AIRPORTS[connection] : null;
+  const mainlandArrivalDate = start ? (preNights > 0 ? addDaysYmd(start, -preNights) : start) : null;
+
+  return {
+    passenger_type: ptype,
+    connection_city: connection,
+    origin_airport: originAirport,
+    // programa insular
+    galapagos_start_date: gStart,
+    galapagos_end_date: gEnd,
+    galapagos_days: gDays,
+    galapagos_nights: gNights,
+    // viaje completo (con logística continental)
+    full_itinerary_start_date: fullStart,
+    full_itinerary_end_date: fullEnd,
+    requires_mainland_pre_night: requiresPre,
+    mainland_pre_nights: preNights,
+    mainland_post_nights: postNights,
+    mainland_arrival_date: mainlandArrivalDate,
+    mainland_to_galapagos_flight_date: gStart,   // vuelo continental → Galápagos el día de inicio del programa
+    galapagos_return_flight_date: gEnd,
+    // componentes incluidos, SEPARADOS (nada se envía al cliente; todo es interno)
+    included_components: {
+      mainland_arrival: ptype === 'international',
+      mainland_hotel: preNights > 0,
+      mainland_to_galapagos_flight: true,
+      galapagos_hotels: true,
+      inter_island_boat: true,
+      optional_inter_island_flight_upgrade: false
+    }
+  };
+}
+
+/** Gate del itinerario (#6/#7). Lanza el error específico que falta. */
+function assertItineraryReady(it) {
+  if (!it || !it.passenger_type) throw gateError('PASSENGER_TYPE_REQUIRED');
+  if (!it.galapagos_start_date) throw gateError('GALAPAGOS_START_REQUIRED');
+  if (!it.galapagos_days) throw gateError('PACKAGE_DURATION_REQUIRED');
+  if (it.passenger_type === 'international' && !it.connection_city) throw gateError('CONNECTION_CITY_REQUIRED');
+  if (!it.connection_city) throw gateError('ORIGIN_REQUIRED');   // ciudad/aeropuerto de origen (gateway continental)
+  return true;
+}
+
+/** Lista (sin lanzar) de insumos faltantes, para la vista previa. */
+function itineraryMissing(it) {
+  const missing = [];
+  if (!it || !it.passenger_type) missing.push('passenger_type');
+  if (!it || !it.galapagos_start_date) missing.push('galapagos_start_date');
+  if (!it || !it.galapagos_days) missing.push('package_duration');
+  if (it && !it.connection_city) missing.push(it.passenger_type === 'international' ? 'connection_city' : 'origin');
+  return missing;
+}
+
 /* ---------------- gate ---------------- */
 function gateError(code) { const e = new Error(code); e.code = code; return e; }
 
@@ -77,7 +198,7 @@ async function loadGateData(bookingId) {
 }
 
 /* ---------------- snapshot saneado ---------------- */
-function sanitizeRequirements(contract, flightDates) {
+function sanitizeRequirements(contract, flightDates, itinerary) {
   contract = contract || {};
   const passengers = (contract.passengers || []).map(function (p) {
     // Solo lo operativo: NUNCA número de documento, NUNCA tokens/secretos.
@@ -99,6 +220,7 @@ function sanitizeRequirements(contract, flightDates) {
     passenger_count: contract.passenger_count,
     preferred_connection_city: contract.preferred_connection_city,
     flight_dates: flightDates,
+    itinerary: itinerary || null,          // programa insular + logística continental (8D)
     passengers: passengers,
     lodging_requirements: contract.lodging_requirements || [],
     hotel_search_preferences: contract.hotel_search_preferences || []
@@ -106,23 +228,58 @@ function sanitizeRequirements(contract, flightDates) {
 }
 
 /**
- * Construye el snapshot saneado + valida el gate. Lanza si no es elegible.
- * @returns { snapshot, booking, form, flightDates }
+ * Construye el snapshot saneado + valida el gate (incluye el gate del itinerario).
+ * Lanza si no es elegible. @returns { snapshot, booking, form, flightDates, itinerary }
  */
-async function buildMiluRequirements(bookingId) {
+async function buildMiluRequirements(bookingId, overrides) {
   const gate = await loadGateData(bookingId);
   assertSearchEligible(gate.form, gate.lodging);
   const contract = await buildTravelRequirements(bookingId);
   const flightDates = computeFlightDates(gate.booking.booking_date, gate.booking.tour_id);
-  const snapshot = sanitizeRequirements(contract, flightDates);
-  return { snapshot: snapshot, booking: gate.booking, form: gate.form, flightDates: flightDates };
+  const inputs = deriveItineraryInputs(contract, overrides);
+  const itinerary = computeItinerary({
+    galapagosStartDate: inputs.manual_galapagos_start_date || gate.booking.booking_date,   // fechas manuales tienen prioridad
+    tourId: gate.booking.tour_id, durationDays: flightDates.duration_days,
+    passengerType: inputs.passenger_type, connectionCity: inputs.connection_city,
+    includeMainlandPreNight: inputs.include_mainland_pre_night, mainlandPostNights: inputs.mainland_post_nights
+  });
+  assertItineraryReady(itinerary);   // #6/#7: tipo, origen/conexión, inicio, duración
+  const snapshot = sanitizeRequirements(contract, flightDates, itinerary);
+  return { snapshot: snapshot, booking: gate.booking, form: gate.form, flightDates: flightDates, itinerary: itinerary };
+}
+
+/**
+ * Vista previa del itinerario para owner/admin ANTES de buscar (#8). No crea job,
+ * no lanza por insumos faltantes: los reporta en `missing`.
+ * @returns { booking_code, form_ready, ready, missing, itinerary }
+ */
+async function previewItinerary(bookingId, overrides) {
+  const gate = await loadGateData(bookingId);   // BOOKING_NOT_FOUND si no existe / otro tenant
+  const contract = await buildTravelRequirements(bookingId);
+  const flightDates = computeFlightDates(gate.booking.booking_date, gate.booking.tour_id);
+  const inputs = deriveItineraryInputs(contract, overrides);
+  const itinerary = computeItinerary({
+    galapagosStartDate: inputs.manual_galapagos_start_date || gate.booking.booking_date,
+    tourId: gate.booking.tour_id, durationDays: flightDates.duration_days,
+    passengerType: inputs.passenger_type, connectionCity: inputs.connection_city,
+    includeMainlandPreNight: inputs.include_mainland_pre_night, mainlandPostNights: inputs.mainland_post_nights
+  });
+  const formReady = !!(gate.form && READY_FORM_STATUSES.indexOf(gate.form.status) !== -1);
+  const missing = itineraryMissing(itinerary);
+  return {
+    booking_code: gate.booking.booking_code || null,
+    form_ready: formReady,
+    ready: formReady && missing.length === 0,
+    missing: missing,
+    itinerary: itinerary
+  };
 }
 
 /* ---------------- jobs / subtareas ---------------- */
-async function startSearch(bookingId, userId, searchType) {
+async function startSearch(bookingId, userId, searchType, overrides) {
   searchType = searchType || 'complete_trip';
   const supabase = getSupabase();
-  const built = await buildMiluRequirements(bookingId);
+  const built = await buildMiluRequirements(bookingId, overrides);
   const tenant = built.booking.tenant_id || getTenantId();
   const idem = tenant + ':' + bookingId + ':' + searchType;
 
@@ -171,7 +328,7 @@ async function startSearch(bookingId, userId, searchType) {
       default_return_date: built.flightDates.default_return_date
     });
   }
-  return { job: job, created: true, snapshot: built.snapshot, flightDates: built.flightDates };
+  return { job: job, created: true, snapshot: built.snapshot, flightDates: built.flightDates, itinerary: built.itinerary };
 }
 
 async function cancelSearch(bookingId, jobId, actor) {
@@ -307,7 +464,9 @@ async function reviewFinding(optionKind, optionId, decision, actor) {
 
 module.exports = {
   PACKAGE_DURATION_DAYS, READY_FORM_STATUSES, SUBTASK_KINDS, WEB_RESEARCH_KINDS, MAX_RERUNS_PER_JOB,
+  CONNECTION_AIRPORTS, PASSENGER_TYPES, CONNECTION_CITIES,
   addDaysYmd, computeFlightDates, assertSearchEligible, loadGateData,
+  deriveItineraryInputs, computeItinerary, assertItineraryReady, itineraryMissing, previewItinerary,
   sanitizeRequirements, buildMiluRequirements, startSearch, cancelSearch, adjustFlightDates,
   rerunResearch, reviewFinding
 };

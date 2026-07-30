@@ -144,6 +144,7 @@ const webResearch = require(BASE + '/server/lib/milu-adapters/web-research.js');
 const rerunH = require(BASE + '/server/admin-handlers/milu-research-rerun.js');
 const approveH = require(BASE + '/server/admin-handlers/milu-research-approve.js');
 const wrClient = require(BASE + '/scripts/milu-anthropic-client.js');
+const previewH = require(BASE + '/server/admin-handlers/milu-itinerary-preview.js');
 
 function mockRes() { return { statusCode: 200, headers: {}, body: null, setHeader(k, v) { this.headers[String(k).toLowerCase()] = v; }, end(s) { this.body = s; } }; }
 function run(h, req) { const res = mockRes(); return Promise.resolve(h(req, res)).then(() => res); }
@@ -153,6 +154,8 @@ function baseContract(booking) {
   return {
     booking_code: 'HA-2026-000001', tour: { id: booking.tour_id, name: 'Island Escape (4 Days)' },
     travel_date: booking.booking_date, passenger_count: 2, preferred_connection_city: 'quito',
+    // Pasajero internacional por defecto (llegada continental) → tipo derivable en el gate.
+    arrival: { international_flights_purchased: true, ecuador_arrival_date: null, ecuador_arrival_time: null, arrival_airport: 'UIO' },
     passengers: [
       { passenger_number: 1, legal_first_name: 'Ana', legal_last_name: 'Perez', age_category: 'adult', nationality: 'Ecuadorian', baggage_notes: '1 maleta', special_assistance: null, accessibility_or_mobility_needs: null },
       { passenger_number: 2, legal_first_name: 'Luis', legal_last_name: 'Gomez', age_category: 'adult', nationality: 'Ecuadorian', baggage_notes: null, special_assistance: null, accessibility_or_mobility_needs: null }
@@ -924,6 +927,97 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
     /admin-milu-search-start/.test(adminSrc) &&
     /loadBtn\.disabled=!currentJobId/.test(adminSrc) &&
     /rerunBtn\.disabled=!currentJobId/.test(adminSrc));
+
+  // ── Itinerario: programa insular vs viaje completo continental (8D) ──
+
+  // 141 4 días desde 2026-08-01 → programa insular 1–4 agosto (3 noches)
+  const it141 = milu.computeItinerary({ galapagosStartDate: '2026-08-01', tourId: 'p3', passengerType: 'international', connectionCity: 'quito' });
+  ok('141 programa insular 1–4 agosto (3 noches)', it141.galapagos_start_date === '2026-08-01' && it141.galapagos_end_date === '2026-08-04' && it141.galapagos_days === 4 && it141.galapagos_nights === 3);
+
+  // 142 internacional → llegada continental 2026-07-31 + vuelo continental el 08-01
+  ok('142 internacional → llegada mainland 2026-07-31', it141.requires_mainland_pre_night === true && it141.mainland_pre_nights === 1 && it141.mainland_arrival_date === '2026-07-31' && it141.full_itinerary_start_date === '2026-07-31' && it141.mainland_to_galapagos_flight_date === '2026-08-01');
+
+  // 143 la noche continental NO reduce las noches del programa insular
+  ok('143 noche continental no reduce noches Galápagos', it141.galapagos_nights === 3 && it141.mainland_pre_nights === 1);
+
+  // 144 doméstico → por defecto SIN noche previa
+  const it144 = milu.computeItinerary({ galapagosStartDate: '2026-08-01', tourId: 'p3', passengerType: 'domestic', connectionCity: 'quito' });
+  ok('144 doméstico puede no requerir noche previa', it144.requires_mainland_pre_night === false && it144.mainland_pre_nights === 0 && it144.full_itinerary_start_date === '2026-08-01' && it144.galapagos_nights === 3);
+
+  // 145 Quito y Guayaquil se manejan por separado (origen distinto)
+  const uio145 = milu.computeItinerary({ galapagosStartDate: '2026-08-01', tourId: 'p3', passengerType: 'international', connectionCity: 'quito' });
+  const gye145 = milu.computeItinerary({ galapagosStartDate: '2026-08-01', tourId: 'p3', passengerType: 'international', connectionCity: 'guayaquil' });
+  ok('145 Quito y Guayaquil separados (UIO vs GYE)', uio145.origin_airport === 'UIO' && gye145.origin_airport === 'GYE' && uio145.connection_city === 'quito' && gye145.connection_city === 'guayaquil');
+
+  // 146 componentes incluidos separados (hotel continental solo con noche previa)
+  ok('146 componentes separados', it141.included_components.mainland_hotel === true && it144.included_components.mainland_hotel === false && it141.included_components.inter_island_boat === true && it141.included_components.mainland_to_galapagos_flight === true);
+
+  // 147 internacional sin ciudad de conexión → CONNECTION_CITY_REQUIRED
+  let e147 = null; try { milu.assertItineraryReady(milu.computeItinerary({ galapagosStartDate: '2026-08-01', tourId: 'p3', passengerType: 'international', connectionCity: null })); } catch (e) { e147 = e.code; }
+  ok('147 internacional sin conexión → CONNECTION_CITY_REQUIRED', e147 === 'CONNECTION_CITY_REQUIRED');
+
+  // 148 sin tipo de pasajero → PASSENGER_TYPE_REQUIRED
+  let e148 = null; try { milu.assertItineraryReady(milu.computeItinerary({ galapagosStartDate: '2026-08-01', tourId: 'p3', passengerType: null, connectionCity: 'quito' })); } catch (e) { e148 = e.code; }
+  ok('148 sin tipo de pasajero → PASSENGER_TYPE_REQUIRED', e148 === 'PASSENGER_TYPE_REQUIRED');
+
+  // 149 fechas manuales tienen prioridad sobre la fecha de reserva
+  const man149 = milu.deriveItineraryInputs({ preferred_connection_city: 'quito' }, { galapagos_start_date: '2026-09-10' });
+  const it149 = milu.computeItinerary({ galapagosStartDate: man149.manual_galapagos_start_date || '2026-08-01', tourId: 'p3', passengerType: 'international', connectionCity: 'quito' });
+  ok('149 fechas manuales tienen prioridad', man149.manual_galapagos_start_date === '2026-09-10' && it149.galapagos_start_date === '2026-09-10' && it149.galapagos_end_date === '2026-09-13');
+
+  // 150 start via handler con overrides → job con itinerario en el snapshot
+  CURRENT_ROLE = 'owner'; let itF = freshDb(); CONTRACT = baseContract(itF.booking); setClient(itF.db);
+  let itH = await run(startH, { method: 'POST', headers: {}, body: { booking_id: itF.booking.id, passenger_type: 'international', connection_city: 'guayaquil' } });
+  const snapIt150 = itF.db.travel_search_jobs[0] && itF.db.travel_search_jobs[0].requirements_snapshot && itF.db.travel_search_jobs[0].requirements_snapshot.itinerary;
+  ok('150 start guarda itinerario en snapshot', itH.statusCode === 200 && j(itH).itinerary && j(itH).itinerary.connection_city === 'guayaquil' && snapIt150 && snapIt150.origin_airport === 'GYE' && snapIt150.galapagos_nights === 3);
+
+  // 151 start sin tipo de pasajero (contrato sin arrival, sin override) → 409 PASSENGER_TYPE_REQUIRED
+  let ptF = freshDb(); CONTRACT = baseContract(ptF.booking); CONTRACT.arrival = null; CONTRACT.preferred_connection_city = 'quito'; setClient(ptF.db);
+  let ptH = await run(startH, { method: 'POST', headers: {}, body: { booking_id: ptF.booking.id } });
+  ok('151 start sin tipo de pasajero → 409 PASSENGER_TYPE_REQUIRED', ptH.statusCode === 409 && j(ptH).error === 'PASSENGER_TYPE_REQUIRED');
+
+  // 152 start internacional sin ciudad de conexión → 409 CONNECTION_CITY_REQUIRED
+  let ccF = freshDb(); CONTRACT = baseContract(ccF.booking); CONTRACT.preferred_connection_city = null; CONTRACT.arrival = { international_flights_purchased: true }; setClient(ccF.db);
+  let ccH = await run(startH, { method: 'POST', headers: {}, body: { booking_id: ccF.booking.id } });
+  ok('152 start internacional sin conexión → 409 CONNECTION_CITY_REQUIRED', ccH.statusCode === 409 && j(ccH).error === 'CONNECTION_CITY_REQUIRED');
+
+  // 153 preview: owner ve el itinerario sin crear job; missing lista lo que falta
+  let pvF = freshDb(); CONTRACT = baseContract(pvF.booking); CONTRACT.arrival = null; CONTRACT.preferred_connection_city = null; setClient(pvF.db);
+  let pvH = await run(previewH, { method: 'POST', headers: {}, body: { booking_id: pvF.booking.id } });
+  ok('153 preview: itinerario + missing sin crear job', pvH.statusCode === 200 && j(pvH).itinerary && j(pvH).missing.indexOf('passenger_type') !== -1 && pvF.db.travel_search_jobs.length === 0);
+
+  // 154 preview con overrides completos → ready + noche previa (full start = inicio - 1)
+  let pvF2 = freshDb(); CONTRACT = baseContract(pvF2.booking); setClient(pvF2.db);
+  let pvH2 = await run(previewH, { method: 'POST', headers: {}, body: { booking_id: pvF2.booking.id, passenger_type: 'international', connection_city: 'quito' } });
+  ok('154 preview ready con overrides', pvH2.statusCode === 200 && j(pvH2).ready === true && j(pvH2).itinerary.full_itinerary_start_date === milu.addDaysYmd(pvF2.booking.booking_date, -1));
+
+  // 155 preview: staff 403
+  CURRENT_ROLE = 'staff'; let pvF3 = freshDb(); CONTRACT = baseContract(pvF3.booking); setClient(pvF3.db);
+  let pvH3 = await run(previewH, { method: 'POST', headers: {}, body: { booking_id: pvF3.booking.id } });
+  ok('155 preview: staff 403', pvH3.statusCode === 403);
+  CURRENT_ROLE = 'owner';
+
+  // 156 nada del itinerario llega a Stripe ni al cliente (fuentes)
+  const itSrc = fs.readFileSync(BASE + '/server/lib/milu-tourism.js', 'utf8') + fs.readFileSync(BASE + '/server/admin-handlers/milu-itinerary-preview.js', 'utf8') + fs.readFileSync(BASE + '/server/admin-handlers/milu-search-start.js', 'utf8');
+  ok('156 itinerario: sin Stripe ni email al cliente',
+    !/booking-email-service|customer_travel_confirmation|\bresend\b|sendEmail|require\(['"][^'"]*stripe|stripe\.(?:paymentIntents|charges|checkout)|PaymentIntent|create-payment-intent/i.test(itSrc));
+
+  // 157 admin.js: controles + botón de preview cableados al endpoint de itinerario
+  const adminSrc157 = fs.readFileSync(BASE + '/assets/js/admin.js', 'utf8');
+  ok('157 admin.js: preview de itinerario cableado',
+    /admin-milu-itinerary-preview/.test(adminSrc157) &&
+    /Preview itinerary|Previsualizar itinerario/.test(adminSrc157) &&
+    /Passenger type|Tipo de pasajero/.test(adminSrc157) &&
+    /itOverrides\(\)/.test(adminSrc157));
+
+  // 158 router + vercel exponen el endpoint de preview (8 funciones, sin duplicados)
+  const routerSrc = fs.readFileSync(BASE + '/api/admin-router.js', 'utf8');
+  const vjson = JSON.parse(fs.readFileSync(BASE + '/vercel.json', 'utf8'));
+  const vsrcs = (vjson.rewrites || []).map(function (x) { return x.source; });
+  ok('158 endpoint itinerary-preview registrado (router + rewrite, sin dup)',
+    /ROUTES\['milu-itinerary-preview'\]/.test(routerSrc) &&
+    vsrcs.indexOf('/api/admin-milu-itinerary-preview') !== -1 &&
+    vsrcs.length === (new Set(vsrcs)).size);
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);

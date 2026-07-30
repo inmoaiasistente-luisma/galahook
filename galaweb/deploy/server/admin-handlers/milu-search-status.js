@@ -96,6 +96,7 @@ module.exports = async function handler(req, res) {
       module: moduleState,
       job: { id: job.id, status: job.status, search_type: job.search_type, created_at: job.created_at, updated_at: job.updated_at },
       requirements: job.requirements_snapshot || {},
+      itinerary: (job.requirements_snapshot && job.requirements_snapshot.itinerary) || null,
       subtasks: subtasks,
       logistics: logistics,
       ai_usage: { calls: rows.length, cost_usd: Math.round(cost * 1e6) / 1e6 },

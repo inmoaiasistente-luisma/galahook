@@ -83,6 +83,7 @@ ROUTES['milu-settings-get'] = require('../server/admin-handlers/milu-settings-ge
 ROUTES['milu-settings-save'] = require('../server/admin-handlers/milu-settings-save');
 ROUTES['milu-research-rerun'] = require('../server/admin-handlers/milu-research-rerun');
 ROUTES['milu-research-approve'] = require('../server/admin-handlers/milu-research-approve');
+ROUTES['milu-itinerary-preview'] = require('../server/admin-handlers/milu-itinerary-preview');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */
