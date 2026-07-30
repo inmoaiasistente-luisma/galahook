@@ -54,7 +54,8 @@ function mapFlightFinding(snapshot, f) {
     research_source_url: f.source_url,
     research_review_status: 'unverified',
     checked_at: nowIso(),
-    raw_snapshot_sanitized: { note: 'web research finding', source_host: researchHostOf(f.source_url) }
+    raw_snapshot_sanitized: { note: 'web research finding', source_host: researchHostOf(f.source_url),
+      parse_status: (nonNegInt(f.price_cents) != null ? 'parsed' : 'parsed_partial') }
   };
 }
 
@@ -78,7 +79,8 @@ function mapHotelFinding(lodging, f) {
     research_source_url: f.source_url,
     research_review_status: 'unverified',
     checked_at: nowIso(),
-    raw_snapshot_sanitized: { note: 'web research finding', source_host: researchHostOf(f.source_url) }
+    raw_snapshot_sanitized: { note: 'web research finding', source_host: researchHostOf(f.source_url),
+      parse_status: (nonNegInt(f.price_cents) != null ? 'parsed' : 'parsed_partial') }
   };
 }
 
@@ -94,7 +96,7 @@ function flightFallback(snapshot) {
     research_source_url: FLIGHT_FALLBACK_URL,
     research_review_status: 'unverified',
     checked_at: nowIso(),
-    raw_snapshot_sanitized: { note: 'domain_fallback: fare not extracted, human check required', source_host: researchHostOf(FLIGHT_FALLBACK_URL) }
+    raw_snapshot_sanitized: { note: 'domain_fallback: fare not extracted, human check required', source_host: researchHostOf(FLIGHT_FALLBACK_URL), parse_status: 'parsed_partial' }
   };
 }
 
@@ -113,7 +115,7 @@ function hotelFallback(lodging) {
     research_source_url: url,
     research_review_status: 'unverified',
     checked_at: nowIso(),
-    raw_snapshot_sanitized: { note: 'domain_fallback: price not extracted, human check required', source_host: researchHostOf(url) }
+    raw_snapshot_sanitized: { note: 'domain_fallback: price not extracted, human check required', source_host: researchHostOf(url), parse_status: 'parsed_partial' }
   };
 }
 

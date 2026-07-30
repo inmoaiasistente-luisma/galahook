@@ -89,11 +89,15 @@ async function loadJob(jobId) {
   return r.data || null;
 }
 
-/* Subtareas de proveedor externo (Duffel/hotel): en la fase web-only quedan
-   partial(provider_not_connected) y NO deben degradar el job si las web_research
-   requeridas terminaron completed. */
+/* Subtareas NO-web que en la fase web-only quedan 'partial' sin poder completar
+   (los proveedores/LLM de ranking no están conectados en la prueba controlada) y
+   NO deben degradar el job cuando las web_research requeridas terminaron completed:
+     · proveedores externos (Duffel/hotel) → partial(provider_not_connected)
+     · orquestación LLM (ranking/summary)  → partial(llm_not_available)
+   Un 'failed' (fallo real) SÍ degrada: nunca se fuerza completed sobre un fallo. */
 const PROVIDER_KINDS = ['flights_duffel', 'hotels_primary_provider', 'hotel_preferred_links'];
 const WEB_RESEARCH_KINDS_WC = ['web_research_flights', 'web_research_lodging'];
+const NON_DEGRADING_PARTIAL_KINDS = PROVIDER_KINDS.concat(['anthropic_ranking', 'final_summary']);
 
 async function recomputeJobStatus(jobId) {
   const supabase = getSupabase();
@@ -113,16 +117,17 @@ async function recomputeJobStatus(jobId) {
   else {
     // Sin pendientes pero mezcla → normalmente 'partial'. EXCEPCIÓN fase web-only:
     // si hay web_research y TODAS terminaron completed, y las únicas subtareas
-    // no-completadas son de PROVEEDOR en partial (provider_not_connected), el job
-    // cuenta como 'completed' (fallback esperado; no degrada por proveedores no
-    // conectados). Usa un estado EXISTENTE del CHECK (sin migración).
+    // no-completadas son NO-web en 'partial' (proveedores Duffel/hotel + ranking/
+    // summary de LLM, no conectados en la prueba controlada), el job cuenta como
+    // 'completed' (fallback esperado; no degrada por lo no conectado). Un 'failed'
+    // real SÍ degrada. Estado EXISTENTE del CHECK (sin migración).
     const webSubs = subs.filter(function (s) { return WEB_RESEARCH_KINDS_WC.indexOf(s.kind) !== -1; });
     const webAllDone = webSubs.length > 0 && webSubs.every(function (s) { return s.status === 'completed'; });
     const notCompleted = subs.filter(function (s) { return s.status !== 'completed'; });
-    const onlyProviderPartials = notCompleted.length > 0 && notCompleted.every(function (s) {
-      return s.status === 'partial' && PROVIDER_KINDS.indexOf(s.kind) !== -1;
+    const onlyNonDegradingPartials = notCompleted.length > 0 && notCompleted.every(function (s) {
+      return s.status === 'partial' && NON_DEGRADING_PARTIAL_KINDS.indexOf(s.kind) !== -1;
     });
-    status = (webAllDone && onlyProviderPartials) ? 'completed' : 'partial';
+    status = (webAllDone && onlyNonDegradingPartials) ? 'completed' : 'partial';
   }
 
   await supabase.from('travel_search_jobs').update({ status: status }).eq('id', jobId);

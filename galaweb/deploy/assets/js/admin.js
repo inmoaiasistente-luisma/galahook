@@ -1850,7 +1850,14 @@ function panelMiluTourism(role){
       refreshButtons();
     }).catch(function(){});
   }
-  bkI.addEventListener('input',function(){ currentBooking=(bkI.value||'').trim()||null; currentJobId=null; currentJobStatus=null; startMsg.textContent=''; jobLine.innerHTML=''; refreshButtons(); });
+  var autoLoadTimer=null;
+  bkI.addEventListener('input',function(){
+    currentBooking=(bkI.value||'').trim()||null; currentJobId=null; currentJobStatus=null;
+    startMsg.textContent=''; jobLine.innerHTML=''; rTable.innerHTML=''; rInfo.innerHTML=''; refreshButtons();
+    // A1: al ingresar/pegar un booking válido, autocarga estado + hallazgos (sin botón).
+    if(autoLoadTimer) clearTimeout(autoLoadTimer);
+    if(validUuid()) autoLoadTimer=setTimeout(function(){ if(validUuid()) loadResearch(); },500);
+  });
 
   // Overrides del itinerario desde los controles (solo valores elegidos).
   function itOverrides(){
@@ -1946,31 +1953,65 @@ function panelMiluTourism(role){
   });
 
   // ---- visor de hallazgos ----
+  function fmtDateTime(iso){ if(!iso) return '—'; try{ return new Date(iso).toISOString().slice(0,16).replace('T',' ')+' UTC'; }catch(e){ return String(iso); } }
+  // parse_status persistido en raw_snapshot_sanitized (jsonb, sin migración); si falta,
+  // se deriva del precio: sin total_price_cents ⇒ 'parsed_partial'.
+  function parseStatusOf(o){ const ps=o.raw_snapshot_sanitized&&o.raw_snapshot_sanitized.parse_status; if(ps) return ps; return (o.total_price_cents==null)?'parsed_partial':'parsed'; }
+  function priceText(o){ return (o.total_price_cents==null)?(ES?'Precio no interpretado':'Price not parsed'):money(o.total_price_cents,o.currency); }
   function optRow(kind, o){
     const row=el('<div style="border:1px solid rgba(0,0,0,.12);border-radius:8px;padding:8px;margin:6px 0"></div>');
     const title=(kind==='flight')?((escapeHtml(o.airline||''))+' '+escapeHtml(o.origin||'')+'→'+escapeHtml(o.destination||'')):(escapeHtml(o.hotel_name||'')+' · '+escapeHtml(o.destination||''));
-    row.appendChild(el('<div><b>'+(title||(kind==='flight'?'Vuelo':'Hotel'))+'</b> '+reviewBadge(o.research_review_status)+'</div>'));
-    row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Precio':'Price')+': '+money(o.total_price_cents,o.currency)+' · '+(ES?'Consulta':'Retrieved')+': '+escapeHtml(o.checked_at||'—')+'</div>'));
+    const ps=parseStatusOf(o);
+    const warn=(ps==='parsed_partial')?(' <span class="notif-badge notif-pending">'+(ES?'precio no interpretado':'price not parsed')+'</span>'):'';
+    row.appendChild(el('<div><b>'+(title||(kind==='flight'?'Vuelo':'Hotel'))+'</b> '+reviewBadge(o.research_review_status)+warn+'</div>'));
+    // Precio (o "Price not parsed") + moneda + fecha/hora de la consulta.
+    row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Precio':'Price')+': <b>'+escapeHtml(priceText(o))+'</b> · '+(ES?'Consulta':'Retrieved')+': '+escapeHtml(fmtDateTime(o.checked_at))+'</div>'));
     if(o.research_source_url){ row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Fuente (interna)':'Source (internal)')+': <a href="'+escapeHtml(o.research_source_url)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(o.research_source_url)+'</a></div>')); }
-    if(o.research_review_status==='unverified'){
-      const ok=el('<button class="btn btn-sm" type="button">'+(ES?'Aprobar':'Approve')+'</button>');
-      const no=el('<button class="btn btn-sm" type="button" style="margin-left:8px">'+(ES?'Rechazar':'Reject')+'</button>');
-      function review(dec,btn){ btn.disabled=true; apiPost('/api/admin-milu-research-approve',{option_kind:kind,option_id:o.id,decision:dec}).then(function(r){ btn.disabled=false; if(r.status===401){onUnauthorized();return;} if(r.ok&&r.data&&r.data.reviewed){ adminToast(ES?'Revisión guardada':'Review saved'); loadResearch(); } else adminToast(ES?'No se pudo revisar.':'Could not review.'); }).catch(function(){ btn.disabled=false; }); }
-      ok.addEventListener('click',function(){ review('verified',ok); });
-      no.addEventListener('click',function(){ review('rejected',no); });
-      const ab=el('<div style="margin-top:6px"></div>'); ab.appendChild(ok); ab.appendChild(no); row.appendChild(ab);
-    }
+    // Sin precio estructurado: se mantiene la fuente y se muestra el resumen hallado (A4/A5).
+    const note=o.raw_snapshot_sanitized&&o.raw_snapshot_sanitized.note;
+    if(ps==='parsed_partial'&&note){ row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Resumen':'Summary')+': '+escapeHtml(note)+'</div>')); }
+    // Aprobar / Rechazar SIEMPRE visibles; se desactiva la acción ya elegida.
+    const ok=el('<button class="btn btn-sm" type="button">'+(ES?'Aprobar':'Approve')+'</button>');
+    const no=el('<button class="btn btn-sm" type="button" style="margin-left:8px">'+(ES?'Rechazar':'Reject')+'</button>');
+    if(o.research_review_status==='verified') ok.disabled=true;
+    if(o.research_review_status==='rejected') no.disabled=true;
+    function review(dec,btn){ btn.disabled=true; apiPost('/api/admin-milu-research-approve',{option_kind:kind,option_id:o.id,decision:dec}).then(function(r){ btn.disabled=false; if(r.status===401){onUnauthorized();return;} if(r.ok&&r.data&&r.data.reviewed){ adminToast(ES?'Revisión guardada':'Review saved'); loadResearch(); } else adminToast(ES?'No se pudo revisar.':'Could not review.'); }).catch(function(){ btn.disabled=false; }); }
+    ok.addEventListener('click',function(){ review('verified',ok); });
+    no.addEventListener('click',function(){ review('rejected',no); });
+    const ab=el('<div style="margin-top:6px"></div>'); ab.appendChild(ok); ab.appendChild(no); row.appendChild(ab);
     return row;
+  }
+  // A6: fase web (vuelos/hoteles) + estado del job, visible aunque queden proveedores
+  // legacy desconectados en partial (no degradan un job web-only ya completado).
+  function webPhaseLine(status){
+    const subs=(status&&status.subtasks)||[];
+    function stOf(k){ const s=subs.filter(function(x){return x.kind===k;})[0]; return s?s.status:'—'; }
+    function cls(st){ return (st==='completed')?'notif-sent':(st==='partial'?'notif-pending':(st==='failed'?'notif-failed':'notif-skipped')); }
+    function b(lbl,st){ return escapeHtml(lbl)+' <span class="notif-badge '+cls(st)+'">'+escapeHtml(st)+'</span>'; }
+    const fS=stOf('web_research_flights'), lS=stOf('web_research_lodging');
+    const jobSt=(status&&status.job&&status.job.status)||'—';
+    var html=(ES?'Investigación web':'Web research')+': '+b(ES?'vuelos':'flights',fS)+' · '+b(ES?'hoteles':'hotels',lS);
+    if(fS==='completed'&&lS==='completed') html+=' · <span class="notif-badge notif-sent">'+(ES?'fase web completada':'web phase complete')+'</span>';
+    html+=' · '+(ES?'job':'job')+' <span class="notif-badge '+cls(jobSt)+'">'+escapeHtml(jobSt)+'</span>';
+    return el('<div style="margin:6px 0" class="bk-sub-hint">'+html+'</div>');
   }
   function renderFindings(status, opts){
     rTable.innerHTML=''; rInfo.innerHTML='';
     const wr=(status&&status.web_research)||{};
     rInfo.innerHTML=(ES?'Búsquedas':'Searches')+': '+(wr.searches_used||0)+'/'+(wr.searches_max||6)+' ('+(ES?'restan':'left')+' '+(wr.searches_remaining||0)+') · '+(ES?'Fetches':'Fetches')+': '+(wr.fetches_used||0)+'/'+(wr.fetches_max||2)+' · '+(ES?'Costo':'Cost')+': $'+Number(wr.research_cost_usd||0).toFixed(4)+' / $'+Number(wr.budget_max_usd||0.30).toFixed(2)+' · rerun '+(wr.rerun_count||0);
-    const flights=(opts&&opts.flights)||[]; const hotels=(opts&&opts.hotels)||[];
-    const research=flights.concat(hotels).filter(function(o){ return o.provider==='web_research'; });
-    if(!research.length){ rTable.appendChild(el('<p class="bk-sub-hint">'+(ES?'Sin hallazgos de investigación para esta propuesta.':'No research findings for this proposal.')+'</p>')); return; }
-    flights.filter(function(o){return o.provider==='web_research';}).forEach(function(o){ rTable.appendChild(optRow('flight',o)); });
-    hotels.filter(function(o){return o.provider==='web_research';}).forEach(function(o){ rTable.appendChild(optRow('hotel',o)); });
+    rTable.appendChild(webPhaseLine(status));
+    const flights=((opts&&opts.flights)||[]).filter(function(o){ return o.provider==='web_research'; });
+    const hotels=((opts&&opts.hotels)||[]).filter(function(o){ return o.provider==='web_research'; });
+    // Sección separada: Resultados de vuelos.
+    const fSec=el('<div class="fin-sec" style="margin-top:8px"><h4>'+(ES?'Resultados de vuelos':'Flight results')+' ('+flights.length+')</h4></div>');
+    if(!flights.length) fSec.appendChild(el('<p class="bk-sub-hint">'+(ES?'Sin hallazgos de vuelos.':'No flight findings.')+'</p>'));
+    else flights.forEach(function(o){ fSec.appendChild(optRow('flight',o)); });
+    rTable.appendChild(fSec);
+    // Sección separada: Resultados de hoteles.
+    const hSec=el('<div class="fin-sec" style="margin-top:8px"><h4>'+(ES?'Resultados de hoteles':'Hotel results')+' ('+hotels.length+')</h4></div>');
+    if(!hotels.length) hSec.appendChild(el('<p class="bk-sub-hint">'+(ES?'Sin hallazgos de hoteles.':'No hotel findings.')+'</p>'));
+    else hotels.forEach(function(o){ hSec.appendChild(optRow('hotel',o)); });
+    rTable.appendChild(hSec);
   }
   function loadResearch(){
     const bid=(bkInput.querySelector('input').value||'').trim();

@@ -1333,6 +1333,60 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   const stWC2 = await worker.recomputeJobStatus(jWC2);
   ok('182 web_research incompleta → job sigue partial', stWC2 === 'partial');
 
+  // 183 REPRO exacto del e2e: los 7 subtasks reales del runner controlado —
+  // proveedores (Duffel/hotels/preferred) partial(provider_not_connected) +
+  // anthropic_ranking/final_summary partial(llm_not_available, sin deps.llm) +
+  // ambas web_research completed → el job DEBE quedar completed (antes: partial).
+  const jREP = nid();
+  const dbREP = { travel_search_jobs: [{ id: jREP, tenant_id: 'hook-adventure', status: 'running', active: true }],
+    travel_search_subtasks: [
+      { job_id: jREP, kind: 'flights_duffel', status: 'partial' },
+      { job_id: jREP, kind: 'hotels_primary_provider', status: 'partial' },
+      { job_id: jREP, kind: 'hotel_preferred_links', status: 'partial' },
+      { job_id: jREP, kind: 'anthropic_ranking', status: 'partial' },
+      { job_id: jREP, kind: 'final_summary', status: 'partial' },
+      { job_id: jREP, kind: 'web_research_flights', status: 'completed' },
+      { job_id: jREP, kind: 'web_research_lodging', status: 'completed' }
+    ] };
+  setClient(dbREP);
+  const stREP = await worker.recomputeJobStatus(jREP);
+  ok('183 REPRO: providers+ranking+summary partial, ambas web completed → job completed',
+    stREP === 'completed' && dbREP.travel_search_jobs[0].status === 'completed');
+
+  // 184 ranking/summary partial (sin proveedores) + web completed → completed
+  const jRK = nid();
+  const dbRK = { travel_search_jobs: [{ id: jRK, tenant_id: 'hook-adventure', status: 'running', active: true }],
+    travel_search_subtasks: [
+      { job_id: jRK, kind: 'anthropic_ranking', status: 'partial' },
+      { job_id: jRK, kind: 'final_summary', status: 'partial' },
+      { job_id: jRK, kind: 'web_research_flights', status: 'completed' },
+      { job_id: jRK, kind: 'web_research_lodging', status: 'completed' }
+    ] };
+  setClient(dbRK);
+  ok('184 ranking/summary partial + web completed → job completed', (await worker.recomputeJobStatus(jRK)) === 'completed');
+
+  // 185 SEGURIDAD: un failed real NO se fuerza a completed aunque las web estén completed
+  const jFL = nid();
+  const dbFL = { travel_search_jobs: [{ id: jFL, tenant_id: 'hook-adventure', status: 'running', active: true }],
+    travel_search_subtasks: [
+      { job_id: jFL, kind: 'flights_duffel', status: 'failed' },
+      { job_id: jFL, kind: 'web_research_flights', status: 'completed' },
+      { job_id: jFL, kind: 'web_research_lodging', status: 'completed' }
+    ] };
+  setClient(dbFL);
+  ok('185 failed real no se fuerza a completed → job partial', (await worker.recomputeJobStatus(jFL)) === 'partial');
+
+  // 186 adapter: hallazgo con precio → parse_status 'parsed'; sin precio → 'parsed_partial'
+  const wrAdapter = require('../server/lib/milu-adapters/web-research');
+  const snap186 = { preferred_connection_city_code: 'UIO', passenger_count: 2 };
+  const fPriced = wrAdapter.mapFlightFinding(snap186, { source_url: 'https://www.avianca.com/x', price_cents: 10900, currency: 'USD', airline: 'Avianca' });
+  const fNoPrice = wrAdapter.mapFlightFinding(snap186, { source_url: 'https://www.avianca.com/y', price_cents: null, airline: 'Avianca' });
+  const fFall = wrAdapter.flightFallback(snap186);
+  ok('186 parse_status parsed / parsed_partial en findings y fallback',
+    fPriced && fPriced.raw_snapshot_sanitized.parse_status === 'parsed' &&
+    fNoPrice && fNoPrice.raw_snapshot_sanitized.parse_status === 'parsed_partial' &&
+    fFall && fFall.raw_snapshot_sanitized.parse_status === 'parsed_partial');
+
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);
 })();
