@@ -138,6 +138,11 @@ const cancelH = require(BASE + '/server/admin-handlers/milu-search-cancel.js');
 const statusH = require(BASE + '/server/admin-handlers/milu-search-status.js');
 const settingsGetH = require(BASE + '/server/admin-handlers/milu-settings-get.js');
 const settingsSaveH = require(BASE + '/server/admin-handlers/milu-settings-save.js');
+const flags = require(BASE + '/server/lib/milu-flags.js');
+const webtools = require(BASE + '/server/lib/milu-web-tools.js');
+const webResearch = require(BASE + '/server/lib/milu-adapters/web-research.js');
+const rerunH = require(BASE + '/server/admin-handlers/milu-research-rerun.js');
+const approveH = require(BASE + '/server/admin-handlers/milu-research-approve.js');
 
 function mockRes() { return { statusCode: 200, headers: {}, body: null, setHeader(k, v) { this.headers[String(k).toLowerCase()] = v; }, end(s) { this.body = s; } }; }
 function run(h, req) { const res = mockRes(); return Promise.resolve(h(req, res)).then(() => res); }
@@ -200,6 +205,7 @@ function queueDb(jobStatus, jobActive, subs) {
 }
 
 const SQL = fs.readFileSync(path.join(BASE, 'supabase/migrations/0015_milu_tourism_search.sql'), 'utf8');
+const SQL16 = fs.readFileSync(path.join(BASE, 'supabase/migrations/0016_milu_web_research.sql'), 'utf8');
 /* Extrae el cuerpo de un CREATE TABLE para afirmar columnas dentro de esa tabla. */
 function tableBlock(name) { const m = new RegExp('create table public\\.' + name + ' \\(([\\s\\S]*?)\\n\\);').exec(SQL); return m ? m[1] : ''; }
 
@@ -612,6 +618,226 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   ok('88 worker liga opción a lodging y formulario del job (runtime)',
     db88.travel_hotel_options.length > 0 &&
     db88.travel_hotel_options.every(function (o) { return o.lodging_requirement_id === lrId88 && o.passenger_form_id === job88.passenger_form_id; }));
+
+  /* ============================================================
+     0016 — Milu Live Travel Research (estructural sobre la migración).
+     Migración mínima, aditiva, cero tablas nuevas, sin SQL destructivo.
+     ============================================================ */
+  const cnt = function (re) { return (SQL16.match(re) || []).length; };
+
+  // 89 begin/commit + cero tablas nuevas
+  ok('89 0016 begin/commit + cero tablas nuevas',
+    /begin;/.test(SQL16) && /commit;/.test(SQL16) && !/create\s+table/i.test(SQL16));
+
+  // 90 sin SQL destructivo sobre datos
+  ok('90 0016 sin SQL destructivo (no drop table/delete/truncate/drop column)',
+    !/drop\s+table|delete\s+from|truncate|drop\s+column/i.test(SQL16));
+
+  // 91 availability_status NO se toca; revisión vive en columna separada
+  ok('91 availability_status intacto; research_review_status separado',
+    /research_review_status/.test(SQL16) &&
+    !/web_research_unverified/.test(SQL16) && !/chk_tfo_status/.test(SQL16) && !/chk_tho_status/.test(SQL16));
+
+  // 92 dominio de valores de revisión en ambas tablas
+  ok('92 research_review_status ∈ {unverified,verified,rejected} (vuelo+hotel)',
+    /chk_tfo_review_status check \([\s\S]*?research_review_status in \('unverified','verified','rejected'\)/.test(SQL16) &&
+    /chk_tho_review_status check \([\s\S]*?research_review_status in \('unverified','verified','rejected'\)/.test(SQL16));
+
+  // 93 nombres genéricos de revisión + patrón de actor existente (auth.users)
+  ok('93 research_reviewed_by/at genéricos + FK auth.users(id) (sin *_verified_*)',
+    cnt(/research_reviewed_by_user_id uuid references auth\.users\(id\)/g) === 2 &&
+    cnt(/research_reviewed_at\s+timestamptz/g) === 2 &&
+    !/research_verified_by|research_verified_at/.test(SQL16));
+
+  // 94 si provider='web_research' → revisión obligatoria (ambas)
+  ok('94 provider web_research exige research_review_status',
+    cnt(/provider <> 'web_research' or research_review_status is not null/g) === 2);
+
+  // 95 si hay revisión → URL de origen no vacía (ambas)
+  ok('95 revisión exige research_source_url no vacío',
+    cnt(/research_review_status is null or \(research_source_url is not null and research_source_url <> ''\)/g) === 2);
+
+  // 96 verified/rejected exigen actor+fecha; unverified los mantiene nulos (ambas)
+  ok('96 verified/rejected → actor+fecha; unverified → nulos',
+    /chk_tfo_review_actor/.test(SQL16) && /chk_tho_review_actor/.test(SQL16) &&
+    cnt(/research_review_status in \('verified','rejected'\)\s+and research_reviewed_by_user_id is not null and research_reviewed_at is not null/g) === 2 &&
+    cnt(/research_review_status = 'unverified'\s+and research_reviewed_by_user_id is null and research_reviewed_at is null/g) === 2);
+
+  // 97 search_type NO se toca (web research es método, no tipo de viaje)
+  ok('97 search_type intacto (sin chk_tsj_type ni web_research en tipo)',
+    !/chk_tsj_type/.test(SQL16) && !/search_type/.test(SQL16));
+
+  // 98 kinds de subtarea: PRESERVA los 5 actuales + agrega 2 de web research
+  ok('98 chk_tss_kind preserva los 5 y agrega web_research_flights/lodging',
+    /chk_tss_kind check \(kind in[\s\S]*?'web_research_flights','web_research_lodging'\)/.test(SQL16) &&
+    /'flights_duffel'/.test(SQL16) && /'hotels_primary_provider'/.test(SQL16) &&
+    /'hotel_preferred_links'/.test(SQL16) && /'anthropic_ranking'/.test(SQL16) && /'final_summary'/.test(SQL16));
+
+  // 99 config renombrada _per_fetch con default 4000
+  ok('99 web_research_max_content_tokens_per_fetch default 4000',
+    /web_research_max_content_tokens_per_fetch integer not null default 4000/.test(SQL16));
+
+  // 100 compuerta doble: mitad DB (default false)
+  ok('100 milu_settings.web_research_enabled boolean not null default false',
+    /web_research_enabled\s+boolean not null default false/.test(SQL16));
+
+  // 101 telemetría separada de herramientas en llm_usage_log
+  ok('101 llm_usage_log: web_search_requests + web_fetch_requests',
+    /web_search_requests integer not null default 0/.test(SQL16) &&
+    /web_fetch_requests\s+integer not null default 0/.test(SQL16));
+
+  // 102 contadores/costo por propuesta en el job
+  ok('102 job: web_search_count/web_fetch_count/research_cost_usd/rerun_count',
+    /web_search_count\s+integer not null default 0/.test(SQL16) &&
+    /web_fetch_count\s+integer not null default 0/.test(SQL16) &&
+    /research_cost_usd\s+numeric not null default 0/.test(SQL16) &&
+    /rerun_count\s+integer not null default 0/.test(SQL16));
+
+  /* ============================================================
+     WEB RESEARCH 8D — comportamiento (cliente Anthropic MOCKEADO, sin red).
+     ============================================================ */
+  function spyClient(findings, stu) {
+    const c = { calls: 0, messages: async function () {
+      c.calls++;
+      return { model_version: 'claude-haiku-4-5-20251001',
+        usage: { input_tokens: 1200, output_tokens: 200, server_tool_use: { web_search_requests: (stu && stu.web_search_requests) || 1, web_fetch_requests: (stu && stu.web_fetch_requests) || 1 } },
+        content: [], output: { findings: findings || [] } };
+    } };
+    return c;
+  }
+  const AVIANCA = { source_url: 'https://www.avianca.com/fare', price_cents: 12300, currency: 'USD', airline: 'Avianca', origin: 'UIO', destination: 'SCY' };
+  const WR_ENV_ON = { ANTHROPIC_MILU_TOURISM_MODEL: 'Haiku', MILU_TOURISM_WEB_RESEARCH_ENABLED: 'true' };
+  function wrJobDb() {
+    const jid = nid();
+    const job = { id: jid, tenant_id: 'hook-adventure', booking_id: nid(), passenger_form_id: nid(), status: 'running', active: true, requirements_snapshot: snap(), web_search_count: 0, web_fetch_count: 0, research_cost_usd: 0, rerun_count: 0 };
+    return { db: { travel_search_jobs: [job], travel_flight_options: [], travel_hotel_options: [], llm_usage_log: [], travel_search_audit: [], milu_settings: [] }, job: job };
+  }
+
+  // 103 compuerta doble OFF (ambas) → deshabilitado, sin llamada externa
+  let wr = wrJobDb(); setClient(wr.db); let spy = spyClient([AVIANCA]);
+  let rr = await worker.runSubtask({ id: nid(), job_id: wr.job.id, kind: 'web_research_flights' }, { job: wr.job, env: {}, settings: { web_research_enabled: false }, researchClient: spy });
+  ok('103 compuerta doble off → web_research_disabled (sin llamada)', rr.status === 'partial' && rr.reason === 'web_research_disabled' && spy.calls === 0 && wr.db.travel_flight_options.length === 0);
+
+  // 104 env ON + DB OFF → deshabilitado
+  wr = wrJobDb(); setClient(wr.db); spy = spyClient([AVIANCA]);
+  rr = await worker.runSubtask({ id: nid(), job_id: wr.job.id, kind: 'web_research_flights' }, { job: wr.job, env: WR_ENV_ON, settings: { web_research_enabled: false }, researchClient: spy });
+  ok('104 env on + DB off → deshabilitado', rr.reason === 'web_research_disabled' && spy.calls === 0);
+
+  // 105 env OFF + DB ON → deshabilitado
+  wr = wrJobDb(); setClient(wr.db); spy = spyClient([AVIANCA]);
+  rr = await worker.runSubtask({ id: nid(), job_id: wr.job.id, kind: 'web_research_flights' }, { job: wr.job, env: {}, settings: { web_research_enabled: true }, researchClient: spy });
+  ok('105 env off + DB on → deshabilitado', rr.reason === 'web_research_disabled' && spy.calls === 0);
+
+  // 106 ambas ON → ejecuta; opción unverified con fuente y precio
+  wr = wrJobDb(); setClient(wr.db); spy = spyClient([AVIANCA], { web_search_requests: 2, web_fetch_requests: 1 });
+  rr = await worker.runSubtask({ id: nid(), job_id: wr.job.id, kind: 'web_research_flights' }, { job: wr.job, env: WR_ENV_ON, settings: { web_research_enabled: true }, researchClient: spy });
+  const o106 = wr.db.travel_flight_options[0] || {};
+  ok('106 compuerta doble ON → hallazgo unverified con fuente+precio', spy.calls === 1 && rr.status === 'completed' && wr.db.travel_flight_options.length === 1 && o106.provider === 'web_research' && o106.research_review_status === 'unverified' && /avianca\.com/.test(o106.research_source_url || '') && o106.total_price_cents === 12300);
+
+  // 107 Haiku-only: modelo sin configurar → configuration_error, sin llamar
+  spy = spyClient([AVIANCA]);
+  const r107 = await webtools.runResearch({ env: {}, client: spy, settings: {}, input: {} });
+  ok('107 modelo sin configurar → configuration_error (sin llamada)', r107.ok === false && r107.status === 'configuration_error' && spy.calls === 0);
+
+  // 108 allowlist: hallazgo fuera de dominio se descarta; permitido se conserva
+  const r108 = await webResearch.researchFlights({ id: nid(), booking_id: nid() }, snap(), { env: { ANTHROPIC_MILU_TOURISM_MODEL: 'Haiku' }, settings: { web_research_enabled: true }, client: spyClient([{ source_url: 'https://evil.com/x', price_cents: 9900, currency: 'USD' }, AVIANCA]) });
+  ok('108 allowlist: solo dominios autorizados', r108.options.length === 1 && /avianca\.com/.test(r108.options[0].research_source_url) && r108.options[0].total_price_cents === 12300);
+
+  // 109 límites: 6 búsquedas / 2 fetches / 4000 tokens + allowed_domains
+  const tools = webtools.buildResearchTools({ web_research_max_searches: 6, web_research_max_fetches: 2, web_research_max_content_tokens_per_fetch: 4000 });
+  const ws = tools.filter(function (t) { return t.name === 'web_search'; })[0]; const wf = tools.filter(function (t) { return t.name === 'web_fetch'; })[0];
+  ok('109 límites tools: max_uses 6/2, max_content_tokens 4000, allowed_domains', ws.type === 'web_search_20250305' && ws.max_uses === 6 && wf.type === 'web_fetch_20250910' && wf.max_uses === 2 && wf.max_content_tokens === 4000 && ws.allowed_domains.indexOf('avianca.com') !== -1);
+
+  // 110 presupuesto $0.30 bloquea antes de llamar
+  spy = spyClient([AVIANCA]);
+  const r110 = await webtools.runResearch({ env: { ANTHROPIC_MILU_TOURISM_MODEL: 'Haiku' }, client: spy, settings: { web_research_max_cost_per_job_usd: 0.30 }, spentJobUsd: 0.30, input: {} });
+  ok('110 presupuesto $0.30 bloquea (sin llamada)', r110.ok === false && r110.reason === 'research_budget_exceeded' && spy.calls === 0);
+
+  // 111 parada temprana: ya hay suficientes opciones activas
+  wr = wrJobDb();
+  for (var e = 0; e < 3; e++) wr.db.travel_flight_options.push({ id: nid(), search_job_id: wr.job.id, active: true, provider: 'web_research' });
+  setClient(wr.db); spy = spyClient([AVIANCA]);
+  rr = await worker.runSubtask({ id: nid(), job_id: wr.job.id, kind: 'web_research_flights' }, { job: wr.job, env: WR_ENV_ON, settings: { web_research_enabled: true }, researchClient: spy });
+  ok('111 parada temprana con suficientes opciones (sin llamada)', rr.reason === 'enough_options' && spy.calls === 0);
+
+  // 112 fallback por dominio: sin hallazgos → opción con URL de dominio, precio nulo
+  const r112 = await webResearch.researchFlights({ id: nid(), booking_id: nid() }, snap(), { env: { ANTHROPIC_MILU_TOURISM_MODEL: 'Haiku' }, settings: {}, client: spyClient([]) });
+  ok('112 fallback por dominio (unverified, precio nulo, fuente allowlisted)', r112.options.length === 1 && r112.options[0].total_price_cents === null && allow.isAllowedResearchDomain(r112.options[0].research_source_url) === true && r112.options[0].research_review_status === 'unverified');
+
+  // 113/114 unverified sin actor/fecha + fuente obligatoria
+  const map113 = webResearch.mapFlightFinding(snap(), AVIANCA);
+  const map114 = webResearch.mapFlightFinding(snap(), { source_url: 'https://evil.com/x', price_cents: 1 });
+  ok('113 hallazgo nace unverified sin actor/fecha', map113.research_review_status === 'unverified' && !map113.research_reviewed_by_user_id && !map113.research_reviewed_at && !!map113.research_source_url);
+  ok('114 fuente obligatoria: sin dominio permitido se descarta', map114 === null);
+
+  // 115 contadores del job + telemetría en llm_usage_log
+  wr = wrJobDb(); setClient(wr.db); spy = spyClient([AVIANCA], { web_search_requests: 2, web_fetch_requests: 1 });
+  await worker.runSubtask({ id: nid(), job_id: wr.job.id, kind: 'web_research_flights' }, { job: wr.job, env: WR_ENV_ON, settings: { web_research_enabled: true }, researchClient: spy });
+  const jrow = wr.db.travel_search_jobs[0]; const lrow = (wr.db.llm_usage_log || [])[0] || {};
+  ok('115 contadores + telemetría (search/fetch/costo)', jrow.web_search_count === 2 && jrow.web_fetch_count === 1 && jrow.research_cost_usd > 0 && lrow.web_search_requests === 2 && lrow.web_fetch_requests === 1);
+
+  // 116 aprobar/rechazar: fija actor + fecha + auditoría
+  const optId = nid();
+  const db116 = { travel_flight_options: [{ id: optId, tenant_id: 'hook-adventure', booking_id: nid(), search_job_id: nid(), provider: 'web_research', research_review_status: 'unverified', research_source_url: 'https://www.avianca.com/fare' }], travel_search_audit: [] };
+  setClient(db116);
+  const rev = await milu.reviewFinding('flight', optId, 'verified', { role: 'owner', userId: 'u-owner' });
+  const o116 = db116.travel_flight_options[0]; const aud116 = (db116.travel_search_audit || [])[0] || {};
+  ok('116 aprobar → verified + actor + fecha + auditoría', rev.status === 'verified' && o116.research_review_status === 'verified' && o116.research_reviewed_by_user_id === 'u-owner' && !!o116.research_reviewed_at && aud116.action === 'web_research_review_verified');
+
+  // 117 rerun contabilizado + auditado; requiere compuerta doble
+  const rj = { id: nid(), tenant_id: 'hook-adventure', booking_id: nid(), active: true, status: 'completed', rerun_count: 0 };
+  const db117 = { travel_search_jobs: [rj], milu_settings: [{ tenant_id: 'hook-adventure', web_research_enabled: true }],
+    travel_search_subtasks: [{ id: nid(), tenant_id: 'hook-adventure', job_id: rj.id, kind: 'web_research_flights', status: 'completed' }, { id: nid(), tenant_id: 'hook-adventure', job_id: rj.id, kind: 'web_research_lodging', status: 'completed' }],
+    travel_search_audit: [] };
+  setClient(db117);
+  let rerunDisabled = false; try { await milu.rerunResearch(rj.booking_id, rj.id, { role: 'owner', userId: 'u-owner' }); } catch (e) { rerunDisabled = e.code === 'WEB_RESEARCH_DISABLED'; }
+  process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED = 'true';
+  const rerunRes = await milu.rerunResearch(rj.booking_id, rj.id, { role: 'owner', userId: 'u-owner' });
+  delete process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED;
+  const aud117 = (db117.travel_search_audit || []).some(function (a) { return a.action === 'web_research_rerun'; });
+  ok('117 rerun: gate off rechaza; gate on cuenta+audita', rerunDisabled === true && rerunRes.rerun === true && rerunRes.rerun_count === 1 && rerunRes.requeued === 2 && db117.travel_search_jobs[0].rerun_count === 1 && aud117);
+
+  // 118 dedup: dos investigaciones con el mismo hallazgo → 1 opción activa
+  wr = wrJobDb(); setClient(wr.db);
+  await worker.runSubtask({ id: nid(), job_id: wr.job.id, kind: 'web_research_flights' }, { job: wr.job, env: WR_ENV_ON, settings: { web_research_enabled: true }, researchClient: spyClient([AVIANCA]) });
+  await worker.runSubtask({ id: nid(), job_id: wr.job.id, kind: 'web_research_flights' }, { job: wr.job, env: WR_ENV_ON, settings: { web_research_enabled: true }, researchClient: spyClient([AVIANCA]) });
+  const actives118 = wr.db.travel_flight_options.filter(function (o) { return o.active === true; });
+  ok('118 dedup: mismo hallazgo no duplica opción activa', actives118.length === 1);
+
+  // 119 handlers: staff 403; owner permitido
+  CURRENT_ROLE = 'staff';
+  hr = await run(rerunH, { method: 'POST', headers: {}, body: { booking_id: nid(), job_id: nid() } });
+  const staffRerun403 = hr.statusCode === 403;
+  hr = await run(approveH, { method: 'POST', headers: {}, body: { option_kind: 'flight', option_id: nid(), decision: 'verified' } });
+  const staffApprove403 = hr.statusCode === 403;
+  CURRENT_ROLE = 'owner';
+  ok('119 rerun/approve: staff 403', staffRerun403 === true && staffApprove403 === true);
+
+  // 120 sin envío al cliente / sin Stripe / sin compras en las fuentes 8D
+  const wrSrc = fs.readFileSync(BASE + '/server/lib/milu-web-tools.js', 'utf8')
+    + fs.readFileSync(BASE + '/server/lib/milu-adapters/web-research.js', 'utf8')
+    + fs.readFileSync(BASE + '/server/admin-handlers/milu-research-rerun.js', 'utf8')
+    + fs.readFileSync(BASE + '/server/admin-handlers/milu-research-approve.js', 'utf8');
+  ok('120 web research: sin email/Stripe/compras al cliente (uso real de código)',
+    !/booking-email-service|customer_travel_confirmation|\bresend\b|sendEmail|require\(['"][^'"]*stripe|stripe\.(?:paymentIntents|charges|checkout)|PaymentIntent|create-payment-intent/i.test(wrSrc));
+
+  // 121 dominios permitidos (subdominios OK, fuera rechazado)
+  ok('121 allowlist de investigación', allow.isAllowedResearchDomain('https://evil.com/x') === false && allow.isAllowedResearchDomain('https://www.avianca.com/x') === true && allow.researchAllowedDomains().indexOf('avianca.com') !== -1);
+
+  // 122 doble gate helper (env + DB)
+  ok('122 webResearchEnabled requiere ambas mitades',
+    flags.webResearchEnabled({ MILU_TOURISM_WEB_RESEARCH_ENABLED: 'true' }, { web_research_enabled: true }) === true &&
+    flags.webResearchEnabled({ MILU_TOURISM_WEB_RESEARCH_ENABLED: 'true' }, { web_research_enabled: false }) === false &&
+    flags.webResearchEnabled({}, { web_research_enabled: true }) === false);
+
+  // 123 costo de investigación = tokens + $0.01 × búsquedas
+  const c123 = cost.estimateResearchCostUsd('claude-haiku-4-5', { input_tokens: 1000000, output_tokens: 0 }, 3);
+  ok('123 costo research = tokens + $0.01×búsquedas', Math.abs(c123 - (1.0 + 0.03)) < 1e-6);
+
+  // 124 settings-save owner edita web research (DB gate + límites)
+  CURRENT_ROLE = 'owner'; setClient({ milu_settings: [] });
+  let sv = await run(settingsSaveH, { method: 'POST', headers: {}, body: { web_research_enabled: true, web_research_max_searches: 6, web_research_max_fetches: 2, web_research_max_content_tokens_per_fetch: 4000, web_research_max_cost_per_job_usd: 0.30 } });
+  ok('124 settings-save: owner edita config de web research', sv.statusCode === 200 && j(sv).saved === true);
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);
