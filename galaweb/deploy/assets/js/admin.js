@@ -2184,7 +2184,12 @@ function panelsFor(role){
     {id:'notes', label:(ES?'Notas de paquetes':'Package notes'), build:function(){ return panelPackageNotes(role); }},
     {id:'passengers', label:(ES?'Pasajeros y logística':'Passengers & logistics'), build:function(){ return panelPassengers(role); }},
     {id:'hotels', label:(ES?'Hoteles preferidos':'Preferred hotels'), build:function(){ return panelHotelPreferences(role); }},
-    {id:'milu', label:(ES?'Milu Turismo':'Milu Tourism'), build:function(){ return panelMiluTourism(role); }},
+    // FASE 8 CONGELADA: Milu Web Research queda OCULTO del menú (Web Search/Fetch no garantiza
+    // tarifas/disponibilidad exactas en páginas dinámicas). El panel, endpoints, tablas, migraciones
+    // y pruebas se CONSERVAN (protegidos, sin exponer en UI). La futura integración de vuelos será
+    // por Duffel u otro proveedor API, dentro de un módulo "Flights" en el detalle de cada booking (Fase 9).
+    // Para reactivar: descomentar esta línea (además requiere la compuerta doble ENV+DB en true).
+    // {id:'milu', label:(ES?'Milu Turismo':'Milu Tourism'), build:function(){ return panelMiluTourism(role); }},
     {id:'notifications', label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }}
   ];
   // Datos de prueba: SOLO owner (no se genera en el DOM para admin ni staff).
