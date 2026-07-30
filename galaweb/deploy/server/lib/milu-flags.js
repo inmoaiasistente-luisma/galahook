@@ -11,6 +11,8 @@
      · MILU_TOURISM_DUFFEL_ENABLED          (adapter vuelos real)
      · MILU_TOURISM_HOTEL_PROVIDER_ENABLED  (adapter hotelero real)
      · MILU_TOURISM_SONNET_ENABLED          (modelo Sonnet — futuro)
+     · MILU_TOURISM_WEB_RESEARCH_ENABLED    (web research 8D — mitad ENV
+                                             de la compuerta doble)
    ========================================================= */
 
 function isTrue(v) { return String(v == null ? '' : v).trim().toLowerCase() === 'true'; }
@@ -22,8 +24,21 @@ function getMiluFlags(env) {
     worker_enabled: isTrue(env.MILU_TOURISM_WORKER_ENABLED),
     duffel_enabled: isTrue(env.MILU_TOURISM_DUFFEL_ENABLED),
     hotel_provider_enabled: isTrue(env.MILU_TOURISM_HOTEL_PROVIDER_ENABLED),
-    sonnet_enabled: isTrue(env.MILU_TOURISM_SONNET_ENABLED)
+    sonnet_enabled: isTrue(env.MILU_TOURISM_SONNET_ENABLED),
+    web_research_enabled: isTrue(env.MILU_TOURISM_WEB_RESEARCH_ENABLED)
   };
+}
+
+/**
+ * Compuerta DOBLE de web research: solo true si AMBAS mitades están activas.
+ *   1) ENV  MILU_TOURISM_WEB_RESEARCH_ENABLED = true
+ *   2) DB   milu_settings.web_research_enabled = true
+ * Ambas false por defecto. Si falta cualquiera → false (sin llamadas externas).
+ */
+function webResearchEnabled(env, settings) {
+  const envOn = isTrue((env || process.env).MILU_TOURISM_WEB_RESEARCH_ENABLED);
+  const dbOn = !!(settings && settings.web_research_enabled === true);
+  return envOn && dbOn;
 }
 
 /** Estado legible para el panel: 'not_connected' | 'sandbox' | 'live'. */
@@ -34,4 +49,4 @@ function providerState(env, which) {
   return 'not_connected';
 }
 
-module.exports = { getMiluFlags, providerState };
+module.exports = { getMiluFlags, providerState, webResearchEnabled };

@@ -20,11 +20,14 @@
 const { getSupabase } = require('./supabase');
 const { getTenantId } = require('./http');
 const { buildTravelRequirements } = require('./passenger-intake');
+const { webResearchEnabled } = require('./milu-flags');
 
 /* Duración por paquete (días). Deriva la fecha de regreso sin tocar el catálogo. */
 const PACKAGE_DURATION_DAYS = { p3: 4, p4: 5, p7: 7, p8sc: 8, p8is: 8 };
 const READY_FORM_STATUSES = ['submitted', 'reviewed', 'complete'];
 const SUBTASK_KINDS = ['flights_duffel', 'hotels_primary_provider', 'hotel_preferred_links', 'anthropic_ranking', 'final_summary'];
+const WEB_RESEARCH_KINDS = ['web_research_flights', 'web_research_lodging'];
+const MAX_RERUNS_PER_JOB = 20;
 
 /* ---------------- fechas ---------------- */
 function addDaysYmd(ymd, n) {
@@ -145,6 +148,20 @@ async function startSearch(bookingId, userId, searchType) {
     });
   }
 
+  // Web research (8D): subtareas SOLO si la compuerta doble (env + DB) está activa.
+  // Con flags off (por defecto) NO se crean → nunca hay investigación externa.
+  try {
+    const st = await supabase.from('milu_settings').select('web_research_enabled').eq('tenant_id', tenant).maybeSingle();
+    if (webResearchEnabled(process.env, st.data || {})) {
+      for (var w = 0; w < WEB_RESEARCH_KINDS.length; w++) {
+        await supabase.from('travel_search_subtasks').insert({
+          tenant_id: tenant, job_id: job.id, kind: WEB_RESEARCH_KINDS[w], status: 'queued',
+          attempt_count: 0, max_attempts: 3, timeout_ms: 60000, created_at: new Date().toISOString()
+        });
+      }
+    }
+  } catch (e) { /* sin settings → no se crean subtareas de web research */ }
+
   const lg = await supabase.from('travel_logistics').select('id').eq('booking_id', bookingId).eq('tenant_id', tenant).maybeSingle();
   if (!lg.data) {
     await supabase.from('travel_logistics').insert({
@@ -204,8 +221,92 @@ async function adjustFlightDates(bookingId, opts) {
   return Object.assign({ ok: true }, patch);
 }
 
+/* ---------------- web research: "Buscar nuevamente" (contabilizado) ---------------- */
+async function rerunResearch(bookingId, jobId, actor) {
+  const supabase = getSupabase();
+  const tenant = getTenantId();
+  const jq = await supabase.from('travel_search_jobs').select('*').eq('id', jobId).eq('tenant_id', tenant).maybeSingle();
+  const job = jq.data;
+  if (!job || job.booking_id !== bookingId) throw gateError('JOB_NOT_FOUND');
+  if (job.active !== true) throw gateError('JOB_INACTIVE');
+
+  // Compuerta doble: sin ambas mitades → no se investiga.
+  const st = await supabase.from('milu_settings').select('*').eq('tenant_id', tenant).maybeSingle();
+  if (!webResearchEnabled(process.env, st.data || {})) throw gateError('WEB_RESEARCH_DISABLED');
+
+  // Rate-limit / contabilización por propuesta.
+  if ((job.rerun_count || 0) >= MAX_RERUNS_PER_JOB) throw gateError('RERUN_LIMIT_REACHED');
+
+  const subs = await supabase.from('travel_search_subtasks').select('*').eq('job_id', jobId);
+  const rows = subs.data || [];
+  var requeued = 0;
+  for (var k = 0; k < WEB_RESEARCH_KINDS.length; k++) {
+    const found = rows.filter(function (s) { return s.kind === WEB_RESEARCH_KINDS[k]; })[0];
+    if (found) {
+      await supabase.from('travel_search_subtasks').update({
+        status: 'queued', attempt_count: 0, locked_by: null, locked_at: null,
+        lease_expires_at: null, heartbeat_at: null, next_attempt_at: null, finished_at: null, last_sanitized_error: null
+      }).eq('id', found.id);
+    } else {
+      await supabase.from('travel_search_subtasks').insert({
+        tenant_id: tenant, job_id: jobId, kind: WEB_RESEARCH_KINDS[k], status: 'queued',
+        attempt_count: 0, max_attempts: 3, timeout_ms: 60000, created_at: new Date().toISOString()
+      });
+    }
+    requeued++;
+  }
+
+  const newCount = (job.rerun_count || 0) + 1;
+  const nextStatus = (job.status === 'completed' || job.status === 'partial') ? 'running' : job.status;
+  await supabase.from('travel_search_jobs').update({ rerun_count: newCount, status: nextStatus, active: true }).eq('id', jobId);
+
+  const at = (actor && (actor.role === 'owner' || actor.role === 'admin')) ? actor.role : 'system';
+  try {
+    await supabase.from('travel_search_audit').insert({
+      tenant_id: tenant, booking_id: bookingId, search_job_id: jobId,
+      actor_type: at, actor_id: (actor && actor.userId) || null,
+      action: 'web_research_rerun', source: 'admin', result: 'success',
+      sanitized_details: { rerun_count: newCount, requeued: requeued }
+    });
+  } catch (e) { /* la auditoría nunca rompe el rerun */ }
+
+  return { rerun: true, rerun_count: newCount, requeued: requeued, remaining: Math.max(0, MAX_RERUNS_PER_JOB - newCount) };
+}
+
+/* ---------------- web research: revisión humana (aprobar / rechazar) ---------------- */
+async function reviewFinding(optionKind, optionId, decision, actor) {
+  if (decision !== 'verified' && decision !== 'rejected') throw gateError('INVALID_DECISION');
+  if (optionKind !== 'flight' && optionKind !== 'hotel') throw gateError('INVALID_KIND');
+  const supabase = getSupabase();
+  const tenant = getTenantId();
+  const table = optionKind === 'flight' ? 'travel_flight_options' : 'travel_hotel_options';
+  const q = await supabase.from(table).select('id,booking_id,search_job_id,provider,research_review_status').eq('id', optionId).eq('tenant_id', tenant).maybeSingle();
+  const opt = q.data;
+  if (!opt) throw gateError('OPTION_NOT_FOUND');
+  if (opt.provider !== 'web_research' || !opt.research_review_status) throw gateError('NOT_RESEARCH_OPTION');
+
+  await supabase.from(table).update({
+    research_review_status: decision,
+    research_reviewed_by_user_id: (actor && actor.userId) || null,
+    research_reviewed_at: new Date().toISOString()
+  }).eq('id', optionId).eq('tenant_id', tenant);
+
+  const at = (actor && (actor.role === 'owner' || actor.role === 'admin')) ? actor.role : 'system';
+  try {
+    await supabase.from('travel_search_audit').insert({
+      tenant_id: tenant, booking_id: opt.booking_id || null, search_job_id: opt.search_job_id || null,
+      actor_type: at, actor_id: (actor && actor.userId) || null,
+      action: 'web_research_review_' + decision, source: 'admin', result: 'success',
+      sanitized_details: { option_kind: optionKind, decision: decision }
+    });
+  } catch (e) { /* auditoría no rompe */ }
+
+  return { reviewed: true, status: decision };
+}
+
 module.exports = {
-  PACKAGE_DURATION_DAYS, READY_FORM_STATUSES, SUBTASK_KINDS,
+  PACKAGE_DURATION_DAYS, READY_FORM_STATUSES, SUBTASK_KINDS, WEB_RESEARCH_KINDS, MAX_RERUNS_PER_JOB,
   addDaysYmd, computeFlightDates, assertSearchEligible, loadGateData,
-  sanitizeRequirements, buildMiluRequirements, startSearch, cancelSearch, adjustFlightDates
+  sanitizeRequirements, buildMiluRequirements, startSearch, cancelSearch, adjustFlightDates,
+  rerunResearch, reviewFinding
 };
