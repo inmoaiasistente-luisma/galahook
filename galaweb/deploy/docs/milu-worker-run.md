@@ -15,7 +15,12 @@ cliente Anthropic real (web_search + web_fetch) solo para las subtareas
 
 ## Requisitos previos (los hace el owner)
 
-1. **Migración 0016 aplicada** en la base de Preview (ya está).
+1. **Migraciones 0016 y 0017 aplicadas** en la base de Preview. 0017 corrige el
+   claim para que una subtarea `partial` (p.ej. `provider_not_connected`) sea
+   TERMINAL y no se re-reclame en cada pasada (antes bloqueaba el avance a las
+   subtareas `web_research_*`). Aplica el contenido de
+   `supabase/migrations/0017_milu_claim_only_queued.sql` (CREATE OR REPLACE,
+   aditivo y no destructivo) **antes** de correr el runner.
 2. **Dependencia** instalada:
    ```bash
    npm install

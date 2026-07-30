@@ -34,7 +34,7 @@ function miluRpc(name, params, db) {
     if (ls == null || ls < 15 || ls > 300) throw new Error('invalid lease seconds');
     const cand = subs.filter(function (s) {
       return s.tenant_id === params.p_tenant
-        && (s.status === 'queued' || s.status === 'partial')
+        && s.status === 'queued'                       // SOLO queued (0017): 'partial' es terminal, no se re-reclama
         && (s.attempt_count || 0) < (s.max_attempts || 3)
         && (!s.lease_expires_at || Date.parse(s.lease_expires_at) < now)
         && (!s.next_attempt_at || Date.parse(s.next_attempt_at) <= now)
@@ -1048,6 +1048,50 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   ok('160 job existente refresca snapshot (no duplica)',
     j(ref1).created === true && j(ref2).created === false && refF.db.travel_search_jobs.length === 1 &&
     snap160.connection_city === 'guayaquil' && snap160.origin_airport === 'GYE');
+
+  // ── Claim SOLO 'queued': 'partial' (provider_not_connected) es terminal (0017) ──
+
+  // 161 estructural: 0017 reclama solo 'queued' y ya no incluye 'partial'
+  const SQL17 = fs.readFileSync(path.join(BASE, 'supabase/migrations/0017_milu_claim_only_queued.sql'), 'utf8');
+  ok('161 0017: claim reclama solo queued (excluye partial/terminales)',
+    /create or replace function public\.milu_claim_next_subtask/i.test(SQL17) &&
+    /and\s+s\.status\s*=\s*'queued'/i.test(SQL17) &&
+    !/and\s+s\.status\s+in\s*\(/i.test(SQL17));
+
+  // 162 (#7) provider desconectado → partial UNA vez; no se re-reclama; el claim
+  // avanza a web_research_flights y luego web_research_lodging; termina.
+  const cqJid = nid();
+  const cqJob = { id: cqJid, tenant_id: 'hook-adventure', booking_id: nid(), status: 'running', active: true, requirements_snapshot: snap() };
+  const cqDb = {
+    travel_search_jobs: [cqJob],
+    travel_search_subtasks: [
+      { id: nid(), tenant_id: 'hook-adventure', job_id: cqJid, kind: 'flights_duffel', status: 'queued', attempt_count: 0, max_attempts: 3, created_at: '2026-08-01T00:00:01Z' },
+      { id: nid(), tenant_id: 'hook-adventure', job_id: cqJid, kind: 'hotels_primary_provider', status: 'queued', attempt_count: 0, max_attempts: 3, created_at: '2026-08-01T00:00:02Z' },
+      { id: nid(), tenant_id: 'hook-adventure', job_id: cqJid, kind: 'web_research_flights', status: 'queued', attempt_count: 0, max_attempts: 3, created_at: '2026-08-01T00:00:03Z' },
+      { id: nid(), tenant_id: 'hook-adventure', job_id: cqJid, kind: 'web_research_lodging', status: 'queued', attempt_count: 0, max_attempts: 3, created_at: '2026-08-01T00:00:04Z' }
+    ],
+    travel_flight_options: [], travel_hotel_options: [], milu_settings: []
+  };
+  setClient(cqDb);
+  async function cqPass() {
+    const cl = await worker.claimNextSubtask('hook-adventure', 'wq', 120);
+    if (!cl.ok || !cl.subtask) return null;
+    const stx = cl.subtask;
+    let rs; try { rs = await worker.runSubtask(stx, { job: cqJob, flightProvider: 'stub', hotelProvider: 'stub', env: {}, settings: {} }); } catch (e) { rs = { status: 'failed', reason: 'exception' }; }
+    if (rs.status === 'failed') await worker.failOrRetrySubtask(stx, rs.reason || 'failed');
+    else await worker.completeSubtask(stx.id, rs.status || 'partial');
+    return { kind: stx.kind, id: stx.id, status: rs.status, reason: rs.reason || null };
+  }
+  const cqP1 = await cqPass(), cqP2 = await cqPass(), cqP3 = await cqPass(), cqP4 = await cqPass(), cqP5 = await cqPass();
+  const cqPasses = [cqP1, cqP2, cqP3, cqP4].filter(Boolean);
+  const cqKinds = cqPasses.map(function (x) { return x.kind; });
+  const cqIds = cqPasses.map(function (x) { return x.id; });
+  ok('162 partial provider_not_connected no se re-reclama; claim avanza a web_research y termina',
+    cqP1 && cqP1.status === 'partial' && cqP1.reason === 'provider_not_connected' &&
+    cqIds.length === 4 && cqIds.length === (new Set(cqIds)).size &&        // 4 subtareas distintas, ninguna dos veces
+    cqKinds.indexOf('web_research_flights') !== -1 &&
+    cqKinds.indexOf('web_research_lodging') !== -1 &&
+    cqP5 === null);                                                        // 5ª pasada: nada por reclamar
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);
