@@ -125,6 +125,17 @@ function toolMaxUses(tools, name) {
   return (t && typeof t.max_uses === 'number') ? t.max_uses : 0;
 }
 
+/** Cuenta llamadas a un tool DESDE EL CONTENIDO de UNA respuesta (server_tool_use).
+ * Fiable por-respuesta: usage.server_tool_use puede ser acumulativo/diferido en
+ * pause_turn, lo que rompería el cap si se acumulara. */
+function countToolUses(content, name) {
+  var n = 0;
+  (Array.isArray(content) ? content : []).forEach(function (b) {
+    if (b && b.type === 'server_tool_use' && b.name === name) n++;
+  });
+  return n;
+}
+
 /** Reconstruye los tools con max_uses = original − gastado; retira el tool a 0. */
 function capResearchTools(tools, usedSearch, usedFetch) {
   const out = [];
@@ -188,8 +199,12 @@ function makeAnthropicResearchClient(cfg) {
         acc.output_tokens += u.output_tokens || 0;
         acc.cache_read_tokens += u.cache_read_input_tokens || 0;      // normaliza nombres SDK → core
         acc.cache_write_tokens += u.cache_creation_input_tokens || 0;
-        acc.web_search_requests += stu.web_search_requests || 0;
-        acc.web_fetch_requests += stu.web_fetch_requests || 0;
+        // Conteo por-respuesta desde el CONTENIDO (toda respuesta que hace fetch/search
+        // trae un bloque server_tool_use). NO se usa usage.server_tool_use aquí porque
+        // puede ser acumulativo en pause_turn y falsearía el cap.
+        void stu;
+        acc.web_search_requests += countToolUses(msg.content, 'web_search');
+        acc.web_fetch_requests += countToolUses(msg.content, 'web_fetch');
         lastContent = msg.content || [];
 
         const searchLeft = origSearch - acc.web_search_requests;
@@ -221,6 +236,6 @@ module.exports = {
   makeAnthropicResearchClient,
   // exportadas para pruebas (no requieren el SDK ni red)
   buildUserText, parseLastJsonObject, coerceFinding, extractFindings,
-  toolMaxUses, capResearchTools,
+  toolMaxUses, capResearchTools, countToolUses,
   sdkAvailable: function () { return !!Anthropic; }
 };

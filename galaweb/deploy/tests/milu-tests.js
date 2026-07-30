@@ -1105,21 +1105,30 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
     wrClient.capResearchTools(capTools, 0, 2).every(function (t) { return t.name !== 'web_fetch'; }) &&
     wrClient.capResearchTools(capTools, 6, 2).length === 0);
 
-  // 164 con max_fetches=2, pause_turn JAMÁS ejecuta un 3er fetch (límite duro acumulado)
+  // Bloques server_tool_use realistas (el cap cuenta DESDE EL CONTENIDO, no usage).
+  function stuBlocks(nSearch, nFetch) {
+    const a = [];
+    for (var i = 0; i < nSearch; i++) a.push({ type: 'server_tool_use', name: 'web_search' });
+    for (var k = 0; k < nFetch; k++) a.push({ type: 'server_tool_use', name: 'web_fetch' });
+    return a;
+  }
+
+  // 164 con max_fetches=2, pause_turn JAMÁS ejecuta un 3er fetch (límite duro acumulado).
+  // Request 1 hace 1 search + 2 fetch; el cap retira web_fetch → request 2 sin fetch.
   const c164 = [];
   const sdk164 = { messages: { create: async function (r) { c164.push(r.tools.map(function (t) { return t.name; }));
     return c164.length === 1
-      ? { model: 'm', usage: { server_tool_use: { web_search_requests: 1, web_fetch_requests: 2 } }, content: [{ type: 'text', text: 'x' }], stop_reason: 'pause_turn' }
-      : { model: 'm', usage: { server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 } }, content: [{ type: 'text', text: '```json\n{"findings":[]}\n```' }], stop_reason: 'end_turn' };
+      ? { model: 'm', usage: {}, content: stuBlocks(1, 2).concat([{ type: 'text', text: 'x' }]), stop_reason: 'pause_turn' }
+      : { model: 'm', usage: {}, content: stuBlocks(1, 0).concat([{ type: 'text', text: '```json\n{"findings":[]}\n```' }]), stop_reason: 'end_turn' };
   } } };
   const resp164 = await wrClient.makeAnthropicResearchClient({ sdk: sdk164, maxPauseTurns: 4 })
     .messages({ model: 'm', system: 's', input: { kind: 'flights' }, tools: [{ name: 'web_search', max_uses: 6 }, { name: 'web_fetch', max_uses: 2 }] });
   ok('164 max_fetches=2: pause_turn no ejecuta un 3er fetch',
     resp164.usage.server_tool_use.web_fetch_requests === 2 && c164.length === 2 && c164[1].indexOf('web_fetch') === -1);
 
-  // 169 (agrupado) al agotar search Y fetch, el adapter NO vuelve a llamar a Anthropic
+  // 169 (agrupado) al agotar search Y fetch, el adapter NO vuelve a llamar a Anthropic.
   const c169 = [];
-  const sdk169 = { messages: { create: async function () { c169.push(1); return { model: 'm', usage: { server_tool_use: { web_search_requests: 6, web_fetch_requests: 2 } }, content: [{ type: 'text', text: '```json\n{"findings":[]}\n```' }], stop_reason: 'pause_turn' }; } } };
+  const sdk169 = { messages: { create: async function () { c169.push(1); return { model: 'm', usage: {}, content: stuBlocks(6, 2).concat([{ type: 'text', text: '```json\n{"findings":[]}\n```' }]), stop_reason: 'pause_turn' }; } } };
   await wrClient.makeAnthropicResearchClient({ sdk: sdk169, maxPauseTurns: 4 })
     .messages({ model: 'm', system: 's', input: { kind: 'flights' }, tools: [{ name: 'web_search', max_uses: 6 }, { name: 'web_fetch', max_uses: 2 }] });
   ok('165 tras agotar search+fetch no se reanuda (1 sola llamada Anthropic)', c169.length === 1);
@@ -1224,6 +1233,105 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   const rerunStaff = await run(rerunH, { method: 'POST', headers: {}, body: { booking_id: nid(), job_id: nid() } });
   CURRENT_ROLE = 'owner';
   ok('173 rerun handler: staff 403', rerunStaff.statusCode === 403);
+
+  // ── Presupuesto de fetch ACUMULATIVO POR JOB (flights + lodging ≤ 2 combinados) ──
+  // Cliente espía que respeta max_uses de las tools recibidas (modelo "bien portado").
+  function budgetSpy(perFetch, perSearch) {
+    const calls = [];
+    return { calls: calls, client: { messages: async function (req) {
+      const fTool = (req.tools || []).filter(function (t) { return t.name === 'web_fetch'; })[0];
+      const sTool = (req.tools || []).filter(function (t) { return t.name === 'web_search'; })[0];
+      const fetches = fTool ? Math.min(perFetch, fTool.max_uses || 0) : 0;
+      const searches = sTool ? Math.min(perSearch, sTool.max_uses || 0) : 0;
+      calls.push({ tools: (req.tools || []).map(function (t) { return t.name; }), fetches: fetches, searches: searches });
+      return { usage: { server_tool_use: { web_search_requests: searches, web_fetch_requests: fetches } }, content: [], output: { findings: [] } };
+    } } };
+  }
+  function budgetDb() {
+    const jid = nid();
+    return { jid: jid, db: {
+      travel_search_jobs: [{ id: jid, tenant_id: 'hook-adventure', booking_id: nid(), status: 'running', active: true, web_search_count: 0, web_fetch_count: 0, research_cost_usd: 0, requirements_snapshot: snap() }],
+      travel_search_subtasks: [], travel_flight_options: [], travel_hotel_options: [],
+      milu_settings: [{ tenant_id: 'hook-adventure', web_research_enabled: true, web_research_max_searches: 6, web_research_max_fetches: 2, web_research_max_content_tokens_per_fetch: 4000, web_research_max_cost_per_job_usd: 0.30 }],
+      llm_usage_log: []
+    } };
+  }
+  process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED = 'true';
+
+  // 174 flights consume 2 fetches → lodging consume 0 (combinado = 2; lodging sin web_fetch)
+  let bd = budgetDb(); setClient(bd.db);
+  const sp174 = budgetSpy(2, 1);
+  const set174 = bd.db.milu_settings[0];
+  await worker.runSubtask({ id: nid(), job_id: bd.jid, kind: 'web_research_flights' }, { job: bd.db.travel_search_jobs[0], settings: set174, env: process.env, researchClient: sp174.client });
+  const afterF174 = bd.db.travel_search_jobs[0].web_fetch_count;
+  await worker.runSubtask({ id: nid(), job_id: bd.jid, kind: 'web_research_lodging' }, { job: bd.db.travel_search_jobs[0], settings: set174, env: process.env, researchClient: sp174.client });
+  ok('174 flights=2 fetches → lodging=0; combinado=2; lodging sin web_fetch en tools',
+    afterF174 === 2 && bd.db.travel_search_jobs[0].web_fetch_count === 2 &&
+    sp174.calls[1] && sp174.calls[1].fetches === 0 && sp174.calls[1].tools.indexOf('web_fetch') === -1);
+
+  // 175 flights consume 1 → lodging consume MÁXIMO 1; combinado ≤ 2
+  bd = budgetDb(); setClient(bd.db);
+  const set175 = bd.db.milu_settings[0];
+  await worker.runSubtask({ id: nid(), job_id: bd.jid, kind: 'web_research_flights' }, { job: bd.db.travel_search_jobs[0], settings: set175, env: process.env, researchClient: budgetSpy(1, 1).client });
+  const spL175 = budgetSpy(5, 1);   // lodging intenta 5, pero el restante del job es 1
+  await worker.runSubtask({ id: nid(), job_id: bd.jid, kind: 'web_research_lodging' }, { job: bd.db.travel_search_jobs[0], settings: set175, env: process.env, researchClient: spL175.client });
+  ok('175 flights=1 → lodging≤1; combinado=2', spL175.calls[0].fetches <= 1 && bd.db.travel_search_jobs[0].web_fetch_count === 2);
+
+  // 176 search y fetch permanecen independientes
+  bd = budgetDb(); setClient(bd.db);
+  const spSF = budgetSpy(2, 3);
+  await worker.runSubtask({ id: nid(), job_id: bd.jid, kind: 'web_research_flights' }, { job: bd.db.travel_search_jobs[0], settings: bd.db.milu_settings[0], env: process.env, researchClient: spSF.client });
+  ok('176 search y fetch independientes (fetch=2, search=3)', bd.db.travel_search_jobs[0].web_fetch_count === 2 && bd.db.travel_search_jobs[0].web_search_count === 3);
+
+  // 177 costo total jamás supera $0.30: en el tope no se llama a Anthropic
+  bd = budgetDb(); bd.db.travel_search_jobs[0].research_cost_usd = 0.30; setClient(bd.db);
+  const spCost = budgetSpy(2, 2);
+  const rCost = await worker.runSubtask({ id: nid(), job_id: bd.jid, kind: 'web_research_flights' }, { job: bd.db.travel_search_jobs[0], settings: bd.db.milu_settings[0], env: process.env, researchClient: spCost.client });
+  ok('177 costo en tope → no se llama a Anthropic (cost_budget_reached)',
+    rCost.reason === 'cost_budget_reached' && spCost.calls.length === 0 && bd.db.travel_search_jobs[0].research_cost_usd <= 0.30);
+
+  // 178 sin presupuesto ÚTIL de tools → no se llama a Anthropic
+  bd = budgetDb(); bd.db.travel_search_jobs[0].web_search_count = 6; bd.db.travel_search_jobs[0].web_fetch_count = 2; setClient(bd.db);
+  const spNo = budgetSpy(1, 1);
+  const rNo = await worker.runSubtask({ id: nid(), job_id: bd.jid, kind: 'web_research_flights' }, { job: bd.db.travel_search_jobs[0], settings: bd.db.milu_settings[0], env: process.env, researchClient: spNo.client });
+  ok('178 sin presupuesto útil → no se llama a Anthropic (search_budget_reached)',
+    rNo.reason === 'search_budget_reached' && spNo.calls.length === 0);
+
+  // 179 buildResearchTools omite web_fetch/web_search cuando su restante es 0
+  const t0f = webtools.buildResearchTools({ web_research_max_searches: 6, web_research_max_fetches: 0 });
+  const t0s = webtools.buildResearchTools({ web_research_max_searches: 0, web_research_max_fetches: 2 });
+  ok('179 buildResearchTools: omite tool con restante 0',
+    t0f.every(function (t) { return t.name !== 'web_fetch'; }) && t0f.some(function (t) { return t.name === 'web_search'; }) &&
+    t0s.every(function (t) { return t.name !== 'web_search'; }) && t0s.some(function (t) { return t.name === 'web_fetch'; }));
+
+  process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED = prevWrEnv;
+
+  // ── Status final del job en fase web-only (#6) ──
+
+  // 181 web_research completed + proveedor partial(provider_not_connected) → job completed
+  const jWC = nid();
+  const dbWC = { travel_search_jobs: [{ id: jWC, tenant_id: 'hook-adventure', status: 'running', active: true }],
+    travel_search_subtasks: [
+      { job_id: jWC, kind: 'flights_duffel', status: 'partial' },
+      { job_id: jWC, kind: 'hotels_primary_provider', status: 'partial' },
+      { job_id: jWC, kind: 'web_research_flights', status: 'completed' },
+      { job_id: jWC, kind: 'web_research_lodging', status: 'completed' }
+    ] };
+  setClient(dbWC);
+  const stWC = await worker.recomputeJobStatus(jWC);
+  ok('181 web_research completed + proveedor partial → job completed', stWC === 'completed' && dbWC.travel_search_jobs[0].status === 'completed');
+
+  // 182 si una web_research NO terminó completed → el job sigue partial (no se fuerza completed)
+  const jWC2 = nid();
+  const dbWC2 = { travel_search_jobs: [{ id: jWC2, tenant_id: 'hook-adventure', status: 'running', active: true }],
+    travel_search_subtasks: [
+      { job_id: jWC2, kind: 'flights_duffel', status: 'partial' },
+      { job_id: jWC2, kind: 'web_research_flights', status: 'completed' },
+      { job_id: jWC2, kind: 'web_research_lodging', status: 'partial' }
+    ] };
+  setClient(dbWC2);
+  const stWC2 = await worker.recomputeJobStatus(jWC2);
+  ok('182 web_research incompleta → job sigue partial', stWC2 === 'partial');
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);

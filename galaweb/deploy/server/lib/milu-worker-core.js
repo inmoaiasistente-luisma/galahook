@@ -89,9 +89,15 @@ async function loadJob(jobId) {
   return r.data || null;
 }
 
+/* Subtareas de proveedor externo (Duffel/hotel): en la fase web-only quedan
+   partial(provider_not_connected) y NO deben degradar el job si las web_research
+   requeridas terminaron completed. */
+const PROVIDER_KINDS = ['flights_duffel', 'hotels_primary_provider', 'hotel_preferred_links'];
+const WEB_RESEARCH_KINDS_WC = ['web_research_flights', 'web_research_lodging'];
+
 async function recomputeJobStatus(jobId) {
   const supabase = getSupabase();
-  const r = await supabase.from('travel_search_subtasks').select('status').eq('job_id', jobId);
+  const r = await supabase.from('travel_search_subtasks').select('kind,status').eq('job_id', jobId);
   const subs = r.data || [];
   const total = subs.length;
   const completed = subs.filter(function (s) { return s.status === 'completed'; }).length;
@@ -104,7 +110,20 @@ async function recomputeJobStatus(jobId) {
   else if (completed === total) status = 'completed';
   else if (failed === total) status = 'failed';
   else if (pending > 0) status = 'running';
-  else status = 'partial';                 // sin pendientes pero mezcla → parcial
+  else {
+    // Sin pendientes pero mezcla → normalmente 'partial'. EXCEPCIÓN fase web-only:
+    // si hay web_research y TODAS terminaron completed, y las únicas subtareas
+    // no-completadas son de PROVEEDOR en partial (provider_not_connected), el job
+    // cuenta como 'completed' (fallback esperado; no degrada por proveedores no
+    // conectados). Usa un estado EXISTENTE del CHECK (sin migración).
+    const webSubs = subs.filter(function (s) { return WEB_RESEARCH_KINDS_WC.indexOf(s.kind) !== -1; });
+    const webAllDone = webSubs.length > 0 && webSubs.every(function (s) { return s.status === 'completed'; });
+    const notCompleted = subs.filter(function (s) { return s.status !== 'completed'; });
+    const onlyProviderPartials = notCompleted.length > 0 && notCompleted.every(function (s) {
+      return s.status === 'partial' && PROVIDER_KINDS.indexOf(s.kind) !== -1;
+    });
+    status = (webAllDone && onlyProviderPartials) ? 'completed' : 'partial';
+  }
 
   await supabase.from('travel_search_jobs').update({ status: status }).eq('id', jobId);
   return status;
@@ -294,12 +313,26 @@ async function runSubtask(subtask, deps) {
       // Parada temprana: ya hay suficientes opciones activas.
       const existing = await countActiveResearchOptions(job.id, isFlights ? 'flight' : 'hotel');
       if (existing >= (deps.enoughOptions || 3)) return { status: 'completed', reason: 'enough_options', count: existing };
-      // Topes por PROPUESTA (job): búsquedas/fetches restantes (≤6 / ≤2 totales).
-      const remSearch = Math.max(0, (settings.web_research_max_searches || 6) - (job.web_search_count || 0));
-      const remFetch = Math.max(0, (settings.web_research_max_fetches || 2) - (job.web_fetch_count || 0));
-      if (remSearch <= 0) return { status: 'partial', reason: 'search_budget_reached' };
+
+      // Presupuesto RESTANTE POR JOB, leído de los contadores PERSISTIDOS (no del job
+      // en memoria, que puede estar desfasado). Acumulativo a través de flights,
+      // lodging, cualquier reanudación pause_turn y toda la vida del job desde el rerun.
+      const jc = await getSupabase().from('travel_search_jobs')
+        .select('web_search_count,web_fetch_count,research_cost_usd').eq('id', job.id).maybeSingle();
+      const cur = (jc && jc.data) || job;
+      const maxSearch = settings.web_research_max_searches || 6;
+      const maxFetch = settings.web_research_max_fetches || 2;
+      const maxCost = (settings.web_research_max_cost_per_job_usd != null) ? Number(settings.web_research_max_cost_per_job_usd) : 0.30;
+      const remSearch = Math.max(0, maxSearch - (Number(cur.web_search_count) || 0));
+      const remFetch = Math.max(0, maxFetch - (Number(cur.web_fetch_count) || 0));
+      const spentCost = Number(cur.research_cost_usd) || 0;
+      const remCost = maxCost - spentCost;
+      // Sin presupuesto ÚTIL de tools (ni búsquedas ni fetches) → NO se llama a Anthropic.
+      if (remSearch <= 0 && remFetch <= 0) return { status: 'partial', reason: 'search_budget_reached' };
+      if (remCost <= 0) return { status: 'partial', reason: 'cost_budget_reached' };
+      // buildResearchTools omite web_fetch si remFetch=0 (solo web_search si queda presupuesto).
       const effSettings = Object.assign({}, settings, { web_research_max_searches: remSearch, web_research_max_fetches: remFetch });
-      const rdeps = { settings: effSettings, spentJobUsd: Number(job.research_cost_usd) || 0, env: deps.env, client: deps.researchClient };
+      const rdeps = { settings: effSettings, spentJobUsd: spentCost, env: deps.env, client: deps.researchClient };
       const r = isFlights
         ? await webResearch.researchFlights(job, snapshot, rdeps)
         : await webResearch.researchLodging(job, snapshot, rdeps);

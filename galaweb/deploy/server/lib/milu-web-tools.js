@@ -27,18 +27,24 @@ const { researchAllowedDomains } = require('./milu-allowlist');
 
 function nowMs() { return Date.now(); }
 
-/** Construye los tools con los límites configurados (Haiku → variantes básicas). */
+/** Construye los tools con los límites RESTANTES (Haiku → variantes básicas).
+ * Si el restante de un tool es 0 se OMITE por completo (nunca se ofrece al modelo):
+ * remaining_fetches=0 → sin web_fetch; remaining_searches=0 → sin web_search. */
 function buildResearchTools(settings) {
   const s = Object.assign({}, DEFAULT_MILU_SETTINGS, settings || {});
   const domains = researchAllowedDomains();
-  return [
-    { type: 'web_search_20250305', name: 'web_search',
-      max_uses: s.web_research_max_searches, allowed_domains: domains },
-    { type: 'web_fetch_20250910', name: 'web_fetch',
+  const tools = [];
+  if ((s.web_research_max_searches || 0) > 0) {
+    tools.push({ type: 'web_search_20250305', name: 'web_search',
+      max_uses: s.web_research_max_searches, allowed_domains: domains });
+  }
+  if ((s.web_research_max_fetches || 0) > 0) {
+    tools.push({ type: 'web_fetch_20250910', name: 'web_fetch',
       max_uses: s.web_research_max_fetches, allowed_domains: domains,
       max_content_tokens: s.web_research_max_content_tokens_per_fetch,
-      citations: { enabled: true } }
-  ];
+      citations: { enabled: true } });
+  }
+  return tools;
 }
 
 /** Detecta un error de tool (web_search/web_fetch) en los bloques de contenido.
