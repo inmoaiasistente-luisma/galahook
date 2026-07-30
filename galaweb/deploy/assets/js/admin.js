@@ -1760,45 +1760,83 @@ function panelPackagePricing(role){
 function panelMiluTourism(role){
   const p=el('<div class="bk-screen"></div>');
   p.appendChild(el('<p class="bk-sub-hint">'+(ES
-    ?'Milu Turismo busca automáticamente vuelos y hoteles reales y prepara opciones SOLO para owner/admin. La compra y la reserva son siempre internas. Modelo de IA: Haiku (v1).'
-    :'Milu Tourism automatically searches real flights and hotels and prepares options for owner/admin ONLY. Buying and booking are always internal. AI model: Haiku (v1).')+'</p>'));
+    ?'Milu Turismo investiga vuelos y hoteles en páginas públicas autorizadas (Haiku), extrae precios y prepara opciones SOLO para owner/admin. Todo hallazgo nace SIN VERIFICAR y requiere revisión humana. La fuente del precio es la página externa. La compra/reserva es siempre interna; nada se envía al cliente.'
+    :'Milu Tourism researches flights and hotels on authorized public pages (Haiku), extracts prices and prepares options for owner/admin ONLY. Every finding starts UNVERIFIED and requires human review. The price source is the external page. Buying/booking is always internal; nothing is sent to the client.')+'</p>'));
 
   const state=el('<div class="fin-sec"><h4>'+(ES?'Estado del módulo':'Module status')+'</h4></div>');
   p.appendChild(state);
   const box=el('<div style="margin:8px 0 14px"></div>'); p.appendChild(box);
 
-  // Configuración (rango objetivo + límites de costo + proveedor). Límites: solo owner.
+  // Configuración (rango objetivo + límites de costo + proveedor + web research). Solo owner edita.
   const cfg=el('<div class="fin-sec"><h4>'+(ES?'Configuración':'Settings')+'</h4></div>');
   const rangeMin=el('<div class="ed-field"><label>'+(ES?'Rango objetivo mín (USD pp/noche)':'Target min (USD pp/night)')+'</label><input type="number" min="1" style="max-width:160px"></div>');
   const rangeMax=el('<div class="ed-field"><label>'+(ES?'Rango objetivo máx (USD pp/noche)':'Target max (USD pp/night)')+'</label><input type="number" min="1" style="max-width:160px"></div>');
   const provSel=el('<div class="ed-field"><label>'+(ES?'Proveedor hotelero':'Hotel provider')+'</label><select><option value="manual">manual</option><option value="duffel_stays">duffel_stays</option><option value="hotelbeds">hotelbeds</option><option value="expedia_rapid">expedia_rapid</option></select></div>');
   const rr=el('<div class="ed-row"></div>'); rr.appendChild(rangeMin); rr.appendChild(rangeMax); cfg.appendChild(rr); cfg.appendChild(provSel);
+  cfg.appendChild(el('<div class="bk-sub-hint" style="margin-top:6px"><b>'+(ES?'Web research (8D)':'Web research (8D)')+'</b> — '+(ES?'compuerta doble: requiere ENV y DB en true (ambas false por defecto).':'double gate: needs ENV and DB true (both false by default).')+'</div>'));
+  const wrEnabled=el('<div class="ed-field"><label>'+(ES?'Web research (DB)':'Web research (DB)')+'</label><select><option value="false">'+(ES?'desactivado':'disabled')+'</option><option value="true">'+(ES?'activado':'enabled')+'</option></select></div>');
+  const wrSearch=el('<div class="ed-field"><label>'+(ES?'Máx búsquedas/propuesta':'Max searches/proposal')+'</label><input type="number" min="1" max="20" style="max-width:120px"></div>');
+  const wrFetch=el('<div class="ed-field"><label>'+(ES?'Máx fetches/propuesta':'Max fetches/proposal')+'</label><input type="number" min="0" max="10" style="max-width:120px"></div>');
+  const wrTokens=el('<div class="ed-field"><label>'+(ES?'Máx tokens/fetch':'Max tokens/fetch')+'</label><input type="number" min="1" style="max-width:120px"></div>');
+  const wrCost=el('<div class="ed-field"><label>'+(ES?'Presupuesto/propuesta (USD)':'Budget/proposal (USD)')+'</label><input type="number" min="0.01" step="0.01" style="max-width:120px"></div>');
+  const wrRow=el('<div class="ed-row"></div>'); [wrEnabled,wrSearch,wrFetch,wrTokens,wrCost].forEach(function(f){ wrRow.appendChild(f); }); cfg.appendChild(wrRow);
   const saveBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">'+(ES?'Guardar configuración':'Save settings')+'</button>');
   cfg.appendChild(saveBtn); p.appendChild(cfg);
 
+  // Investigación web (visor de hallazgos, owner/admin).
+  const rsec=el('<div class="fin-sec"><h4>'+(ES?'Investigación web (owner/admin)':'Web research (owner/admin)')+'</h4></div>');
+  const bkInput=el('<div class="ed-field"><label>booking_id</label><input type="text" placeholder="uuid" style="max-width:340px"></div>');
+  const loadBtn=el('<button class="btn btn-sm" type="button" style="margin-top:6px">'+(ES?'Cargar hallazgos':'Load findings')+'</button>');
+  const rerunBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Buscar nuevamente':'Search again')+'</button>');
+  const brow=el('<div class="ed-row"></div>'); brow.appendChild(bkInput); rsec.appendChild(brow); rsec.appendChild(loadBtn); rsec.appendChild(rerunBtn);
+  const rInfo=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); const rTable=el('<div style="margin:8px 0"></div>');
+  rsec.appendChild(rInfo); rsec.appendChild(rTable); p.appendChild(rsec);
+
+  var currentJobId=null, currentBooking=null;
+
   function providerLabel(s){ return s==='live'?(ES?'conectado (live)':'connected (live)'):(s==='sandbox'?'sandbox':(ES?'no conectado':'not connected')); }
+  function money(cents,c){ return (cents==null)?'—':('$'+(Number(cents)/100).toFixed(2)+' '+escapeHtml(c||'USD')); }
+  function reviewBadge(st){
+    if(st==='verified') return '<span class="notif-badge notif-sent">'+(ES?'verificado':'verified')+'</span>';
+    if(st==='rejected') return '<span class="notif-badge notif-failed">'+(ES?'rechazado':'rejected')+'</span>';
+    return '<span class="notif-badge">'+(ES?'sin verificar':'unverified')+'</span>';
+  }
+
   function render(d){
     box.innerHTML='';
-    const m=(d&&d.model)||{}; const pr=(d&&d.providers)||{};
+    const m=(d&&d.model)||{}; const pr=(d&&d.providers)||{}; const wr=(d&&d.web_research)||{};
     box.appendChild(el('<div><b>'+(ES?'Modelo de IA':'AI model')+':</b> '+escapeHtml((m.label||'Haiku'))+' '+(m.configured?'':'<span class="notif-badge notif-failed">'+(ES?'no configurado':'not configured')+'</span>')+'</div>'));
     box.appendChild(el('<div class="bk-sub-hint">'+(ES?'Proveedor de vuelos':'Flights provider')+': '+escapeHtml(providerLabel(pr.flights||'not_connected'))+' · '+(ES?'Proveedor hotelero':'Hotel provider')+': '+escapeHtml(providerLabel(pr.hotels||'not_connected'))+'</div>'));
-    // Aviso claro: infraestructura lista, proveedor automático no activo.
-    if((pr.flights||'not_connected')!=='live' && (pr.flights||'not_connected')!=='sandbox'){
-      box.appendChild(el('<p class="bk-sub-hint" style="margin-top:8px"><b>'+(ES?'Proveedor automático todavía no conectado.':'Automatic provider is not connected yet.')+'</b> '+(ES?'La infraestructura está preparada; la búsqueda automática se habilitará en la siguiente fase.':'The infrastructure is ready; automatic search will be enabled in the next phase.')+'</p>'));
+    box.appendChild(el('<div class="bk-sub-hint">'+(ES?'Web research':'Web research')+': ENV '+(wr.env_enabled?'on':'off')+' · DB '+(wr.db_enabled?'on':'off')+' · '+(ES?'efectivo':'effective')+': <b>'+(wr.effective?(ES?'activo':'active'):(ES?'inactivo':'inactive'))+'</b></div>'));
+    if(!wr.effective){
+      box.appendChild(el('<p class="bk-sub-hint" style="margin-top:8px"><b>'+(ES?'Investigación web todavía no activa.':'Web research is not active yet.')+'</b> '+(ES?'Requiere las dos mitades de la compuerta (ENV + DB).':'Requires both gate halves (ENV + DB).')+'</p>'));
     }
     const s=(d&&d.settings)||{};
     rangeMin.querySelector('input').value=Math.round((s.hotel_target_min_cents||5000)/100);
     rangeMax.querySelector('input').value=Math.round((s.hotel_target_max_cents||20000)/100);
     provSel.querySelector('select').value=s.primary_hotel_provider||'manual';
+    wrEnabled.querySelector('select').value=(wr.db_enabled?'true':'false');
+    wrSearch.querySelector('input').value=(wr.max_searches!=null?wr.max_searches:6);
+    wrFetch.querySelector('input').value=(wr.max_fetches!=null?wr.max_fetches:2);
+    wrTokens.querySelector('input').value=(wr.max_content_tokens_per_fetch!=null?wr.max_content_tokens_per_fetch:4000);
+    wrCost.querySelector('input').value=(wr.max_cost_per_job_usd!=null?wr.max_cost_per_job_usd:0.30);
     const canEdit=!!(d&&d.canEditLimits);
-    [rangeMin,rangeMax,provSel].forEach(function(f){ f.querySelector('input,select').disabled=!canEdit; });
+    [rangeMin,rangeMax,provSel,wrEnabled,wrSearch,wrFetch,wrTokens,wrCost].forEach(function(f){ f.querySelector('input,select').disabled=!canEdit; });
     saveBtn.style.display=canEdit?'':'none';
   }
   function load(){ apiGet('/api/admin-milu-settings').then(function(r){ if(r.status===401){ onUnauthorized(); return; } if(r.ok&&r.data) render(r.data); else box.innerHTML='<p class="bk-sub-hint">'+(ES?'No se pudo cargar.':'Could not load.')+'</p>'; }); }
+
   saveBtn.addEventListener('click',function(){
+    var mf=parseInt(wrFetch.querySelector('input').value,10); if(isNaN(mf)) mf=2;
+    var ms=parseInt(wrSearch.querySelector('input').value,10); if(isNaN(ms)) ms=6;
+    var mt=parseInt(wrTokens.querySelector('input').value,10); if(isNaN(mt)) mt=4000;
+    var mc=parseFloat(wrCost.querySelector('input').value); if(isNaN(mc)||mc<=0) mc=0.30;
     const body={ hotel_target_min_cents:(parseInt(rangeMin.querySelector('input').value||'50',10)||50)*100,
       hotel_target_max_cents:(parseInt(rangeMax.querySelector('input').value||'200',10)||200)*100,
-      primary_hotel_provider:provSel.querySelector('select').value };
+      primary_hotel_provider:provSel.querySelector('select').value,
+      web_research_enabled:(wrEnabled.querySelector('select').value==='true'),
+      web_research_max_searches:ms, web_research_max_fetches:mf,
+      web_research_max_content_tokens_per_fetch:mt, web_research_max_cost_per_job_usd:mc };
     saveBtn.disabled=true;
     apiPost('/api/admin-milu-settings-save',body).then(function(r){ saveBtn.disabled=false;
       if(r.status===401){ onUnauthorized(); return; }
@@ -1806,6 +1844,60 @@ function panelMiluTourism(role){
       else adminToast(ES?'Revisa los campos.':'Check the fields.');
     }).catch(function(){ saveBtn.disabled=false; });
   });
+
+  // ---- visor de hallazgos ----
+  function optRow(kind, o){
+    const row=el('<div style="border:1px solid rgba(0,0,0,.12);border-radius:8px;padding:8px;margin:6px 0"></div>');
+    const title=(kind==='flight')?((escapeHtml(o.airline||''))+' '+escapeHtml(o.origin||'')+'→'+escapeHtml(o.destination||'')):(escapeHtml(o.hotel_name||'')+' · '+escapeHtml(o.destination||''));
+    row.appendChild(el('<div><b>'+(title||(kind==='flight'?'Vuelo':'Hotel'))+'</b> '+reviewBadge(o.research_review_status)+'</div>'));
+    row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Precio':'Price')+': '+money(o.total_price_cents,o.currency)+' · '+(ES?'Consulta':'Retrieved')+': '+escapeHtml(o.checked_at||'—')+'</div>'));
+    if(o.research_source_url){ row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Fuente (interna)':'Source (internal)')+': <a href="'+escapeHtml(o.research_source_url)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(o.research_source_url)+'</a></div>')); }
+    if(o.research_review_status==='unverified'){
+      const ok=el('<button class="btn btn-sm" type="button">'+(ES?'Aprobar':'Approve')+'</button>');
+      const no=el('<button class="btn btn-sm" type="button" style="margin-left:8px">'+(ES?'Rechazar':'Reject')+'</button>');
+      function review(dec,btn){ btn.disabled=true; apiPost('/api/admin-milu-research-approve',{option_kind:kind,option_id:o.id,decision:dec}).then(function(r){ btn.disabled=false; if(r.status===401){onUnauthorized();return;} if(r.ok&&r.data&&r.data.reviewed){ adminToast(ES?'Revisión guardada':'Review saved'); loadResearch(); } else adminToast(ES?'No se pudo revisar.':'Could not review.'); }).catch(function(){ btn.disabled=false; }); }
+      ok.addEventListener('click',function(){ review('verified',ok); });
+      no.addEventListener('click',function(){ review('rejected',no); });
+      const ab=el('<div style="margin-top:6px"></div>'); ab.appendChild(ok); ab.appendChild(no); row.appendChild(ab);
+    }
+    return row;
+  }
+  function renderFindings(status, opts){
+    rTable.innerHTML=''; rInfo.innerHTML='';
+    const wr=(status&&status.web_research)||{};
+    rInfo.innerHTML=(ES?'Búsquedas':'Searches')+': '+(wr.searches_used||0)+'/'+(wr.searches_max||6)+' ('+(ES?'restan':'left')+' '+(wr.searches_remaining||0)+') · '+(ES?'Fetches':'Fetches')+': '+(wr.fetches_used||0)+'/'+(wr.fetches_max||2)+' · '+(ES?'Costo':'Cost')+': $'+Number(wr.research_cost_usd||0).toFixed(4)+' / $'+Number(wr.budget_max_usd||0.30).toFixed(2)+' · rerun '+(wr.rerun_count||0);
+    const flights=(opts&&opts.flights)||[]; const hotels=(opts&&opts.hotels)||[];
+    const research=flights.concat(hotels).filter(function(o){ return o.provider==='web_research'; });
+    if(!research.length){ rTable.appendChild(el('<p class="bk-sub-hint">'+(ES?'Sin hallazgos de investigación para esta propuesta.':'No research findings for this proposal.')+'</p>')); return; }
+    flights.filter(function(o){return o.provider==='web_research';}).forEach(function(o){ rTable.appendChild(optRow('flight',o)); });
+    hotels.filter(function(o){return o.provider==='web_research';}).forEach(function(o){ rTable.appendChild(optRow('hotel',o)); });
+  }
+  function loadResearch(){
+    const bid=(bkInput.querySelector('input').value||'').trim();
+    if(!bid){ adminToast(ES?'Ingresa un booking_id':'Enter a booking_id'); return; }
+    currentBooking=bid;
+    apiGet('/api/admin-milu-search-status?booking_id='+encodeURIComponent(bid)).then(function(sr){
+      if(sr.status===401){ onUnauthorized(); return; }
+      if(!(sr.ok&&sr.data)){ rInfo.textContent=(ES?'No se pudo cargar el estado.':'Could not load status.'); return; }
+      const status=sr.data; currentJobId=(status.job&&status.job.id)||null;
+      if(!currentJobId){ rTable.innerHTML=''; rInfo.textContent=(ES?'Sin job para esta reserva.':'No job for this booking.'); return; }
+      apiGet('/api/admin-milu-options-list?job_id='+encodeURIComponent(currentJobId)).then(function(orr){
+        if(orr.status===401){ onUnauthorized(); return; }
+        renderFindings(status,(orr.ok&&orr.data)||{});
+      });
+    });
+  }
+  loadBtn.addEventListener('click',loadResearch);
+  rerunBtn.addEventListener('click',function(){
+    if(!currentBooking||!currentJobId){ adminToast(ES?'Carga primero una reserva':'Load a booking first'); return; }
+    rerunBtn.disabled=true;
+    apiPost('/api/admin-milu-research-rerun',{booking_id:currentBooking,job_id:currentJobId}).then(function(r){ rerunBtn.disabled=false;
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.ok&&r.data&&r.data.rerun){ adminToast((ES?'Re-encolado. Reruns: ':'Re-queued. Reruns: ')+r.data.rerun_count); loadResearch(); }
+      else adminToast(ES?'No se pudo re-buscar (¿compuerta doble activa?).':'Could not re-search (double gate active?).');
+    }).catch(function(){ rerunBtn.disabled=false; });
+  });
+
   load();
   return p;
 }
