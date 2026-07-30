@@ -2177,33 +2177,42 @@ function panelsFor(role){
       {id:'passengers', label:(ES?'Pasajeros':'Passengers'), build:function(){ return panelPassengers('staff'); }}
     ];
   }
+  // FASE 9: navegación AGRUPADA por secciones (encabezados en el sidebar). Se conservan
+  // TODOS los módulos reales; solo se reordenan y agrupan para lectura rápida.
+  const G_OP = (ES?'Operación':'Operations');
+  const G_COM = (ES?'Comercial':'Commercial');
+  const G_SITE = (ES?'Contenido del sitio':'Site content');
+  const G_SYS = (ES?'Sistema':'System');
   const panels=[
-    {id:'bookings',label:(ES?'Reservas':'Bookings'), build:panelBookings},
-    {id:'finance', label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinance(role); }},
-    {id:'pkgpricing', label:(ES?'Precios de paquetes':'Package pricing'), build:function(){ return panelPackagePricing(role); }},
-    {id:'notes', label:(ES?'Notas de paquetes':'Package notes'), build:function(){ return panelPackageNotes(role); }},
-    {id:'passengers', label:(ES?'Pasajeros y logística':'Passengers & logistics'), build:function(){ return panelPassengers(role); }},
-    {id:'hotels', label:(ES?'Hoteles preferidos':'Preferred hotels'), build:function(){ return panelHotelPreferences(role); }},
+    // — Operación —
+    {id:'bookings', group:G_OP, label:(ES?'Reservas':'Bookings'), build:panelBookings},
+    {id:'passengers', group:G_OP, label:(ES?'Pasajeros y logística':'Passengers & logistics'), build:function(){ return panelPassengers(role); }},
+    {id:'notifications', group:G_OP, label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }},
+    // — Comercial —
+    {id:'finance', group:G_COM, label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinance(role); }},
+    {id:'pkgpricing', group:G_COM, label:(ES?'Precios de paquetes':'Package pricing'), build:function(){ return panelPackagePricing(role); }},
+    {id:'notes', group:G_COM, label:(ES?'Notas de paquetes':'Package notes'), build:function(){ return panelPackageNotes(role); }},
+    {id:'hotels', group:G_COM, label:(ES?'Hoteles preferidos':'Preferred hotels'), build:function(){ return panelHotelPreferences(role); }}
     // FASE 8 CONGELADA: Milu Web Research queda OCULTO del menú (Web Search/Fetch no garantiza
     // tarifas/disponibilidad exactas en páginas dinámicas). El panel, endpoints, tablas, migraciones
     // y pruebas se CONSERVAN (protegidos, sin exponer en UI). La futura integración de vuelos será
-    // por Duffel u otro proveedor API, dentro de un módulo "Flights" en el detalle de cada booking (Fase 9).
-    // Para reactivar: descomentar esta línea (además requiere la compuerta doble ENV+DB en true).
-    // {id:'milu', label:(ES?'Milu Turismo':'Milu Tourism'), build:function(){ return panelMiluTourism(role); }},
-    {id:'notifications', label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }}
+    // por Duffel u otro proveedor API, dentro de un módulo "Flights" en el detalle de cada booking.
+    // Para reactivar: añadir aquí de nuevo (además requiere la compuerta doble ENV+DB en true).
+    // {id:'milu', group:G_OP, label:(ES?'Milu Turismo':'Milu Tourism'), build:function(){ return panelMiluTourism(role); }},
   ];
-  // Datos de prueba: SOLO owner (no se genera en el DOM para admin ni staff).
-  if(role==='owner'){
-    panels.push({id:'testdata', label:(ES?'Datos de prueba':'Test data'), build:function(){ return panelTestData(role); }});
-  }
+  // — Contenido del sitio —
   panels.push(
-    {id:'site',  label:'Site & Contact', build:panelSite},
-    {id:'hero',  label:'Home Hero',      build:panelHero},
-    {id:'packages',label:'Packages',     build:panelPackages},
-    {id:'tours', label:'Tours',          build:panelTours},
-    {id:'fishing',label:'Sport Fishing', build:panelFishing},
-    {id:'story', label:'About & Conservation', build:panelStory}
+    {id:'site',  group:G_SITE, label:(ES?'Sitio y contacto':'Site & Contact'), build:panelSite},
+    {id:'hero',  group:G_SITE, label:(ES?'Portada (Hero)':'Home Hero'),      build:panelHero},
+    {id:'packages',group:G_SITE, label:(ES?'Paquetes':'Packages'),     build:panelPackages},
+    {id:'tours', group:G_SITE, label:'Tours',          build:panelTours},
+    {id:'fishing',group:G_SITE, label:'Sport Fishing', build:panelFishing},
+    {id:'story', group:G_SITE, label:(ES?'Nosotros y conservación':'About & Conservation'), build:panelStory}
   );
+  // — Sistema — (Datos de prueba: SOLO owner; no se genera en el DOM para admin ni staff)
+  if(role==='owner'){
+    panels.push({id:'testdata', group:G_SYS, label:(ES?'Datos de prueba':'Test data'), build:function(){ return panelTestData(role); }});
+  }
   return panels;
 }
 
@@ -2247,7 +2256,10 @@ function showAdmin(user){
     main.appendChild(panel);
     main.scrollTo&&main.scrollTo(0,0); window.scrollTo(0,0);
   }
+  // Encabezado de grupo cuando cambia la sección (Fase 9: sidebar agrupado).
+  let lastGroup=null;
   PANELS.forEach(def=>{
+    if(def.group && def.group!==lastGroup){ lastGroup=def.group; nav.appendChild(el('<div class="nav-group">'+def.group+'</div>')); }
     const b=el('<button data-id="'+def.id+'" style="display:flex;align-items:center">'+def.label+'</button>');
     b.addEventListener('click',()=>open(def.id)); nav.appendChild(b);
   });
