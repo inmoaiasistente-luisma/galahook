@@ -1781,30 +1781,42 @@ function panelMiluTourism(role){
   const wrCost=el('<div class="ed-field"><label>'+(ES?'Presupuesto/propuesta (USD)':'Budget/proposal (USD)')+'</label><input type="number" min="0.01" step="0.01" style="max-width:120px"></div>');
   const wrRow=el('<div class="ed-row"></div>'); [wrEnabled,wrSearch,wrFetch,wrTokens,wrCost].forEach(function(f){ wrRow.appendChild(f); }); cfg.appendChild(wrRow);
   const saveBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">'+(ES?'Guardar configuración':'Save settings')+'</button>');
-  cfg.appendChild(saveBtn); p.appendChild(cfg);
+  cfg.appendChild(saveBtn);   // cfg (config técnica) se anexa dentro de "Ajustes avanzados" más abajo
 
   // Investigación web (visor de hallazgos, owner/admin).
   const rsec=el('<div class="fin-sec"><h4>'+(ES?'Investigación web (owner/admin)':'Web research (owner/admin)')+'</h4></div>');
   const bkInput=el('<div class="ed-field"><label>booking_id</label><input type="text" placeholder="uuid" style="max-width:340px"></div>');
   const brow=el('<div class="ed-row"></div>'); brow.appendChild(bkInput); rsec.appendChild(brow);
 
-  // Controles del itinerario (owner/admin): tipo de pasajero, ciudad de conexión, noche previa, fecha manual.
-  const ptSel=el('<div class="ed-field"><label>'+(ES?'Tipo de pasajero':'Passenger type')+'</label><select><option value="">'+(ES?'(auto)':'(auto)')+'</option><option value="international">'+(ES?'internacional':'international')+'</option><option value="domestic">'+(ES?'ya en Ecuador':'already in Ecuador')+'</option></select></div>');
-  const ccSel=el('<div class="ed-field"><label>'+(ES?'Ciudad de conexión':'Connection city')+'</label><select><option value="">'+(ES?'(auto)':'(auto)')+'</option><option value="quito">Quito (UIO)</option><option value="guayaquil">Guayaquil (GYE)</option></select></div>');
-  const pnSel=el('<div class="ed-field"><label>'+(ES?'Noche continental previa':'Mainland pre-night')+'</label><select><option value="">'+(ES?'(auto por tipo)':'(auto by type)')+'</option><option value="true">'+(ES?'incluir':'include')+'</option><option value="false">'+(ES?'quitar':'remove')+'</option></select></div>');
-  const gsInput=el('<div class="ed-field"><label>'+(ES?'Inicio programa (manual)':'Program start (manual)')+'</label><input type="date" style="max-width:170px"></div>');
-  const itWrap=el('<div class="ed-row" style="margin-top:8px"></div>'); [ptSel,ccSel,pnSel,gsInput].forEach(function(f){ itWrap.appendChild(f); }); rsec.appendChild(itWrap);
-  const previewBtn=el('<button class="btn btn-sm" type="button" style="margin-top:6px">'+(ES?'Previsualizar itinerario':'Preview itinerary')+'</button>');
-  rsec.appendChild(previewBtn);
+  // PRIMARIO visible: tipo de pasajero + ciudad de conexión.
+  const ptSel=el('<div class="ed-field"><label>'+(ES?'Tipo de pasajero':'Passenger type')+'</label><select><option value="">'+(ES?'(elige)':'(choose)')+'</option><option value="international">'+(ES?'internacional':'international')+'</option><option value="domestic">'+(ES?'ya en Ecuador':'already in Ecuador')+'</option></select></div>');
+  const ccSel=el('<div class="ed-field"><label>'+(ES?'Ciudad de conexión':'Connection city')+'</label><select><option value="">'+(ES?'(elige)':'(choose)')+'</option><option value="quito">Quito (UIO)</option><option value="guayaquil">Guayaquil (GYE)</option></select></div>');
+  const itWrap=el('<div class="ed-row" style="margin-top:8px"></div>'); itWrap.appendChild(ptSel); itWrap.appendChild(ccSel); rsec.appendChild(itWrap);
+
+  // Resumen del itinerario (se calcula solo al elegir tipo/ciudad; no requiere botón).
   const itInfo=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); rsec.appendChild(itInfo);
 
+  // Acción principal.
   const startBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">'+(ES?'Iniciar investigación de viaje':'Start travel research')+'</button>');
-  const loadBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Cargar hallazgos':'Load findings')+'</button>');
-  const rerunBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Buscar nuevamente':'Search again')+'</button>');
-  rsec.appendChild(startBtn); rsec.appendChild(loadBtn); rsec.appendChild(rerunBtn);
+  rsec.appendChild(startBtn);
   const startMsg=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); rsec.appendChild(startMsg);
   const rInfo=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); const rTable=el('<div style="margin:8px 0"></div>');
-  rsec.appendChild(rInfo); rsec.appendChild(rTable); p.appendChild(rsec);
+  rsec.appendChild(rInfo); rsec.appendChild(rTable);
+
+  // ── Ajustes avanzados (colapsado): overrides finos + hallazgos + configuración técnica ──
+  const adv=el('<details class="fin-sec" style="margin:12px 0"><summary style="cursor:pointer;font-weight:600">'+(ES?'Ajustes avanzados':'Advanced settings')+'</summary></details>');
+  // La fecha se calcula sola desde la reserva; el campo manual solo vive aquí (override opcional).
+  const pnSel=el('<div class="ed-field"><label>'+(ES?'Noche continental previa':'Mainland pre-night')+'</label><select><option value="">'+(ES?'(auto por tipo)':'(auto by type)')+'</option><option value="true">'+(ES?'incluir':'include')+'</option><option value="false">'+(ES?'quitar':'remove')+'</option></select></div>');
+  const gsInput=el('<div class="ed-field"><label>'+(ES?'Inicio programa (manual, opcional)':'Program start (manual, optional)')+'</label><input type="date" style="max-width:170px"></div>');
+  const advRow=el('<div class="ed-row" style="margin-top:8px"></div>'); advRow.appendChild(pnSel); advRow.appendChild(gsInput); adv.appendChild(advRow);
+  const previewBtn=el('<button class="btn btn-sm" type="button" style="margin-top:6px">'+(ES?'Recalcular itinerario':'Recompute itinerary')+'</button>');
+  const loadBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Cargar hallazgos':'Load findings')+'</button>');
+  const rerunBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Buscar nuevamente':'Search again')+'</button>');
+  adv.appendChild(previewBtn); adv.appendChild(loadBtn); adv.appendChild(rerunBtn);
+  adv.appendChild(cfg);   // configuración técnica (rango objetivo, proveedor, web research)
+  rsec.appendChild(adv);
+
+  p.appendChild(rsec);
 
   var currentJobId=null, currentBooking=null;
   const bkI=bkInput.querySelector('input');
@@ -1841,17 +1853,22 @@ function panelMiluTourism(role){
     if(pv&&pv.form_ready===false){ html+=' <span class="notif-badge notif-failed">'+(ES?'formulario no listo':'form not ready')+'</span>'; }
     itInfo.innerHTML=html;
   }
-  previewBtn.addEventListener('click',function(){
+  // Preview del itinerario. `silent` = disparo automático (no muestra toast si falta el UUID).
+  function runPreview(silent){
     const bid=(bkI.value||'').trim();
-    if(!UUID_RE.test(bid)){ adminToast(ES?'Ingresa un booking_id (UUID) válido':'Enter a valid booking_id (UUID)'); return; }
-    previewBtn.disabled=true; itInfo.textContent=(ES?'Calculando…':'Computing…');
-    apiPost('/api/admin-milu-itinerary-preview',Object.assign({booking_id:bid},itOverrides())).then(function(r){ refreshButtons();
+    if(!UUID_RE.test(bid)){ if(!silent) adminToast(ES?'Ingresa un booking_id (UUID) válido':'Enter a valid booking_id (UUID)'); return; }
+    itInfo.textContent=(ES?'Calculando…':'Computing…');
+    apiPost('/api/admin-milu-itinerary-preview',Object.assign({booking_id:bid},itOverrides())).then(function(r){
       if(r.status===401){ onUnauthorized(); return; }
       if(r.status===403){ itInfo.textContent=(ES?'No autorizado.':'Not authorized.'); return; }
       if(r.ok&&r.data){ renderItinerary(r.data); }
       else { const code=(r.data&&r.data.error)||''; itInfo.textContent=(code==='BOOKING_NOT_FOUND')?(ES?'Reserva no encontrada o de otro tenant.':'Booking not found or from another tenant.'):(ES?'No se pudo previsualizar.':'Could not preview.'); }
-    }).catch(function(){ refreshButtons(); itInfo.textContent=(ES?'Error de red.':'Network error.'); });
-  });
+    }).catch(function(){ itInfo.textContent=(ES?'Error de red.':'Network error.'); });
+  }
+  previewBtn.addEventListener('click',function(){ runPreview(false); });
+  // Auto-preview: el resumen aparece solo al elegir tipo/ciudad/overrides o al cambiar la reserva.
+  [ptSel,ccSel,pnSel,gsInput].forEach(function(f){ f.querySelector('select,input').addEventListener('change',function(){ if(validUuid()) runPreview(true); }); });
+  bkI.addEventListener('change',function(){ if(validUuid()) runPreview(true); });
 
   function providerLabel(s){ return s==='live'?(ES?'conectado (live)':'connected (live)'):(s==='sandbox'?'sandbox':(ES?'no conectado':'not connected')); }
   function money(cents,c){ return (cents==null)?'—':('$'+(Number(cents)/100).toFixed(2)+' '+escapeHtml(c||'USD')); }

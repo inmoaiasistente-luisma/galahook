@@ -223,12 +223,17 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   let blocked = false; try { await milu.startSearch(f.booking.id, 'u-owner'); } catch (e) { blocked = e.code === 'FORM_NOT_READY'; }
   ok('2 formulario incompleto bloquea', blocked === true);
 
+  // El itinerario deriva la conexión del override/preferred, no de un lodging connection_tbd:
+  // con la conexión resuelta (preferred 'quito' + arrival internacional) NO bloquea.
   f = freshDb({ connectionTbd: true }); CONTRACT = baseContract(f.booking); setClient(f.db);
-  blocked = false; try { await milu.startSearch(f.booking.id, 'u-owner'); } catch (e) { blocked = e.code === 'CONNECTION_TBD_UNRESOLVED'; }
-  ok('3 connection_tbd bloquea', blocked === true);
+  let r3 = null, err3 = null; try { r3 = await milu.startSearch(f.booking.id, 'u-owner'); } catch (e) { err3 = e.code; }
+  ok('3 connection_tbd no bloquea si la conexión está resuelta', err3 === null && r3 && r3.created === true);
 
+  // Las fechas del programa salen de booking_date + duración, NO de las fechas del lodging:
+  // un lodging sin check_in/out YA NO bloquea (se eliminó destination_dates).
   f = freshDb({ missingDates: true }); CONTRACT = baseContract(f.booking); setClient(f.db);
-  blocked = false; try { await milu.startSearch(f.booking.id, 'u-owner'); } catch (e) { blocked = e.code === 'DESTINATION_DATES_MISSING'; }
+  let r4 = null, err4 = null; try { r4 = await milu.startSearch(f.booking.id, 'u-owner'); } catch (e) { err4 = e.code; }
+  ok('4 lodging sin fechas no bloquea (fechas = inicio programa + duración)', err4 === null && r4 && r4.created === true && r4.itinerary && r4.itinerary.galapagos_end_date === '2026-08-04');
   ok('4 destino sin fecha bloquea', blocked === true);
 
   const fd = milu.computeFlightDates('2026-08-01', 'p3');
@@ -1004,11 +1009,12 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
 
   // 157 admin.js: controles + botón de preview cableados al endpoint de itinerario
   const adminSrc157 = fs.readFileSync(BASE + '/assets/js/admin.js', 'utf8');
-  ok('157 admin.js: preview de itinerario cableado',
+  ok('157 admin.js: preview de itinerario cableado + limpieza (Advanced settings, auto-preview)',
     /admin-milu-itinerary-preview/.test(adminSrc157) &&
-    /Preview itinerary|Previsualizar itinerario/.test(adminSrc157) &&
     /Passenger type|Tipo de pasajero/.test(adminSrc157) &&
-    /itOverrides\(\)/.test(adminSrc157));
+    /itOverrides\(\)/.test(adminSrc157) &&
+    /function runPreview/.test(adminSrc157) &&
+    /Advanced settings|Ajustes avanzados/.test(adminSrc157));
 
   // 158 router + vercel exponen el endpoint de preview (8 funciones, sin duplicados)
   const routerSrc = fs.readFileSync(BASE + '/api/admin-router.js', 'utf8');
@@ -1018,6 +1024,30 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
     /ROUTES\['milu-itinerary-preview'\]/.test(routerSrc) &&
     vsrcs.indexOf('/api/admin-milu-itinerary-preview') !== -1 &&
     vsrcs.length === (new Set(vsrcs)).size);
+
+  // ── INVARIANTE (#6): Preview y Start MISMA ruta de validación ──
+
+  // 159 Preview válido + Start con EXACTAMENTE el mismo payload → job queued.
+  // Reserva SIN fechas de lodging + sin arrival/preferred (reproduce el bug viejo
+  // "Destination dates are missing"). Nunca puede ocurrir Preview PASS + Start dates-missing.
+  CURRENT_ROLE = 'owner';
+  let invF = freshDb({ missingDates: true });
+  CONTRACT = baseContract(invF.booking); CONTRACT.arrival = null; CONTRACT.preferred_connection_city = null; setClient(invF.db);
+  const invPayload = { booking_id: invF.booking.id, passenger_type: 'international', connection_city: 'guayaquil' };
+  let invPv = await run(previewH, { method: 'POST', headers: {}, body: invPayload });
+  let invSt = await run(startH, { method: 'POST', headers: {}, body: Object.assign({ search_type: 'complete_trip' }, invPayload) });
+  ok('159 Preview válido + Start mismo payload → queued (nunca dates-missing)',
+    invPv.statusCode === 200 && j(invPv).ready === true && j(invPv).missing.length === 0 &&
+    invSt.statusCode === 200 && j(invSt).started === true && j(invSt).job.status === 'queued' && j(invSt).error === undefined);
+
+  // 160 (#7) job existente: Start NO duplica y REFRESCA el snapshot con el itinerario actual.
+  let refF = freshDb(); CONTRACT = baseContract(refF.booking); setClient(refF.db);
+  let ref1 = await run(startH, { method: 'POST', headers: {}, body: { booking_id: refF.booking.id, passenger_type: 'international', connection_city: 'quito' } });
+  let ref2 = await run(startH, { method: 'POST', headers: {}, body: { booking_id: refF.booking.id, passenger_type: 'international', connection_city: 'guayaquil' } });
+  const snap160 = refF.db.travel_search_jobs[0].requirements_snapshot.itinerary;
+  ok('160 job existente refresca snapshot (no duplica)',
+    j(ref1).created === true && j(ref2).created === false && refF.db.travel_search_jobs.length === 1 &&
+    snap160.connection_city === 'guayaquil' && snap160.origin_airport === 'GYE');
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);

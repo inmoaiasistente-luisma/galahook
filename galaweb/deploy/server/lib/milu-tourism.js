@@ -228,24 +228,39 @@ function sanitizeRequirements(contract, flightDates, itinerary) {
 }
 
 /**
- * Construye el snapshot saneado + valida el gate (incluye el gate del itinerario).
- * Lanza si no es elegible. @returns { snapshot, booking, form, flightDates, itinerary }
+ * ÚNICA función de cálculo del itinerario, compartida por Preview y Start (misma
+ * ruta, mismos overrides, misma fórmula). Las fechas del programa salen de
+ * booking_date + duración del paquete (NO de las fechas del lodging), por eso NO
+ * se usa la validación vieja de destino (destination_start/end).
+ * @returns { gate, contract, flightDates, itinerary, form_ready, missing }
  */
-async function buildMiluRequirements(bookingId, overrides) {
-  const gate = await loadGateData(bookingId);
-  assertSearchEligible(gate.form, gate.lodging);
+async function computeBookingItinerary(bookingId, overrides) {
+  const gate = await loadGateData(bookingId);   // BOOKING_NOT_FOUND si no existe / otro tenant
   const contract = await buildTravelRequirements(bookingId);
   const flightDates = computeFlightDates(gate.booking.booking_date, gate.booking.tour_id);
   const inputs = deriveItineraryInputs(contract, overrides);
   const itinerary = computeItinerary({
-    galapagosStartDate: inputs.manual_galapagos_start_date || gate.booking.booking_date,   // fechas manuales tienen prioridad
+    galapagosStartDate: inputs.manual_galapagos_start_date || gate.booking.booking_date,   // fechas manuales tienen prioridad; si no, la de la reserva
     tourId: gate.booking.tour_id, durationDays: flightDates.duration_days,
     passengerType: inputs.passenger_type, connectionCity: inputs.connection_city,
     includeMainlandPreNight: inputs.include_mainland_pre_night, mainlandPostNights: inputs.mainland_post_nights
   });
-  assertItineraryReady(itinerary);   // #6/#7: tipo, origen/conexión, inicio, duración
-  const snapshot = sanitizeRequirements(contract, flightDates, itinerary);
-  return { snapshot: snapshot, booking: gate.booking, form: gate.form, flightDates: flightDates, itinerary: itinerary };
+  const formReady = !!(gate.form && READY_FORM_STATUSES.indexOf(gate.form.status) !== -1);
+  const missing = itineraryMissing(itinerary);
+  return { gate: gate, contract: contract, flightDates: flightDates, itinerary: itinerary, form_ready: formReady, missing: missing };
+}
+
+/**
+ * Construye el snapshot saneado + valida el gate del itinerario. MISMO cálculo
+ * que previewItinerary: si el preview da missing=[] (y el formulario está listo),
+ * este build NO lanza y se crea el job. @returns { snapshot, booking, form, flightDates, itinerary }
+ */
+async function buildMiluRequirements(bookingId, overrides) {
+  const c = await computeBookingItinerary(bookingId, overrides);
+  if (!c.form_ready) throw gateError('FORM_NOT_READY');
+  assertItineraryReady(c.itinerary);   // #6/#7 — MISMAS condiciones que itineraryMissing() del preview
+  const snapshot = sanitizeRequirements(c.contract, c.flightDates, c.itinerary);
+  return { snapshot: snapshot, booking: c.gate.booking, form: c.gate.form, flightDates: c.flightDates, itinerary: c.itinerary };
 }
 
 /**
@@ -254,24 +269,13 @@ async function buildMiluRequirements(bookingId, overrides) {
  * @returns { booking_code, form_ready, ready, missing, itinerary }
  */
 async function previewItinerary(bookingId, overrides) {
-  const gate = await loadGateData(bookingId);   // BOOKING_NOT_FOUND si no existe / otro tenant
-  const contract = await buildTravelRequirements(bookingId);
-  const flightDates = computeFlightDates(gate.booking.booking_date, gate.booking.tour_id);
-  const inputs = deriveItineraryInputs(contract, overrides);
-  const itinerary = computeItinerary({
-    galapagosStartDate: inputs.manual_galapagos_start_date || gate.booking.booking_date,
-    tourId: gate.booking.tour_id, durationDays: flightDates.duration_days,
-    passengerType: inputs.passenger_type, connectionCity: inputs.connection_city,
-    includeMainlandPreNight: inputs.include_mainland_pre_night, mainlandPostNights: inputs.mainland_post_nights
-  });
-  const formReady = !!(gate.form && READY_FORM_STATUSES.indexOf(gate.form.status) !== -1);
-  const missing = itineraryMissing(itinerary);
+  const c = await computeBookingItinerary(bookingId, overrides);
   return {
-    booking_code: gate.booking.booking_code || null,
-    form_ready: formReady,
-    ready: formReady && missing.length === 0,
-    missing: missing,
-    itinerary: itinerary
+    booking_code: c.gate.booking.booking_code || null,
+    form_ready: c.form_ready,
+    ready: c.form_ready && c.missing.length === 0,
+    missing: c.missing,
+    itinerary: c.itinerary
   };
 }
 
@@ -283,9 +287,14 @@ async function startSearch(bookingId, userId, searchType, overrides) {
   const tenant = built.booking.tenant_id || getTenantId();
   const idem = tenant + ':' + bookingId + ':' + searchType;
 
-  // Idempotencia: job activo con misma clave → devolverlo (no duplicar).
+  // Idempotencia: job activo con misma clave → NO duplicar, pero REFRESCAR su
+  // snapshot con el itinerario recién calculado (evita reusar un snapshot viejo/stale, #7).
   const ex = await supabase.from('travel_search_jobs').select('*').eq('tenant_id', tenant).eq('idempotency_key', idem).eq('active', true).maybeSingle();
-  if (ex.data) return { job: ex.data, created: false };
+  if (ex.data) {
+    await supabase.from('travel_search_jobs').update({ requirements_snapshot: built.snapshot }).eq('id', ex.data.id).eq('tenant_id', tenant);
+    const refreshed = Object.assign({}, ex.data, { requirements_snapshot: built.snapshot });
+    return { job: refreshed, created: false, refreshed: true, itinerary: built.itinerary };
+  }
 
   const ins = await supabase.from('travel_search_jobs').insert({
     tenant_id: tenant, booking_id: bookingId, passenger_form_id: built.form.id, search_type: searchType,
