@@ -1093,6 +1093,98 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
     cqKinds.indexOf('web_research_lodging') !== -1 &&
     cqP5 === null);                                                        // 5ª pasada: nada por reclamar
 
+  // ── Límites duros de tools + saneo de errores + claim robusto (e2e fixes) ──
+
+  // 163 search/fetch tienen límites INDEPENDIENTES; el fetch se retira al agotarse
+  const capTools = [{ name: 'web_search', max_uses: 6 }, { name: 'web_fetch', max_uses: 2 }];
+  ok('163 cap tools: search y fetch independientes; fetch retirado a 0',
+    wrClient.capResearchTools(capTools, 3, 0).filter(function (t) { return t.name === 'web_search'; })[0].max_uses === 3 &&
+    wrClient.capResearchTools(capTools, 0, 2).every(function (t) { return t.name !== 'web_fetch'; }) &&
+    wrClient.capResearchTools(capTools, 6, 2).length === 0);
+
+  // 164 con max_fetches=2, pause_turn JAMÁS ejecuta un 3er fetch (límite duro acumulado)
+  const c164 = [];
+  const sdk164 = { messages: { create: async function (r) { c164.push(r.tools.map(function (t) { return t.name; }));
+    return c164.length === 1
+      ? { model: 'm', usage: { server_tool_use: { web_search_requests: 1, web_fetch_requests: 2 } }, content: [{ type: 'text', text: 'x' }], stop_reason: 'pause_turn' }
+      : { model: 'm', usage: { server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 } }, content: [{ type: 'text', text: '```json\n{"findings":[]}\n```' }], stop_reason: 'end_turn' };
+  } } };
+  const resp164 = await wrClient.makeAnthropicResearchClient({ sdk: sdk164, maxPauseTurns: 4 })
+    .messages({ model: 'm', system: 's', input: { kind: 'flights' }, tools: [{ name: 'web_search', max_uses: 6 }, { name: 'web_fetch', max_uses: 2 }] });
+  ok('164 max_fetches=2: pause_turn no ejecuta un 3er fetch',
+    resp164.usage.server_tool_use.web_fetch_requests === 2 && c164.length === 2 && c164[1].indexOf('web_fetch') === -1);
+
+  // 169 (agrupado) al agotar search Y fetch, el adapter NO vuelve a llamar a Anthropic
+  const c169 = [];
+  const sdk169 = { messages: { create: async function () { c169.push(1); return { model: 'm', usage: { server_tool_use: { web_search_requests: 6, web_fetch_requests: 2 } }, content: [{ type: 'text', text: '```json\n{"findings":[]}\n```' }], stop_reason: 'pause_turn' }; } } };
+  await wrClient.makeAnthropicResearchClient({ sdk: sdk169, maxPauseTurns: 4 })
+    .messages({ model: 'm', system: 's', input: { kind: 'flights' }, tools: [{ name: 'web_search', max_uses: 6 }, { name: 'web_fetch', max_uses: 2 }] });
+  ok('165 tras agotar search+fetch no se reanuda (1 sola llamada Anthropic)', c169.length === 1);
+
+  // Gate ON para las pruebas de runSubtask con research real (mock de cliente).
+  const prevWrEnv = process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED;
+  process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED = 'true';
+
+  // 166 max_uses_exceeded → partial TERMINAL + código saneado persistido; no se re-reclama
+  const j166 = nid(), s166 = nid();
+  const db166 = {
+    travel_search_jobs: [{ id: j166, tenant_id: 'hook-adventure', booking_id: nid(), status: 'running', active: true, web_search_count: 0, web_fetch_count: 0, research_cost_usd: 0, requirements_snapshot: snap() }],
+    travel_search_subtasks: [{ id: s166, tenant_id: 'hook-adventure', job_id: j166, kind: 'web_research_flights', status: 'queued', attempt_count: 0, max_attempts: 3, created_at: '2026-08-01T00:00:01Z' }],
+    travel_flight_options: [], travel_hotel_options: [], milu_settings: [{ tenant_id: 'hook-adventure', web_research_enabled: true, web_research_max_searches: 6, web_research_max_fetches: 2, web_research_max_content_tokens_per_fetch: 4000, web_research_max_cost_per_job_usd: 0.30 }], llm_usage_log: []
+  };
+  setClient(db166);
+  const cliMU = { messages: async function () { return { usage: { server_tool_use: { web_search_requests: 2, web_fetch_requests: 2 } }, content: [{ type: 'web_fetch_tool_result', content: { type: 'web_fetch_tool_result_error', error_code: 'max_uses_exceeded' } }], output: { findings: [] } }; } };
+  const rMU = await worker.runSubtask({ id: s166, job_id: j166, kind: 'web_research_flights' }, { job: db166.travel_search_jobs[0], settings: db166.milu_settings[0], env: process.env, researchClient: cliMU });
+  await worker.completeSubtask(s166, rMU.status);
+  const subMU = db166.travel_search_subtasks.filter(function (s) { return s.id === s166; })[0];
+  const claimMU = await worker.claimNextSubtask('hook-adventure', 'w', 120);
+  ok('166 max_uses_exceeded → partial terminal + código saneado; no se re-reclama',
+    rMU.status === 'partial' && rMU.error_code === 'max_uses_exceeded' &&
+    subMU.status === 'partial' && subMU.last_sanitized_error === 'max_uses_exceeded' &&
+    claimMU.subtask === null);
+
+  // 167 costo research por propuesta se mantiene bajo el tope $0.30
+  const cost167 = db166.travel_search_jobs[0].research_cost_usd;
+  ok('167 costo research < $0.30 (2 búsquedas ≈ $0.02)', cost167 >= 0 && cost167 < 0.30);
+
+  // 168 web_tool_exception → código saneado (api_*), sin secreto/contenido
+  const j168 = nid(), s168 = nid();
+  const db168 = {
+    travel_search_jobs: [{ id: j168, tenant_id: 'hook-adventure', booking_id: nid(), status: 'running', active: true, web_search_count: 0, web_fetch_count: 0, research_cost_usd: 0, requirements_snapshot: snap() }],
+    travel_search_subtasks: [{ id: s168, tenant_id: 'hook-adventure', job_id: j168, kind: 'web_research_lodging', status: 'queued', attempt_count: 0, max_attempts: 3 }],
+    travel_flight_options: [], travel_hotel_options: [], milu_settings: [{ tenant_id: 'hook-adventure', web_research_enabled: true }], llm_usage_log: []
+  };
+  setClient(db168);
+  const cliEx = { messages: async function () { throw Object.assign(new Error('boom secret token=abc123'), { status: 500, name: 'APIError' }); } };
+  const rEx = await worker.runSubtask({ id: s168, job_id: j168, kind: 'web_research_lodging' }, { job: db168.travel_search_jobs[0], settings: db168.milu_settings[0], env: process.env, researchClient: cliEx });
+  await worker.completeSubtask(s168, rEx.status);
+  const subEx = db168.travel_search_subtasks.filter(function (s) { return s.id === s168; })[0];
+  ok('168 web_tool_exception → código saneado api_server_error; sin secreto',
+    rEx.status === 'partial' && rEx.error_code === 'api_server_error' &&
+    subEx.last_sanitized_error === 'api_server_error' && !/secret|token|boom/i.test(String(subEx.last_sanitized_error)));
+
+  process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED = prevWrEnv;
+
+  // 169 claim con fila incompleta/all-null → sin subtarea (nunca runSubtask ni job_not_found)
+  CLIENT = { rpc: async function () { return { data: { id: null, kind: null, job_id: null }, error: null }; } };
+  const clNull = await worker.claimNextSubtask('hook-adventure', 'w', 120);
+  CLIENT = makeClient({});   // restaura cliente normal
+  ok('169 claim all-null → subtask null (no job_not_found desde subtarea nula)', clNull.ok === true && clNull.subtask === null);
+
+  // 170 rerun LIMPIO (#6): resetea contadores de investigación del job (presupuesto fresco)
+  const jRR = nid();
+  const dbRR = {
+    travel_search_jobs: [{ id: jRR, tenant_id: 'hook-adventure', booking_id: 'b-rr', status: 'partial', active: true, rerun_count: 0, web_search_count: 3, web_fetch_count: 3, research_cost_usd: 0.0798, requirements_snapshot: snap() }],
+    travel_search_subtasks: [{ id: nid(), tenant_id: 'hook-adventure', job_id: jRR, kind: 'web_research_flights', status: 'partial', attempt_count: 1, max_attempts: 3 }],
+    milu_settings: [{ tenant_id: 'hook-adventure', web_research_enabled: true }], travel_search_audit: []
+  };
+  process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED = 'true'; setClient(dbRR);
+  const rrRes = await milu.rerunResearch('b-rr', jRR, { role: 'owner', userId: 'u' });
+  process.env.MILU_TOURISM_WEB_RESEARCH_ENABLED = prevWrEnv;
+  const jobRR = dbRR.travel_search_jobs[0];
+  ok('170 rerun limpio: contadores de investigación reseteados a 0 (no reusa la corrida previa)',
+    rrRes.rerun === true && jobRR.web_search_count === 0 && jobRR.web_fetch_count === 0 && jobRR.research_cost_usd === 0);
+
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);
 })();

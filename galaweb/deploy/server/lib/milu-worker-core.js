@@ -32,7 +32,13 @@ async function claimNextSubtask(tenant, workerId, leaseSeconds) {
     p_tenant: tenant, p_worker: workerId, p_lease_seconds: leaseSeconds || DEFAULT_LEASE_SECONDS
   });
   if (r.error) return { ok: false, error: r.error };
-  return { ok: true, subtask: r.data || null };
+  // Una función plpgsql que retorna un composite NULL puede serializarse como una
+  // FILA all-null {id:null,kind:null,job_id:null} en vez de null. Una subtarea
+  // válida DEBE tener id + kind + job_id; si falta alguno → sin subtarea (nunca
+  // se llama runSubtask ni se marca un job inexistente).
+  const row = r.data || null;
+  if (!row || !row.id || !row.kind || !row.job_id) return { ok: true, subtask: null };
+  return { ok: true, subtask: row };
 }
 
 async function heartbeatSubtask(id, workerId, leaseSeconds) {
@@ -301,7 +307,12 @@ async function runSubtask(subtask, deps) {
       if (isFlights) await upsertFlightOptions(job, opts, { refresh: deps.refresh });
       else await upsertHotelOptions(job, opts, { refresh: deps.refresh });
       await bumpJobResearchCounters(job.id, r.stats || {});
-      return { status: r.status || 'partial', reason: r.reason || null, count: opts.length };
+      // Persistir el CÓDIGO saneado del error (sin secretos/contenido/PII) para observabilidad.
+      const errCode = r.error_code || (r.stats && r.stats.error_code) || null;
+      if (errCode) {
+        try { await getSupabase().from('travel_search_subtasks').update({ last_sanitized_error: String(errCode).slice(0, 80) }).eq('id', subtask.id); } catch (e) { /* el logging nunca rompe */ }
+      }
+      return { status: r.status || 'partial', reason: r.reason || null, error_code: errCode, count: opts.length };
     }
 
     return { status: 'partial', reason: 'unknown_kind' };

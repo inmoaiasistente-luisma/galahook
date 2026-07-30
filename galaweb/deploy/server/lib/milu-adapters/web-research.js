@@ -152,12 +152,12 @@ async function researchFlights(job, snapshot, deps) {
     system: 'Milu investiga solo en páginas públicas autorizadas; la fuente del precio es la página externa, no tú. Devuelve hallazgos estructurados.',
     input: flightInput(snapshot), settings: deps.settings, spentJobUsd: deps.spentJobUsd, env: deps.env, client: deps.client
   });
-  const stats = { web_search_requests: res.web_search_requests || 0, web_fetch_requests: res.web_fetch_requests || 0, cost: res.cost || 0 };
-  if (!res.ok) return { status: res.status === 'configuration_error' ? 'failed' : 'partial', reason: res.reason, options: [], stats: stats };
+  const stats = { web_search_requests: res.web_search_requests || 0, web_fetch_requests: res.web_fetch_requests || 0, cost: res.cost || 0, error_code: res.error || null };
+  if (!res.ok) return { status: res.status === 'configuration_error' ? 'failed' : 'partial', reason: res.reason, error_code: res.error || res.reason || null, options: [], stats: stats };
 
   const options = (res.findings || []).map(function (f) { return mapFlightFinding(snapshot, f); }).filter(Boolean);
-  if (!options.length) return { status: 'partial', reason: res.error || 'no_verifiable_result', options: [flightFallback(snapshot)], stats: stats };
-  return { status: 'completed', reason: null, options: options, stats: stats };
+  if (!options.length) return { status: 'partial', reason: res.error || 'no_verifiable_result', error_code: res.error || null, options: [flightFallback(snapshot)], stats: stats };
+  return { status: 'completed', reason: null, error_code: null, options: options, stats: stats };
 }
 
 async function researchLodging(job, snapshot, deps) {
@@ -175,12 +175,12 @@ async function researchLodging(job, snapshot, deps) {
     system: 'Milu investiga solo en páginas públicas autorizadas; la fuente del precio es la página externa, no tú. Devuelve hallazgos estructurados.',
     input: lodgingInput(primary, prefs), settings: deps.settings, spentJobUsd: deps.spentJobUsd, env: deps.env, client: deps.client
   });
-  const stats = { web_search_requests: res.web_search_requests || 0, web_fetch_requests: res.web_fetch_requests || 0, cost: res.cost || 0 };
-  if (!res.ok) return { status: res.status === 'configuration_error' ? 'failed' : 'partial', reason: res.reason, options: [], stats: stats };
+  const stats = { web_search_requests: res.web_search_requests || 0, web_fetch_requests: res.web_fetch_requests || 0, cost: res.cost || 0, error_code: res.error || null };
+  if (!res.ok) return { status: res.status === 'configuration_error' ? 'failed' : 'partial', reason: res.reason, error_code: res.error || res.reason || null, options: [], stats: stats };
 
   var options = (res.findings || []).map(function (f) { return mapHotelFinding(primary, f); }).filter(Boolean);
   if (!options.length) options = [hotelFallback(primary)];
-  return { status: options.length ? 'completed' : 'partial', reason: options.length ? null : (res.error || 'no_verifiable_result'), options: options, stats: stats };
+  return { status: options.length ? 'completed' : 'partial', reason: options.length ? null : (res.error || 'no_verifiable_result'), error_code: options.length ? null : (res.error || null), options: options, stats: stats };
 }
 
 module.exports = {

@@ -41,7 +41,10 @@ function buildResearchTools(settings) {
   ];
 }
 
-/** Detecta un error de tool (web_search/web_fetch) en los bloques de contenido. */
+/** Detecta un error de tool (web_search/web_fetch) en los bloques de contenido.
+ * Distingue max_uses_exceeded, url_not_accessible (URL inaccesible),
+ * unsupported_content_type (páginas JS / no soportado), url_not_allowed
+ * (fuera de la allowlist), etc. — códigos saneados de Anthropic, sin contenido. */
 function toolErrorCode(content) {
   const blocks = Array.isArray(content) ? content : [];
   for (var i = 0; i < blocks.length; i++) {
@@ -50,6 +53,20 @@ function toolErrorCode(content) {
     if (b && b.type === 'web_fetch_tool_result' && b.content && b.content.type === 'web_fetch_tool_result_error') return b.content.error_code || 'web_fetch_error';
   }
   return null;
+}
+
+/** Clasifica una EXCEPCIÓN del cliente (llamada API que lanzó) en un código
+ * saneado — nunca el mensaje/secreto/contenido completo. Categoría "error API". */
+function classifyToolException(e) {
+  const status = e && (e.status || e.statusCode);
+  const name = (e && e.name) ? String(e.name).toLowerCase() : '';
+  const msg = String((e && e.message) || '');
+  if (status === 429 || name.indexOf('ratelimit') !== -1) return 'api_rate_limited';
+  if (status === 529 || name.indexOf('overload') !== -1) return 'api_overloaded';
+  if (status === 408 || name.indexOf('timeout') !== -1 || /timed?\s?out/i.test(msg)) return 'api_timeout';
+  if (typeof status === 'number' && status >= 500) return 'api_server_error';
+  if (typeof status === 'number' && status >= 400) return 'api_client_error';
+  return 'api_error';
 }
 
 /**
@@ -90,7 +107,8 @@ async function runResearch(opts) {
   try {
     resp = await opts.client.messages({ model: resolved.model, system: opts.system, input: opts.input, tools: tools });
   } catch (e) {
-    return { ok: false, status: 'partial', reason: 'web_tool_exception', detail: sanitizeErrorText(e && e.message ? e.message : e) };
+    // Excepción de la llamada API → código saneado (sin mensaje/secreto/contenido).
+    return { ok: false, status: 'partial', reason: 'web_tool_exception', error: classifyToolException(e) };
   }
   const t1 = (opts.now ? opts.now() : nowMs());
 
@@ -135,4 +153,4 @@ async function runResearch(opts) {
   };
 }
 
-module.exports = { buildResearchTools, toolErrorCode, runResearch };
+module.exports = { buildResearchTools, toolErrorCode, classifyToolException, runResearch };

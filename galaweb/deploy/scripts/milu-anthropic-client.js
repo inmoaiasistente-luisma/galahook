@@ -119,6 +119,30 @@ function extractFindings(content) {
   return arr.map(coerceFinding).filter(Boolean);
 }
 
+/* ---------------- presupuesto acumulado de tools (search/fetch INDEPENDIENTES) ---------------- */
+function toolMaxUses(tools, name) {
+  const t = (Array.isArray(tools) ? tools : []).filter(function (x) { return x && x.name === name; })[0];
+  return (t && typeof t.max_uses === 'number') ? t.max_uses : 0;
+}
+
+/** Reconstruye los tools con max_uses = original − gastado; retira el tool a 0. */
+function capResearchTools(tools, usedSearch, usedFetch) {
+  const out = [];
+  (Array.isArray(tools) ? tools : []).forEach(function (t) {
+    if (!t) return;
+    if (t.name === 'web_search') {
+      const rem = Math.max(0, (t.max_uses || 0) - (usedSearch || 0));
+      if (rem > 0) out.push(Object.assign({}, t, { max_uses: rem }));   // rem=0 → retirado
+    } else if (t.name === 'web_fetch') {
+      const rem = Math.max(0, (t.max_uses || 0) - (usedFetch || 0));
+      if (rem > 0) out.push(Object.assign({}, t, { max_uses: rem }));
+    } else {
+      out.push(t);
+    }
+  });
+  return out;
+}
+
 /* ---------------- fábrica del cliente ---------------- */
 /**
  * Devuelve un cliente con la interfaz que el core espera:
@@ -127,9 +151,9 @@ function extractFindings(content) {
  */
 function makeAnthropicResearchClient(cfg) {
   cfg = cfg || {};
-  if (!Anthropic) throw new Error('missing_dependency: instala @anthropic-ai/sdk (npm install)');
-  if (!cfg.apiKey) throw new Error('missing_api_key');
-  const sdk = new Anthropic({ apiKey: cfg.apiKey });
+  if (!Anthropic && !cfg.sdk) throw new Error('missing_dependency: instala @anthropic-ai/sdk (npm install)');
+  if (!cfg.apiKey && !cfg.sdk) throw new Error('missing_api_key');
+  const sdk = cfg.sdk || new Anthropic({ apiKey: cfg.apiKey });   // cfg.sdk inyectable para pruebas
   const maxTokens = cfg.maxTokens || DEFAULT_MAX_TOKENS;
   const maxPause = cfg.maxPauseTurns == null ? DEFAULT_MAX_PAUSE_TURNS : cfg.maxPauseTurns;
 
@@ -139,17 +163,23 @@ function makeAnthropicResearchClient(cfg) {
       const sys = (req.system ? req.system + '\n\n' : '') + OUTPUT_CONTRACT;
       let messages = [{ role: 'user', content: buildUserText(req.input) }];
       const acc = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, web_search_requests: 0, web_fetch_requests: 0 };
+      const origSearch = toolMaxUses(req.tools, 'web_search');
+      const origFetch = toolMaxUses(req.tools, 'web_fetch');
       let lastContent = [];
       let modelVersion = null;
       let guard = 0;
 
       while (true) {
+        // LÍMITE DURO ACUMULATIVO: max_uses = original − gastado (a través de las
+        // reanudaciones pause_turn). Cuando llega a 0 el tool se RETIRA → el modelo
+        // no puede iniciar otra búsqueda/fetch (nunca un 3er fetch, sin max_uses_exceeded).
+        const curTools = capResearchTools(req.tools, acc.web_search_requests, acc.web_fetch_requests);
         const msg = await sdk.messages.create({
           model: req.model,
           max_tokens: maxTokens,
           system: sys,
           messages: messages,
-          tools: req.tools || []
+          tools: curTools
         });
         modelVersion = msg.model || modelVersion;
         const u = msg.usage || {};
@@ -162,7 +192,10 @@ function makeAnthropicResearchClient(cfg) {
         acc.web_fetch_requests += stu.web_fetch_requests || 0;
         lastContent = msg.content || [];
 
-        if (msg.stop_reason === 'pause_turn' && guard < maxPause) {
+        const searchLeft = origSearch - acc.web_search_requests;
+        const fetchLeft = origFetch - acc.web_fetch_requests;
+        // Solo se reanuda si queda presupuesto de tools; si no, cortar (sin reintentos infinitos).
+        if (msg.stop_reason === 'pause_turn' && guard < maxPause && (searchLeft > 0 || fetchLeft > 0)) {
           guard++;
           messages = messages.concat([{ role: 'assistant', content: msg.content }]);
           continue;                                                   // reanuda el mismo turno
@@ -186,7 +219,8 @@ function makeAnthropicResearchClient(cfg) {
 
 module.exports = {
   makeAnthropicResearchClient,
-  // exportadas para pruebas del parser (no requieren el SDK ni red)
+  // exportadas para pruebas (no requieren el SDK ni red)
   buildUserText, parseLastJsonObject, coerceFinding, extractFindings,
+  toolMaxUses, capResearchTools,
   sdkAvailable: function () { return !!Anthropic; }
 };

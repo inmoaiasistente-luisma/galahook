@@ -425,7 +425,13 @@ async function rerunResearch(bookingId, jobId, actor) {
 
   const newCount = (job.rerun_count || 0) + 1;
   const nextStatus = (job.status === 'completed' || job.status === 'partial') ? 'running' : job.status;
-  await supabase.from('travel_search_jobs').update({ rerun_count: newCount, status: nextStatus, active: true }).eq('id', jobId);
+  // Rerun LIMPIO (#6): resetea los contadores de investigación → presupuesto fresco
+  // ($0.30, 6 búsquedas, 2 fetches) para la nueva pasada; el historial de costo
+  // vive en llm_usage_log (append-only). Evita reusar contadores de una corrida previa.
+  await supabase.from('travel_search_jobs').update({
+    rerun_count: newCount, status: nextStatus, active: true,
+    web_search_count: 0, web_fetch_count: 0, research_cost_usd: 0
+  }).eq('id', jobId);
 
   const at = (actor && (actor.role === 'owner' || actor.role === 'admin')) ? actor.role : 'system';
   try {
