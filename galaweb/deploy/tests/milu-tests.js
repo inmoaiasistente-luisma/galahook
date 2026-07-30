@@ -143,6 +143,7 @@ const webtools = require(BASE + '/server/lib/milu-web-tools.js');
 const webResearch = require(BASE + '/server/lib/milu-adapters/web-research.js');
 const rerunH = require(BASE + '/server/admin-handlers/milu-research-rerun.js');
 const approveH = require(BASE + '/server/admin-handlers/milu-research-approve.js');
+const wrClient = require(BASE + '/scripts/milu-anthropic-client.js');
 
 function mockRes() { return { statusCode: 200, headers: {}, body: null, setHeader(k, v) { this.headers[String(k).toLowerCase()] = v; }, end(s) { this.body = s; } }; }
 function run(h, req) { const res = mockRes(); return Promise.resolve(h(req, res)).then(() => res); }
@@ -838,6 +839,39 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   CURRENT_ROLE = 'owner'; setClient({ milu_settings: [] });
   let sv = await run(settingsSaveH, { method: 'POST', headers: {}, body: { web_research_enabled: true, web_research_max_searches: 6, web_research_max_fetches: 2, web_research_max_content_tokens_per_fetch: 4000, web_research_max_cost_per_job_usd: 0.30 } });
   ok('124 settings-save: owner edita config de web research', sv.statusCode === 200 && j(sv).saved === true);
+
+  // ── Runner e2e controlado (adapter Anthropic real) — funciones puras, sin SDK ni red ──
+
+  // 125 extrae findings de un bloque ```json (vuelo) y coerciona el precio a entero
+  const c125 = [{ type: 'text', text: 'ok\n```json\n{ "findings": [ {"source_url":"https://www.avianca.com/x","price_cents":25000.4,"currency":"USD","airline":"Avianca","origin":"UIO","destination":"SCY"} ] }\n```' }];
+  const f125 = wrClient.extractFindings(c125);
+  ok('125 adapter: extrae 1 finding y precio entero', f125.length === 1 && f125[0].price_cents === 25000 && f125[0].source_url === 'https://www.avianca.com/x');
+
+  // 126 sin source_url → descartado; precio no numérico → null
+  const c126 = [{ type: 'text', text: '```json\n{"findings":[{"source_url":"https://booking.com/h","price_cents":"n/a","hotel_name":"X"},{"price_cents":10,"hotel_name":"sin url"}]}\n```' }];
+  const f126 = wrClient.extractFindings(c126);
+  ok('126 adapter: descarta sin url y precio inválido → null', f126.length === 1 && f126[0].price_cents === null);
+
+  // 127 texto sin JSON y findings:[] → []
+  ok('127 adapter: sin json / vacío → []', wrClient.extractFindings([{ type: 'text', text: 'nada verificable' }]).length === 0 && wrClient.extractFindings([{ type: 'text', text: '```json\n{"findings":[]}\n```' }]).length === 0);
+
+  // 128 objeto suelto (sin fence) con findings también se parsea
+  ok('128 adapter: objeto suelto con findings', wrClient.extractFindings([{ type: 'text', text: 'r: {"findings":[{"source_url":"https://ihg.com/q","price_cents":9900}]} fin' }]).length === 1);
+
+  // 129 el prompt varía por kind y exige source_url real (fuente = página, no el modelo)
+  const uf129 = wrClient.buildUserText({ kind: 'flights', origin: 'UIO' });
+  const ul129 = wrClient.buildUserText({ kind: 'lodging', destination: 'santa_cruz' });
+  ok('129 adapter: prompt por kind (airline vs hotel_name) + source_url real', /airline/.test(uf129) && /hotel_name/.test(ul129) && /source_url real/.test(uf129));
+
+  // 130 sin @anthropic-ai/sdk instalado, crear el cliente real LANZA (no llamada silenciosa)
+  let threw130 = true;
+  if (!wrClient.sdkAvailable()) { threw130 = false; try { wrClient.makeAnthropicResearchClient({ apiKey: 'x' }); } catch (e) { threw130 = /missing_dependency/.test(String(e && e.message)); } }
+  ok('130 adapter: sin SDK → makeAnthropicResearchClient lanza missing_dependency', threw130 === true);
+
+  // 131 runner: no imprime la API key ni el requirements_snapshot (solo presencia booleana)
+  const runnerSrc = fs.readFileSync(BASE + '/scripts/milu-worker-run.js', 'utf8');
+  ok('131 runner: no imprime API key ni snapshot (solo presencia)',
+    !/log\([^)]*process\.env\.ANTHROPIC_API_KEY/.test(runnerSrc) && !/\.requirements_snapshot/.test(runnerSrc) && /present\(hasKey\)/.test(runnerSrc));
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);
