@@ -1786,13 +1786,23 @@ function panelMiluTourism(role){
   // Investigación web (visor de hallazgos, owner/admin).
   const rsec=el('<div class="fin-sec"><h4>'+(ES?'Investigación web (owner/admin)':'Web research (owner/admin)')+'</h4></div>');
   const bkInput=el('<div class="ed-field"><label>booking_id</label><input type="text" placeholder="uuid" style="max-width:340px"></div>');
-  const loadBtn=el('<button class="btn btn-sm" type="button" style="margin-top:6px">'+(ES?'Cargar hallazgos':'Load findings')+'</button>');
+  const startBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">'+(ES?'Iniciar investigación de viaje':'Start travel research')+'</button>');
+  const loadBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Cargar hallazgos':'Load findings')+'</button>');
   const rerunBtn=el('<button class="btn btn-sm" type="button" style="margin:6px 0 0 8px">'+(ES?'Buscar nuevamente':'Search again')+'</button>');
-  const brow=el('<div class="ed-row"></div>'); brow.appendChild(bkInput); rsec.appendChild(brow); rsec.appendChild(loadBtn); rsec.appendChild(rerunBtn);
+  const brow=el('<div class="ed-row"></div>'); brow.appendChild(bkInput); rsec.appendChild(brow); rsec.appendChild(startBtn); rsec.appendChild(loadBtn); rsec.appendChild(rerunBtn);
+  const startMsg=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); rsec.appendChild(startMsg);
   const rInfo=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); const rTable=el('<div style="margin:8px 0"></div>');
   rsec.appendChild(rInfo); rsec.appendChild(rTable); p.appendChild(rsec);
 
   var currentJobId=null, currentBooking=null;
+  const bkI=bkInput.querySelector('input');
+  // UUID válido = suficiente para iniciar (no exige una reserva "cargada").
+  const UUID_RE=/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  function validUuid(){ return UUID_RE.test((bkI.value||'').trim()); }
+  // Start: con UUID válido. Load findings / Search again: solo con un job existente.
+  function refreshButtons(){ startBtn.disabled=!validUuid(); loadBtn.disabled=!currentJobId; rerunBtn.disabled=!currentJobId; }
+  function setJob(id){ currentJobId=id||null; refreshButtons(); }
+  bkI.addEventListener('input',function(){ currentBooking=(bkI.value||'').trim()||null; currentJobId=null; startMsg.textContent=''; refreshButtons(); });
 
   function providerLabel(s){ return s==='live'?(ES?'conectado (live)':'connected (live)'):(s==='sandbox'?'sandbox':(ES?'no conectado':'not connected')); }
   function money(cents,c){ return (cents==null)?'—':('$'+(Number(cents)/100).toFixed(2)+' '+escapeHtml(c||'USD')); }
@@ -1879,17 +1889,45 @@ function panelMiluTourism(role){
     apiGet('/api/admin-milu-search-status?booking_id='+encodeURIComponent(bid)).then(function(sr){
       if(sr.status===401){ onUnauthorized(); return; }
       if(!(sr.ok&&sr.data)){ rInfo.textContent=(ES?'No se pudo cargar el estado.':'Could not load status.'); return; }
-      const status=sr.data; currentJobId=(status.job&&status.job.id)||null;
-      if(!currentJobId){ rTable.innerHTML=''; rInfo.textContent=(ES?'Sin job para esta reserva.':'No job for this booking.'); return; }
+      const status=sr.data; setJob((status.job&&status.job.id)||null);
+      if(!currentJobId){ rTable.innerHTML=''; rInfo.textContent=(ES?'Sin job para esta reserva. Usa «Iniciar investigación de viaje».':'No job for this booking. Use "Start travel research".'); return; }
       apiGet('/api/admin-milu-options-list?job_id='+encodeURIComponent(currentJobId)).then(function(orr){
         if(orr.status===401){ onUnauthorized(); return; }
         renderFindings(status,(orr.ok&&orr.data)||{});
       });
     });
   }
+  // ---- iniciar investigación (crea el primer job) ----
+  startBtn.addEventListener('click',function(){
+    const bid=(bkI.value||'').trim();
+    if(!UUID_RE.test(bid)){ adminToast(ES?'Ingresa un booking_id (UUID) válido':'Enter a valid booking_id (UUID)'); return; }
+    currentBooking=bid;
+    startBtn.disabled=true; startMsg.textContent=(ES?'Iniciando…':'Starting…');   // bloquea doble clic
+    apiPost('/api/admin-milu-search-start',{booking_id:bid,search_type:'complete_trip'}).then(function(r){
+      refreshButtons();
+      if(r.status===401){ onUnauthorized(); return; }
+      if(r.status===403){ startMsg.textContent=(ES?'No autorizado (solo owner/admin).':'Not authorized (owner/admin only).'); adminToast(ES?'No autorizado':'Not authorized'); return; }
+      if(r.ok&&r.data&&r.data.job){
+        const jb=r.data.job; setJob(jb.id);
+        startMsg.innerHTML=(r.data.created?(ES?'Job creado':'Job created'):(ES?'Job existente':'Existing job'))+': <b>'+escapeHtml(jb.id)+'</b> · '+(ES?'estado':'status')+' <b>'+escapeHtml(jb.status||'queued')+'</b>';
+        adminToast(r.data.created?(ES?'Búsqueda iniciada (encolada)':'Search started (queued)'):(ES?'Ya existía un job; cargado':'Job already existed; loaded'));
+        loadResearch();
+        return;
+      }
+      const code=(r.data&&r.data.error)||'';
+      var msg=(ES?'No se pudo iniciar.':'Could not start.');
+      if(r.status===404||code==='BOOKING_NOT_FOUND') msg=(ES?'Reserva no encontrada o de otro tenant.':'Booking not found or from another tenant.');
+      else if(code==='FORM_NOT_READY') msg=(ES?'El formulario de pasajeros no está listo para esta reserva.':'Passenger form is not ready for this booking.');
+      else if(code==='CONNECTION_TBD_UNRESOLVED') msg=(ES?'Resuelve primero la ciudad de conexión.':'Resolve the connection city first.');
+      else if(code==='DESTINATION_DATES_MISSING') msg=(ES?'Faltan las fechas de destino.':'Destination dates are missing.');
+      else if(r.status===400||code==='INVALID_BOOKING') msg=(ES?'booking_id inválido.':'Invalid booking_id.');
+      startMsg.textContent=msg; adminToast(msg);
+    }).catch(function(){ refreshButtons(); startMsg.textContent=(ES?'Error de red.':'Network error.'); });
+  });
+
   loadBtn.addEventListener('click',loadResearch);
   rerunBtn.addEventListener('click',function(){
-    if(!currentBooking||!currentJobId){ adminToast(ES?'Carga primero una reserva':'Load a booking first'); return; }
+    if(!currentBooking||!currentJobId){ adminToast(ES?'Inicia primero una investigación':'Start a research first'); return; }
     rerunBtn.disabled=true;
     apiPost('/api/admin-milu-research-rerun',{booking_id:currentBooking,job_id:currentJobId}).then(function(r){ rerunBtn.disabled=false;
       if(r.status===401){ onUnauthorized(); return; }
@@ -1899,6 +1937,7 @@ function panelMiluTourism(role){
   });
 
   load();
+  refreshButtons();   // Start requiere UUID; Load/Search again requieren job
   return p;
 }
 

@@ -873,6 +873,58 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   ok('131 runner: no imprime API key ni snapshot (solo presencia)',
     !/log\([^)]*process\.env\.ANTHROPIC_API_KEY/.test(runnerSrc) && !/\.requirements_snapshot/.test(runnerSrc) && /present\(hasKey\)/.test(runnerSrc));
 
+  // ── Fix e2e: flujo "Start travel research" (handler milu-search-start) ──
+
+  // 132 UUID válido: owner crea el PRIMER job (queued)
+  CURRENT_ROLE = 'owner'; let e2eF = freshDb(); CONTRACT = baseContract(e2eF.booking); setClient(e2eF.db);
+  let e2eH = await run(startH, { method: 'POST', headers: {}, body: { booking_id: e2eF.booking.id } });
+  ok('132 start: UUID válido crea primer job (queued)', e2eH.statusCode === 200 && j(e2eH).started === true && j(e2eH).created === true && j(e2eH).job.status === 'queued' && !!j(e2eH).job.id);
+
+  // 133 UUID inexistente → 404 BOOKING_NOT_FOUND (error claro)
+  setClient({ bookings: [], booking_passenger_forms: [], booking_lodging_requirements: [], travel_search_jobs: [], travel_search_subtasks: [], travel_logistics: [], milu_settings: [] });
+  e2eH = await run(startH, { method: 'POST', headers: {}, body: { booking_id: nid() } });
+  ok('133 start: UUID inexistente → 404 BOOKING_NOT_FOUND', e2eH.statusCode === 404 && j(e2eH).error === 'BOOKING_NOT_FOUND');
+
+  // 134 reserva de OTRO tenant → rechazada (scoping por tenant en loadGateData)
+  let e2eX = freshDb(); e2eX.booking.tenant_id = 'other-tenant'; CONTRACT = baseContract(e2eX.booking); setClient(e2eX.db);
+  e2eH = await run(startH, { method: 'POST', headers: {}, body: { booking_id: e2eX.booking.id } });
+  ok('134 start: reserva de otro tenant rechazada', e2eH.statusCode === 404 && j(e2eH).error === 'BOOKING_NOT_FOUND');
+
+  // 135 doble clic no duplica (idempotencia por idempotency_key)
+  let e2eD = freshDb(); CONTRACT = baseContract(e2eD.booking); setClient(e2eD.db);
+  let e2eD1 = await run(startH, { method: 'POST', headers: {}, body: { booking_id: e2eD.booking.id } });
+  let e2eD2 = await run(startH, { method: 'POST', headers: {}, body: { booking_id: e2eD.booking.id } });
+  ok('135 start: doble clic no duplica job', j(e2eD1).created === true && j(e2eD2).created === false && j(e2eD1).job.id === j(e2eD2).job.id && e2eD.db.travel_search_jobs.length === 1);
+
+  // 136 admin permitido
+  CURRENT_ROLE = 'admin'; let e2eA = freshDb(); CONTRACT = baseContract(e2eA.booking); setClient(e2eA.db);
+  let e2eAH = await run(startH, { method: 'POST', headers: {}, body: { booking_id: e2eA.booking.id } });
+  ok('136 start: admin permitido', e2eAH.statusCode === 200 && j(e2eAH).started === true);
+
+  // 137 staff → 403
+  CURRENT_ROLE = 'staff'; let e2eS = freshDb(); CONTRACT = baseContract(e2eS.booking); setClient(e2eS.db);
+  let e2eSH = await run(startH, { method: 'POST', headers: {}, body: { booking_id: e2eS.booking.id } });
+  ok('137 start: staff 403', e2eSH.statusCode === 403);
+  CURRENT_ROLE = 'owner';
+
+  // 138 "Search again" sin job previo → rechazado (rerun con job inexistente → 404)
+  setClient({ travel_search_jobs: [], travel_search_subtasks: [], milu_settings: [] });
+  let e2eRA = await run(rerunH, { method: 'POST', headers: {}, body: { booking_id: nid(), job_id: nid() } });
+  ok('138 rerun: sin job previo → rechazado', e2eRA.statusCode !== 200 && e2eRA.statusCode === 404);
+
+  // 139 el flujo start NO toca Stripe ni envía al cliente
+  const startSrc = fs.readFileSync(BASE + '/server/admin-handlers/milu-search-start.js', 'utf8') + fs.readFileSync(BASE + '/server/lib/milu-tourism.js', 'utf8');
+  ok('139 start: sin Stripe ni email al cliente',
+    !/booking-email-service|customer_travel_confirmation|\bresend\b|sendEmail|require\(['"][^'"]*stripe|stripe\.(?:paymentIntents|charges|checkout)|PaymentIntent|create-payment-intent/i.test(startSrc));
+
+  // 140 admin.js: botón Start visible + cableado; Load/Search again requieren job
+  const adminSrc = fs.readFileSync(BASE + '/assets/js/admin.js', 'utf8');
+  ok('140 admin.js: Start visible + gating de botones',
+    /Start travel research|Iniciar investigación de viaje/.test(adminSrc) &&
+    /admin-milu-search-start/.test(adminSrc) &&
+    /loadBtn\.disabled=!currentJobId/.test(adminSrc) &&
+    /rerunBtn\.disabled=!currentJobId/.test(adminSrc));
+
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);
 })();

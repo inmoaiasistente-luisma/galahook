@@ -62,7 +62,8 @@ function assertSearchEligible(form, lodging) {
 async function loadGateData(bookingId) {
   const supabase = getSupabase();
   const tenant = getTenantId();
-  const bq = await supabase.from('bookings').select('id,tenant_id,booking_code,booking_date,tour_id,guests').eq('id', bookingId).maybeSingle();
+  // Reserva scoped al tenant: una reserva de otro tenant → BOOKING_NOT_FOUND (rechazo limpio).
+  const bq = await supabase.from('bookings').select('id,tenant_id,booking_code,booking_date,tour_id,guests').eq('id', bookingId).eq('tenant_id', tenant).maybeSingle();
   if (bq.error || !bq.data) throw gateError('BOOKING_NOT_FOUND');
   const booking = bq.data;
   const fq = await supabase.from('booking_passenger_forms').select('id,status,preferred_connection_city').eq('booking_id', bookingId).eq('tenant_id', tenant).maybeSingle();
