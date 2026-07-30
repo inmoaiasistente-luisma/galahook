@@ -55,6 +55,16 @@ const CONNECTION_CITIES = ['quito', 'guayaquil'];
 
 function isYmd(v) { return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v); }
 
+/** Infiere la ciudad de conexión desde el texto del aeropuerto de llegada del intake
+ * (IATA o nombre): GYE/Guayaquil/Olmedo → guayaquil; UIO/Quito/Sucre → quito. */
+function cityFromAirportText(txt) {
+  if (typeof txt !== 'string') return null;
+  const t = txt.toUpperCase();
+  if (/\bGYE\b/.test(t) || t.indexOf('GUAYAQUIL') !== -1 || t.indexOf('OLMEDO') !== -1) return 'guayaquil';
+  if (/\bUIO\b/.test(t) || t.indexOf('QUITO') !== -1 || t.indexOf('SUCRE') !== -1) return 'quito';
+  return null;
+}
+
 /**
  * Deriva los insumos del itinerario desde el contrato + overrides del owner/admin.
  * Sin señal clara de tipo de pasajero → null (el gate lo exige; el owner elige).
@@ -67,9 +77,20 @@ function deriveItineraryInputs(contract, overrides) {
   else if (arrival.international_flights_purchased === true || arrival.arrival_airport || arrival.ecuador_arrival_date) ptype = 'international';
   // false/null sin datos de llegada = ambiguo → null (el owner debe confirmar).
 
-  let conn = null;
-  if (CONNECTION_CITIES.indexOf(overrides.connection_city) !== -1) conn = overrides.connection_city;
-  else if (contract && CONNECTION_CITIES.indexOf(contract.preferred_connection_city) !== -1) conn = contract.preferred_connection_city;
+  // Fuente de verdad de la CIUDAD DE CONEXIÓN (Corrección 1), en orden:
+  //   1) intake CONFIRMADO — preferred_connection_city concreto (quito/guayaquil),
+  //      o inferido del arrival_airport del formulario;
+  //   2) logística guardada — no existe columna dedicada de conexión en
+  //      travel_logistics: el intake ES la logística persistida de conexión;
+  //   3) override manual explícito del owner/admin ("Change connection city");
+  //   4) fallback — sin dato → null (el owner debe elegir; NUNCA se asume Quito).
+  // El override, cuando el owner lo fija explícitamente, SUPERSEDE al valor auto.
+  const pc = contract && contract.preferred_connection_city;
+  const intakeCity = (CONNECTION_CITIES.indexOf(pc) !== -1) ? pc : cityFromAirportText(arrival.arrival_airport);
+  let conn = null, connSource = 'none';
+  if (CONNECTION_CITIES.indexOf(overrides.connection_city) !== -1) { conn = overrides.connection_city; connSource = 'override'; }
+  else if (CONNECTION_CITIES.indexOf(intakeCity) !== -1) { conn = intakeCity; connSource = (CONNECTION_CITIES.indexOf(pc) !== -1) ? 'intake' : 'intake_airport'; }
+  else if (pc === 'either') { connSource = 'either'; }   // sin preferencia concreta → el owner debe elegir
 
   let pre;
   if (typeof overrides.include_mainland_pre_night === 'boolean') pre = overrides.include_mainland_pre_night;
@@ -78,6 +99,7 @@ function deriveItineraryInputs(contract, overrides) {
   return {
     passenger_type: ptype,
     connection_city: conn,
+    connection_source: connSource,
     include_mainland_pre_night: pre,
     mainland_post_nights: (typeof overrides.mainland_post_nights === 'number') ? overrides.mainland_post_nights : undefined,
     manual_galapagos_start_date: isYmd(overrides.galapagos_start_date) ? overrides.galapagos_start_date : null
@@ -119,6 +141,7 @@ function computeItinerary(opts) {
   return {
     passenger_type: ptype,
     connection_city: connection,
+    connection_source: (typeof opts.connectionSource === 'string') ? opts.connectionSource : null,
     origin_airport: originAirport,
     // programa insular
     galapagos_start_date: gStart,
@@ -243,6 +266,7 @@ async function computeBookingItinerary(bookingId, overrides) {
     galapagosStartDate: inputs.manual_galapagos_start_date || gate.booking.booking_date,   // fechas manuales tienen prioridad; si no, la de la reserva
     tourId: gate.booking.tour_id, durationDays: flightDates.duration_days,
     passengerType: inputs.passenger_type, connectionCity: inputs.connection_city,
+    connectionSource: inputs.connection_source,
     includeMainlandPreNight: inputs.include_mainland_pre_night, mainlandPostNights: inputs.mainland_post_nights
   });
   const formReady = !!(gate.form && READY_FORM_STATUSES.indexOf(gate.form.status) !== -1);
@@ -452,16 +476,25 @@ async function rerunResearch(bookingId, jobId, actor) {
 }
 
 /* ---------------- web research: revisión humana (aprobar / rechazar) ---------------- */
-async function reviewFinding(optionKind, optionId, decision, actor) {
+async function reviewFinding(optionKind, optionId, decision, actor, opts) {
+  opts = opts || {};
   if (decision !== 'verified' && decision !== 'rejected') throw gateError('INVALID_DECISION');
   if (optionKind !== 'flight' && optionKind !== 'hotel') throw gateError('INVALID_KIND');
   const supabase = getSupabase();
   const tenant = getTenantId();
   const table = optionKind === 'flight' ? 'travel_flight_options' : 'travel_hotel_options';
-  const q = await supabase.from(table).select('id,booking_id,search_job_id,provider,research_review_status').eq('id', optionId).eq('tenant_id', tenant).maybeSingle();
+  const q = await supabase.from(table).select('id,booking_id,search_job_id,provider,research_review_status,raw_snapshot_sanitized').eq('id', optionId).eq('tenant_id', tenant).maybeSingle();
   const opt = q.data;
   if (!opt) throw gateError('OPTION_NOT_FOUND');
   if (opt.provider !== 'web_research' || !opt.research_review_status) throw gateError('NOT_RESEARCH_OPTION');
+
+  // Corrección 3 (#9): un hallazgo NO verificado para la solicitud (ruta/fecha/precio) no puede
+  // aprobarse como opción final sin una confirmación manual EXPLÍCITA (revisión/cotización).
+  const rss = opt.raw_snapshot_sanitized || {};
+  const verifiedForRequest = rss.price_verified_for_request === true;
+  if (decision === 'verified' && !verifiedForRequest && opts.confirmManual !== true) {
+    throw gateError('MANUAL_VERIFICATION_REQUIRED');
+  }
 
   await supabase.from(table).update({
     research_review_status: decision,

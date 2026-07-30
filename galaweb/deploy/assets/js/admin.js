@@ -1789,9 +1789,11 @@ function panelMiluTourism(role){
   const brow=el('<div class="ed-row"></div>'); brow.appendChild(bkInput); rsec.appendChild(brow);
 
   // PRIMARIO visible: tipo de pasajero + ciudad de conexión.
-  const ptSel=el('<div class="ed-field"><label>'+(ES?'Tipo de pasajero':'Passenger type')+'</label><select><option value="">'+(ES?'(elige)':'(choose)')+'</option><option value="international">'+(ES?'internacional':'international')+'</option><option value="domestic">'+(ES?'ya en Ecuador':'already in Ecuador')+'</option></select></div>');
-  const ccSel=el('<div class="ed-field"><label>'+(ES?'Ciudad de conexión':'Connection city')+'</label><select><option value="">'+(ES?'(elige)':'(choose)')+'</option><option value="quito">Quito (UIO)</option><option value="guayaquil">Guayaquil (GYE)</option></select></div>');
+  const ptSel=el('<div class="ed-field"><label>'+(ES?'Tipo de pasajero (auto)':'Passenger type (auto)')+'</label><select><option value="">'+(ES?'(auto)':'(auto)')+'</option><option value="international">'+(ES?'internacional':'international')+'</option><option value="domestic">'+(ES?'ya en Ecuador':'already in Ecuador')+'</option></select></div>');
+  const ccSel=el('<div class="ed-field"><label>'+(ES?'Cambiar ciudad de conexión (override)':'Change connection city (override)')+'</label><select><option value="">'+(ES?'(auto desde intake)':'(auto from intake)')+'</option><option value="quito">Quito (UIO)</option><option value="guayaquil">Guayaquil (GYE)</option></select></div>');
   const itWrap=el('<div class="ed-row" style="margin-top:8px"></div>'); itWrap.appendChild(ptSel); itWrap.appendChild(ccSel); rsec.appendChild(itWrap);
+  // Fuente de verdad de la conexión (autocompletada desde el intake; el selector es override).
+  const connInfo=el('<div style="margin:4px 0" class="bk-sub-hint"></div>'); rsec.appendChild(connInfo);
 
   // Resumen del itinerario (se calcula solo al elegir tipo/ciudad; no requiere botón).
   const itInfo=el('<div style="margin:8px 0" class="bk-sub-hint"></div>'); rsec.appendChild(itInfo);
@@ -1853,10 +1855,12 @@ function panelMiluTourism(role){
   var autoLoadTimer=null;
   bkI.addEventListener('input',function(){
     currentBooking=(bkI.value||'').trim()||null; currentJobId=null; currentJobStatus=null;
-    startMsg.textContent=''; jobLine.innerHTML=''; rTable.innerHTML=''; rInfo.innerHTML=''; refreshButtons();
-    // A1: al ingresar/pegar un booking válido, autocarga estado + hallazgos (sin botón).
+    startMsg.textContent=''; jobLine.innerHTML=''; rTable.innerHTML=''; rInfo.innerHTML=''; connInfo.innerHTML='';
+    // Reinicia los selectores para autocompletar frescos desde el intake de la nueva reserva (Corrección 1).
+    ptSel.querySelector('select').value=''; ccSel.querySelector('select').value=''; refreshButtons();
+    // A1: al ingresar/pegar un booking válido, autocarga itinerario (autocompleta conexión) + hallazgos.
     if(autoLoadTimer) clearTimeout(autoLoadTimer);
-    if(validUuid()) autoLoadTimer=setTimeout(function(){ if(validUuid()) loadResearch(); },500);
+    if(validUuid()) autoLoadTimer=setTimeout(function(){ if(validUuid()){ runPreview(true); loadResearch(); } },500);
   });
 
   // Overrides del itinerario desde los controles (solo valores elegidos).
@@ -1883,6 +1887,15 @@ function panelMiluTourism(role){
     if(pv&&pv.missing&&pv.missing.length){ html+='<br><span class="notif-badge notif-failed">'+(ES?'faltan':'missing')+': '+escapeHtml(pv.missing.join(', '))+'</span>'; }
     if(pv&&pv.form_ready===false){ html+=' <span class="notif-badge notif-failed">'+(ES?'formulario no listo':'form not ready')+'</span>'; }
     itInfo.innerHTML=html;
+    // Corrección 1: autocompleta tipo/ciudad desde la fuente de verdad (intake) SIN pisar
+    // un override que el owner ya haya elegido en el selector.
+    const src=it.connection_source||null;
+    const ptEl=ptSel.querySelector('select'), ccEl=ccSel.querySelector('select');
+    if(it.passenger_type && !ptEl.value) ptEl.value=it.passenger_type;
+    if(it.connection_city && !ccEl.value) ccEl.value=it.connection_city;
+    const srcLabel={intake:(ES?'del intake confirmado':'from confirmed intake'),intake_airport:(ES?'inferida del aeropuerto de llegada':'inferred from arrival airport'),override:(ES?'override del owner':'owner override'),either:(ES?'sin preferencia (elige)':'no preference (choose)'),none:(ES?'sin dato (elige)':'no data (choose)')}[src]||'';
+    if(it.connection_city){ connInfo.innerHTML=(ES?'Conexión':'Connection')+': <b>'+escapeHtml(it.connection_city)+'</b> ('+escapeHtml(it.origin_airport||'—')+')'+(srcLabel?(' · '+escapeHtml(srcLabel)):'')+' — '+(ES?'usa el selector para cambiarla (override)':'use the selector to change it (override)'); }
+    else { connInfo.innerHTML='<span class="notif-badge notif-pending">'+(ES?'elige la ciudad de conexión':'choose the connection city')+'</span>'+(srcLabel?(' · '+escapeHtml(srcLabel)):''); }
   }
   // Preview del itinerario. `silent` = disparo automático (no muestra toast si falta el UUID).
   function runPreview(silent){
@@ -1954,30 +1967,76 @@ function panelMiluTourism(role){
 
   // ---- visor de hallazgos ----
   function fmtDateTime(iso){ if(!iso) return '—'; try{ return new Date(iso).toISOString().slice(0,16).replace('T',' ')+' UTC'; }catch(e){ return String(iso); } }
-  // parse_status persistido en raw_snapshot_sanitized (jsonb, sin migración); si falta,
-  // se deriva del precio: sin total_price_cents ⇒ 'parsed_partial'.
-  function parseStatusOf(o){ const ps=o.raw_snapshot_sanitized&&o.raw_snapshot_sanitized.parse_status; if(ps) return ps; return (o.total_price_cents==null)?'parsed_partial':'parsed'; }
-  function priceText(o){ return (o.total_price_cents==null)?(ES?'Precio no interpretado':'Price not parsed'):money(o.total_price_cents,o.currency); }
+  function rss(o){ return (o&&o.raw_snapshot_sanitized)||{}; }
+  function verifiedForRequest(o){ return rss(o).price_verified_for_request===true; }
+  // Etiqueta legible de la clasificación (Corrección 4).
+  function clsLabel(c){
+    switch(c){
+      case 'verified': return ES?'verificado para la solicitud':'verified for request';
+      case 'route_mismatch': return ES?'ruta distinta':'route mismatch';
+      case 'date_mismatch': return ES?'fecha distinta':'date mismatch';
+      case 'date_not_observable': return ES?'fecha no comprobable':'date not observable';
+      case 'generic_fare': return ES?'tarifa genérica':'generic fare';
+      case 'dynamic_page_unverified': return ES?'página dinámica no verificada':'dynamic page unverified';
+      case 'no_price': return ES?'sin precio':'no price';
+      default: return c||'—';
+    }
+  }
+  // Línea "Requested / Found" con ruta y fecha (Corrección 5).
+  function reqFoundLines(kind,o){
+    const s=rss(o); const out=[];
+    if(kind==='flight'){
+      out.push((ES?'Solicitado':'Requested')+': <b>'+escapeHtml(s.requested_origin||o.origin||'—')+' → '+escapeHtml(s.requested_destination||o.destination||'—')+'</b>, '+escapeHtml(s.requested_departure_date||'—'));
+      out.push((ES?'Encontrado':'Found')+': '+escapeHtml(s.observed_origin||'—')+' → '+escapeHtml(s.observed_destination||'—')+', '+escapeHtml(s.observed_departure_date||(ES?'(sin fecha observable)':'(no observable date)')));
+    } else {
+      out.push((ES?'Solicitado':'Requested')+': <b>'+escapeHtml(s.requested_destination||o.destination||'—')+'</b>, '+escapeHtml(s.requested_check_in_date||o.check_in_date||'—'));
+      out.push((ES?'Encontrado':'Found')+': '+escapeHtml(s.observed_destination||'—')+', '+escapeHtml(s.observed_check_in_date||(ES?'(sin fecha observable)':'(no observable date)')));
+    }
+    return out;
+  }
   function optRow(kind, o){
     const row=el('<div style="border:1px solid rgba(0,0,0,.12);border-radius:8px;padding:8px;margin:6px 0"></div>');
+    const s=rss(o); const verified=verifiedForRequest(o);
+    const typeTag='<span class="notif-badge notif-skipped">'+(kind==='flight'?(ES?'vuelo':'flight'):(ES?'hotel':'hotel'))+'</span> ';
     const title=(kind==='flight')?((escapeHtml(o.airline||''))+' '+escapeHtml(o.origin||'')+'→'+escapeHtml(o.destination||'')):(escapeHtml(o.hotel_name||'')+' · '+escapeHtml(o.destination||''));
-    const ps=parseStatusOf(o);
-    const warn=(ps==='parsed_partial')?(' <span class="notif-badge notif-pending">'+(ES?'precio no interpretado':'price not parsed')+'</span>'):'';
-    row.appendChild(el('<div><b>'+(title||(kind==='flight'?'Vuelo':'Hotel'))+'</b> '+reviewBadge(o.research_review_status)+warn+'</div>'));
-    // Precio (o "Price not parsed") + moneda + fecha/hora de la consulta.
-    row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Precio':'Price')+': <b>'+escapeHtml(priceText(o))+'</b> · '+(ES?'Consulta':'Retrieved')+': '+escapeHtml(fmtDateTime(o.checked_at))+'</div>'));
-    if(o.research_source_url){ row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Fuente (interna)':'Source (internal)')+': <a href="'+escapeHtml(o.research_source_url)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(o.research_source_url)+'</a></div>')); }
-    // Sin precio estructurado: se mantiene la fuente y se muestra el resumen hallado (A4/A5).
-    const note=o.raw_snapshot_sanitized&&o.raw_snapshot_sanitized.note;
-    if(ps==='parsed_partial'&&note){ row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Resumen':'Summary')+': '+escapeHtml(note)+'</div>')); }
-    // Aprobar / Rechazar SIEMPRE visibles; se desactiva la acción ya elegida.
-    const ok=el('<button class="btn btn-sm" type="button">'+(ES?'Aprobar':'Approve')+'</button>');
+    const clsBadge=' <span class="notif-badge '+(verified?'notif-sent':'notif-pending')+'">'+escapeHtml(clsLabel(s.classification||(verified?'verified':'')))+'</span>';
+    row.appendChild(el('<div>'+typeTag+'<b>'+(title||(kind==='flight'?'Vuelo':'Hotel'))+'</b> '+reviewBadge(o.research_review_status)+clsBadge+'</div>'));
+    // Requested / Found (ruta + fecha) — evidencia de por qué (no) valida.
+    reqFoundLines(kind,o).forEach(function(t){ row.appendChild(el('<div class="bk-sub-hint">'+t+'</div>')); });
+    // Precio: solo tarifa válida si price_verified_for_request; si no, "Price not verified…".
+    if(verified){
+      row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Precio':'Price')+': <b>'+escapeHtml(money(o.total_price_cents,o.currency))+'</b> · '+(ES?'Consulta':'Retrieved')+': '+escapeHtml(fmtDateTime(o.checked_at))+'</div>'));
+    } else {
+      const obs=(s.observed_price_cents!=null)?(' · '+(ES?'precio visto (referencia)':'observed (reference)')+': '+escapeHtml(money(s.observed_price_cents,o.currency))):'';
+      row.appendChild(el('<div class="bk-sub-hint"><b>'+(ES?'Precio no verificado para la fecha solicitada':'Price not verified for requested date')+'</b>'+obs+' · '+(ES?'Consulta':'Retrieved')+': '+escapeHtml(fmtDateTime(o.checked_at))+'</div>'));
+    }
+    if(o.research_source_url){ row.appendChild(el('<div class="bk-sub-hint">'+(ES?'Fuente (referencia interna)':'Source (internal reference)')+': <a href="'+escapeHtml(o.research_source_url)+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(o.research_source_url)+'</a></div>')); }
+    // Aprobar / Rechazar. Un hallazgo NO verificado exige confirmación manual explícita (#9).
+    const okLbl=verified?(ES?'Aprobar':'Approve'):(ES?'Aprobar (verificación manual)':'Approve (manual verification)');
+    const ok=el('<button class="btn btn-sm" type="button">'+okLbl+'</button>');
     const no=el('<button class="btn btn-sm" type="button" style="margin-left:8px">'+(ES?'Rechazar':'Reject')+'</button>');
     if(o.research_review_status==='verified') ok.disabled=true;
     if(o.research_review_status==='rejected') no.disabled=true;
-    function review(dec,btn){ btn.disabled=true; apiPost('/api/admin-milu-research-approve',{option_kind:kind,option_id:o.id,decision:dec}).then(function(r){ btn.disabled=false; if(r.status===401){onUnauthorized();return;} if(r.ok&&r.data&&r.data.reviewed){ adminToast(ES?'Revisión guardada':'Review saved'); loadResearch(); } else adminToast(ES?'No se pudo revisar.':'Could not review.'); }).catch(function(){ btn.disabled=false; }); }
-    ok.addEventListener('click',function(){ review('verified',ok); });
-    no.addEventListener('click',function(){ review('rejected',no); });
+    function review(dec,btn,manual){
+      btn.disabled=true;
+      const payload={option_kind:kind,option_id:o.id,decision:dec}; if(manual) payload.confirm_manual=true;
+      apiPost('/api/admin-milu-research-approve',payload).then(function(r){ btn.disabled=false;
+        if(r.status===401){onUnauthorized();return;}
+        if(r.ok&&r.data&&r.data.reviewed){ adminToast(ES?'Revisión guardada':'Review saved'); loadResearch(); return; }
+        const code=(r.data&&r.data.error)||'';
+        if(code==='MANUAL_VERIFICATION_REQUIRED') adminToast(ES?'Requiere verificación manual.':'Manual verification required.');
+        else adminToast(ES?'No se pudo revisar.':'Could not review.');
+      }).catch(function(){ btn.disabled=false; });
+    }
+    ok.addEventListener('click',function(){
+      if(!verified){
+        const msg=(ES?'Este hallazgo NO está verificado para la ruta/fecha solicitada. Aprobarlo requiere verificación/cotización manual. ¿Confirmar como verificado manualmente?'
+                     :'This finding is NOT verified for the requested route/date. Approving requires manual verification/quote. Confirm as manually verified?');
+        if(!window.confirm(msg)) return;
+        review('verified',ok,true);
+      } else review('verified',ok,false);
+    });
+    no.addEventListener('click',function(){ review('rejected',no,false); });
     const ab=el('<div style="margin-top:6px"></div>'); ab.appendChild(ok); ab.appendChild(no); row.appendChild(ab);
     return row;
   }
@@ -1995,6 +2054,17 @@ function panelMiluTourism(role){
     html+=' · '+(ES?'job':'job')+' <span class="notif-badge '+cls(jobSt)+'">'+escapeHtml(jobSt)+'</span>';
     return el('<div style="margin:6px 0" class="bk-sub-hint">'+html+'</div>');
   }
+  // Subsección Vuelos/Hoteles dentro de un grupo de verificación.
+  function typeBlock(labelFlights,flights,labelHotels,hotels){
+    const box=el('<div></div>');
+    const fH=el('<div style="margin-top:6px"><b>'+escapeHtml(labelFlights)+'</b> ('+flights.length+')</div>'); box.appendChild(fH);
+    if(!flights.length) box.appendChild(el('<p class="bk-sub-hint">'+(ES?'—':'—')+'</p>'));
+    else flights.forEach(function(o){ box.appendChild(optRow('flight',o)); });
+    const hH=el('<div style="margin-top:8px"><b>'+escapeHtml(labelHotels)+'</b> ('+hotels.length+')</div>'); box.appendChild(hH);
+    if(!hotels.length) box.appendChild(el('<p class="bk-sub-hint">'+(ES?'—':'—')+'</p>'));
+    else hotels.forEach(function(o){ box.appendChild(optRow('hotel',o)); });
+    return box;
+  }
   function renderFindings(status, opts){
     rTable.innerHTML=''; rInfo.innerHTML='';
     const wr=(status&&status.web_research)||{};
@@ -2002,16 +2072,20 @@ function panelMiluTourism(role){
     rTable.appendChild(webPhaseLine(status));
     const flights=((opts&&opts.flights)||[]).filter(function(o){ return o.provider==='web_research'; });
     const hotels=((opts&&opts.hotels)||[]).filter(function(o){ return o.provider==='web_research'; });
-    // Sección separada: Resultados de vuelos.
-    const fSec=el('<div class="fin-sec" style="margin-top:8px"><h4>'+(ES?'Resultados de vuelos':'Flight results')+' ('+flights.length+')</h4></div>');
-    if(!flights.length) fSec.appendChild(el('<p class="bk-sub-hint">'+(ES?'Sin hallazgos de vuelos.':'No flight findings.')+'</p>'));
-    else flights.forEach(function(o){ fSec.appendChild(optRow('flight',o)); });
-    rTable.appendChild(fSec);
-    // Sección separada: Resultados de hoteles.
-    const hSec=el('<div class="fin-sec" style="margin-top:8px"><h4>'+(ES?'Resultados de hoteles':'Hotel results')+' ('+hotels.length+')</h4></div>');
-    if(!hotels.length) hSec.appendChild(el('<p class="bk-sub-hint">'+(ES?'Sin hallazgos de hoteles.':'No hotel findings.')+'</p>'));
-    else hotels.forEach(function(o){ hSec.appendChild(optRow('hotel',o)); });
-    rTable.appendChild(hSec);
+    // Corrección 5: separar por verificación. Verificado = ruta + fecha + precio comprobables.
+    const vFlights=flights.filter(verifiedForRequest), nFlights=flights.filter(function(o){return !verifiedForRequest(o);});
+    const vHotels=hotels.filter(verifiedForRequest), nHotels=hotels.filter(function(o){return !verifiedForRequest(o);});
+    const lblF=ES?'Vuelos':'Flights', lblH=ES?'Hoteles':'Hotels';
+    // Grupo 1: Verified for requested itinerary.
+    const g1=el('<div class="fin-sec" style="margin-top:8px"><h4>'+(ES?'Verificado para el itinerario solicitado':'Verified for requested itinerary')+' ('+(vFlights.length+vHotels.length)+')</h4></div>');
+    if(!(vFlights.length+vHotels.length)) g1.appendChild(el('<p class="bk-sub-hint">'+(ES?'Aún no hay resultados verificados para la ruta y fecha solicitadas.':'No results yet verified for the requested route and date.')+'</p>'));
+    else g1.appendChild(typeBlock(lblF,vFlights,lblH,vHotels));
+    rTable.appendChild(g1);
+    // Grupo 2: Needs manual verification.
+    const g2=el('<div class="fin-sec" style="margin-top:8px"><h4>'+(ES?'Requiere verificación manual':'Needs manual verification')+' ('+(nFlights.length+nHotels.length)+')</h4></div>');
+    if(!(nFlights.length+nHotels.length)) g2.appendChild(el('<p class="bk-sub-hint">'+(ES?'—':'—')+'</p>'));
+    else g2.appendChild(typeBlock(lblF,nFlights,lblH,nHotels));
+    rTable.appendChild(g2);
   }
   function loadResearch(){
     const bid=(bkInput.querySelector('input').value||'').trim();

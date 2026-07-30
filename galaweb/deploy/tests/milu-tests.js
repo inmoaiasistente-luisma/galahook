@@ -190,6 +190,10 @@ function snap() {
   return {
     preferred_connection_city: 'quito', passenger_count: 2,
     flight_dates: { default_departure_date: '2026-08-01', default_return_date: '2026-08-04', duration_days: 4 },
+    // Itinerario resuelto (ruta/fecha SOLICITADAS): origen UIO, salida 2026-08-01, isla San Cristóbal (SCY).
+    itinerary: { passenger_type: 'international', connection_city: 'quito', connection_source: 'intake', origin_airport: 'UIO',
+      galapagos_start_date: '2026-08-01', mainland_to_galapagos_flight_date: '2026-08-01', galapagos_return_flight_date: '2026-08-04',
+      requires_mainland_pre_night: true },
     lodging_requirements: [{ id: nid(), destination: 'san_cristobal', pending_resolution: false, check_in_date: '2026-08-01', check_out_date: '2026-08-04', nights: 3, rooms_required: 1, guest_count: 2 }],
     hotel_search_preferences: [
       { destination: 'san_cristobal', hotel_name: 'Miconia', priority: 1, search_aliases: ['https://www.booking.com/hotel/ec/miconia.html'] },
@@ -714,7 +718,8 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
     } };
     return c;
   }
-  const AVIANCA = { source_url: 'https://www.avianca.com/fare', price_cents: 12300, currency: 'USD', airline: 'Avianca', origin: 'UIO', destination: 'SCY' };
+  // Hallazgo VERIFICADO para la solicitud de snap(): ruta UIO→SCY, fecha 2026-08-01 observable.
+  const AVIANCA = { source_url: 'https://www.avianca.com/fare', price_cents: 12300, currency: 'USD', airline: 'Avianca', origin: 'UIO', destination: 'SCY', observed_origin: 'UIO', observed_destination: 'SCY', observed_departure_date: '2026-08-01', date_observable: true };
   const WR_ENV_ON = { ANTHROPIC_MILU_TOURISM_MODEL: 'Haiku', MILU_TOURISM_WEB_RESEARCH_ENABLED: 'true' };
   function wrJobDb() {
     const jid = nid();
@@ -787,7 +792,7 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
 
   // 116 aprobar/rechazar: fija actor + fecha + auditoría
   const optId = nid();
-  const db116 = { travel_flight_options: [{ id: optId, tenant_id: 'hook-adventure', booking_id: nid(), search_job_id: nid(), provider: 'web_research', research_review_status: 'unverified', research_source_url: 'https://www.avianca.com/fare' }], travel_search_audit: [] };
+  const db116 = { travel_flight_options: [{ id: optId, tenant_id: 'hook-adventure', booking_id: nid(), search_job_id: nid(), provider: 'web_research', research_review_status: 'unverified', research_source_url: 'https://www.avianca.com/fare', raw_snapshot_sanitized: { price_verified_for_request: true } }], travel_search_audit: [] };
   setClient(db116);
   const rev = await milu.reviewFinding('flight', optId, 'verified', { role: 'owner', userId: 'u-owner' });
   const o116 = db116.travel_flight_options[0]; const aud116 = (db116.travel_search_audit || [])[0] || {};
@@ -1386,6 +1391,87 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
     fPriced && fPriced.raw_snapshot_sanitized.parse_status === 'parsed' &&
     fNoPrice && fNoPrice.raw_snapshot_sanitized.parse_status === 'parsed_partial' &&
     fFall && fFall.raw_snapshot_sanitized.parse_status === 'parsed_partial');
+
+  /* ============================================================
+     Corrección de conexión (fuente de verdad) + verificación de tarifa (187-196)
+     ============================================================ */
+  // snapshot con itinerario GYE→SCY, salida 2026-08-01 (ruta/fecha SOLICITADAS).
+  function snapGYE() {
+    return { passenger_count: 2,
+      itinerary: { passenger_type: 'international', connection_city: 'guayaquil', connection_source: 'intake', origin_airport: 'GYE',
+        galapagos_start_date: '2026-08-01', mainland_to_galapagos_flight_date: '2026-08-01', galapagos_return_flight_date: '2026-08-05' },
+      lodging_requirements: [{ id: nid(), destination: 'san_cristobal', pending_resolution: false, check_in_date: '2026-08-01', check_out_date: '2026-08-05' }] };
+  }
+
+  // 187 intake Guayaquil → conexión guayaquil (GYE) automática, sin override
+  const inGYE = milu.deriveItineraryInputs({ preferred_connection_city: 'guayaquil', arrival: { international_flights_purchased: true, arrival_airport: 'GYE' } }, {});
+  const itGYE = milu.computeItinerary({ galapagosStartDate: '2026-08-01', durationDays: 4, passengerType: inGYE.passenger_type, connectionCity: inGYE.connection_city, connectionSource: inGYE.connection_source });
+  ok('187 intake Guayaquil → guayaquil/GYE automático (source=intake)',
+    inGYE.connection_city === 'guayaquil' && inGYE.connection_source === 'intake' && inGYE.passenger_type === 'international' &&
+    itGYE.origin_airport === 'GYE' && itGYE.connection_source === 'intake');
+
+  // 188 no se pide ciudad manual si existe (intake o inferida del arrival_airport); missing sin connection_city
+  const inInfer = milu.deriveItineraryInputs({ preferred_connection_city: null, arrival: { international_flights_purchased: true, arrival_airport: 'Aeropuerto José Joaquín de Olmedo (GYE)' } }, {});
+  const itInfer = milu.computeItinerary({ galapagosStartDate: '2026-08-01', durationDays: 4, passengerType: 'international', connectionCity: inInfer.connection_city, connectionSource: inInfer.connection_source });
+  ok('188 conexión inferida del arrival_airport (source=intake_airport); sin connection_city faltante',
+    inInfer.connection_city === 'guayaquil' && inInfer.connection_source === 'intake_airport' &&
+    milu.itineraryMissing(itInfer).indexOf('connection_city') === -1 && itInfer.origin_airport === 'GYE');
+
+  // 189 override owner cambia Guayaquil → Quito explícitamente (supersede al intake)
+  const inOv = milu.deriveItineraryInputs({ preferred_connection_city: 'guayaquil', arrival: { arrival_airport: 'GYE' } }, { connection_city: 'quito' });
+  ok('189 override owner cambia guayaquil→quito (source=override)', inOv.connection_city === 'quito' && inOv.connection_source === 'override');
+
+  // 190 búsqueda GYE nunca acepta UIO: observed UIO → route_mismatch, no verificado, precio null
+  const mUIO = webResearch.mapFlightFinding(snapGYE(), { source_url: 'https://www.avianca.com/x', price_cents: 10900, currency: 'USD', airline: 'Avianca', observed_origin: 'UIO', observed_destination: 'SCY', observed_departure_date: '2026-08-01', date_observable: true });
+  ok('190 GYE solicitado, observado UIO → route_mismatch, no verificado, precio null',
+    mUIO.raw_snapshot_sanitized.requested_origin === 'GYE' && mUIO.raw_snapshot_sanitized.observed_origin === 'UIO' &&
+    mUIO.raw_snapshot_sanitized.route_match === false && mUIO.raw_snapshot_sanitized.classification === 'route_mismatch' &&
+    mUIO.raw_snapshot_sanitized.price_verified_for_request === false && mUIO.total_price_cents === null);
+
+  // 191 precio de septiembre NO valida agosto (fecha distinta)
+  const mSep = webResearch.mapFlightFinding(snapGYE(), { source_url: 'https://www.avianca.com/y', price_cents: 16534, currency: 'USD', airline: 'LATAM', observed_origin: 'GYE', observed_destination: 'SCY', observed_departure_date: '2026-09-01', date_observable: true });
+  ok('191 fecha sep ≠ ago → date_mismatch, no verificado',
+    mSep.raw_snapshot_sanitized.date_match === false && mSep.raw_snapshot_sanitized.classification === 'date_mismatch' &&
+    mSep.raw_snapshot_sanitized.price_verified_for_request === false && mSep.total_price_cents === null);
+
+  // 192 página sin fecha observable → no valida precio
+  const mNoDate = webResearch.mapFlightFinding(snapGYE(), { source_url: 'https://www.avianca.com/z', price_cents: 14700, currency: 'USD', airline: 'Avianca', observed_origin: 'GYE', observed_destination: 'SCY', date_observable: false });
+  ok('192 fecha no observable → date_not_observable, no verificado',
+    mNoDate.raw_snapshot_sanitized.date_observable === false && mNoDate.raw_snapshot_sanitized.classification === 'date_not_observable' &&
+    mNoDate.raw_snapshot_sanitized.price_verified_for_request === false && mNoDate.total_price_cents === null);
+
+  // 193 "from $109" genérico NO se marca como tarifa confirmada
+  const mGen = webResearch.mapFlightFinding(snapGYE(), { source_url: 'https://www.avianca.com/promo', price_cents: 10900, currency: 'USD', airline: 'Avianca', observed_origin: 'GYE', observed_destination: 'SCY', observed_departure_date: '2026-08-01', date_observable: true, price_is_generic: true });
+  ok('193 tarifa genérica ("from $X") → generic_fare, no verificado',
+    mGen.raw_snapshot_sanitized.classification === 'generic_fare' && mGen.raw_snapshot_sanitized.price_verified_for_request === false && mGen.total_price_cents === null);
+
+  // 194 solo route_match + date_match (+ precio, no genérico/dinámico) → price_verified_for_request=true
+  const mOk = webResearch.mapFlightFinding(snapGYE(), { source_url: 'https://www.avianca.com/ok', price_cents: 10900, currency: 'USD', airline: 'Avianca', observed_origin: 'GYE', observed_destination: 'SCY', observed_departure_date: '2026-08-01', date_observable: true });
+  ok('194 ruta+fecha correctas → price_verified_for_request=true, precio conservado',
+    mOk.raw_snapshot_sanitized.route_match === true && mOk.raw_snapshot_sanitized.date_match === true &&
+    mOk.raw_snapshot_sanitized.classification === 'verified' && mOk.raw_snapshot_sanitized.price_verified_for_request === true &&
+    mOk.total_price_cents === 10900);
+
+  // 195 hallazgo NO verificado no se aprueba como final sin confirmación manual explícita
+  const idBad = nid(), idOk = nid();
+  const db195 = { travel_flight_options: [
+      { id: idBad, tenant_id: 'hook-adventure', booking_id: nid(), search_job_id: nid(), provider: 'web_research', research_review_status: 'unverified', raw_snapshot_sanitized: { price_verified_for_request: false, classification: 'date_mismatch' } },
+      { id: idOk, tenant_id: 'hook-adventure', booking_id: nid(), search_job_id: nid(), provider: 'web_research', research_review_status: 'unverified', raw_snapshot_sanitized: { price_verified_for_request: true, classification: 'verified' } }
+    ], travel_search_audit: [] };
+  setClient(db195);
+  let blocked195 = false; try { await milu.reviewFinding('flight', idBad, 'verified', { role: 'owner', userId: 'u' }); } catch (e) { blocked195 = e.code === 'MANUAL_VERIFICATION_REQUIRED'; }
+  const okManual = await milu.reviewFinding('flight', idBad, 'verified', { role: 'owner', userId: 'u' }, { confirmManual: true });
+  const okVerified = await milu.reviewFinding('flight', idOk, 'verified', { role: 'owner', userId: 'u' });   // verificado: no exige confirm
+  ok('195 no verificado exige confirmación manual; verificado aprueba directo',
+    blocked195 === true && okManual.reviewed === true && okVerified.reviewed === true &&
+    db195.travel_flight_options[0].research_review_status === 'verified');
+
+  // 196 sin Stripe ni envío automático al cliente: el adapter no toca pagos/checkout/email;
+  //     todo hallazgo nace 'manual_confirmation_required' + 'unverified' (revisión humana).
+  const wrAdapterSrc = fs.readFileSync(path.join(BASE, 'server/lib/milu-adapters/web-research.js'), 'utf8');
+  ok('196 sin Stripe/checkout/email en el adapter; hallazgo requiere confirmación manual',
+    !/stripe|payment_intent|checkout|resend|sendemail|send_email|createbooking/i.test(wrAdapterSrc) &&
+    mOk.availability_status === 'manual_confirmation_required' && mOk.research_review_status === 'unverified');
 
   console.log('\n=== RESULTADO MILU 8C: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail > 0) process.exit(1);

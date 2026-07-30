@@ -12,7 +12,7 @@ const { sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUn
 const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
 const milu = require('../lib/milu-tourism');
 
-const ALLOWED = ['option_kind', 'option_id', 'decision'];
+const ALLOWED = ['option_kind', 'option_id', 'decision', 'confirm_manual'];
 const KINDS = ['flight', 'hotel'];
 const DECISIONS = ['verified', 'rejected'];
 
@@ -30,12 +30,15 @@ module.exports = async function handler(req, res) {
   if (DECISIONS.indexOf(body.decision) === -1) return sendError(res, 400, 'INVALID_DECISION', 'Invalid decision');
 
   try {
-    const r = await milu.reviewFinding(body.option_kind, body.option_id, body.decision, { role: session.role, userId: session.user_id });
+    const r = await milu.reviewFinding(body.option_kind, body.option_id, body.decision,
+      { role: session.role, userId: session.user_id }, { confirmManual: body.confirm_manual === true });
     return sendJson(res, 200, r);
   } catch (err) {
     const code = err && err.code;
     if (code === 'OPTION_NOT_FOUND') return sendError(res, 404, 'OPTION_NOT_FOUND', 'Option not found');
     if (code === 'NOT_RESEARCH_OPTION') return sendError(res, 409, 'NOT_RESEARCH_OPTION', 'Not a web research option');
+    // #9: aprobar un hallazgo no verificado para la solicitud exige confirmación manual explícita.
+    if (code === 'MANUAL_VERIFICATION_REQUIRED') return sendError(res, 409, 'MANUAL_VERIFICATION_REQUIRED', 'Manual verification required to approve an unverified fare');
     if (code === 'INVALID_DECISION' || code === 'INVALID_KIND') return sendError(res, 400, code, 'Invalid input');
     logServer('milu-research-approve', err && err.message);
     return sendError(res, 500, 'INTERNAL_ERROR', 'Server error');

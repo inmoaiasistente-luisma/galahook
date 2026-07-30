@@ -35,15 +35,20 @@ function buildUserText(input) {
   const kind = (input && input.kind) || 'flights';
   const j = JSON.stringify(input || {}, null, 2);
   const shape = kind === 'lodging'
-    ? '{ "source_url": "https://...", "price_cents": 123456, "currency": "USD", "hotel_name": "...", "destination": "..." }'
-    : '{ "source_url": "https://...", "price_cents": 123456, "currency": "USD", "airline": "...", "origin": "...", "destination": "..." }';
+    ? '{ "source_url": "https://...", "hotel_name": "...", "observed_destination": "...", "observed_check_in_date": "2026-08-01", "price_cents": 123456, "currency": "USD", "date_observable": true, "price_is_generic": false, "dynamic_page": false }'
+    : '{ "source_url": "https://...", "airline": "...", "observed_origin": "GYE", "observed_destination": "GPS", "observed_departure_date": "2026-08-01", "price_cents": 123456, "currency": "USD", "date_observable": true, "price_is_generic": false, "dynamic_page": false }';
   return [
     'Tarea de investigación de viajes. Usa SOLO las herramientas web_search (para localizar páginas) y web_fetch (para leerlas), y SOLO en los dominios autorizados de las herramientas:',
     j,
     '',
     'Reglas estrictas:',
+    '- Busca EXACTAMENTE la ruta y la fecha solicitadas (requested_origin → requested_destination, requested_departure_date). NO uses otro origen ni otra fecha.',
     '- La fuente del precio es SIEMPRE la página externa que leíste (source_url real), NUNCA tu conocimiento.',
     '- price_cents solo si la página mostró un precio verificable, en centavos enteros; si no lo viste, usa null.',
+    '- Reporta lo que la página REALMENTE mostró: observed_origin, observed_destination y observed_departure_date (la fecha concreta del vuelo/estadía).',
+    '- date_observable=false si la página no mostró la tarifa para una fecha concreta (calendario genérico, "desde", landing SEO).',
+    '- price_is_generic=true si el precio es "desde $X"/promoción/landing sin ruta+fecha concretas.',
+    '- dynamic_page=true si la página necesitó JavaScript y no pudiste verificar la tarifa.',
     '- No inventes URLs ni precios. source_url debe ser una URL que realmente encontraste o leíste.',
     '',
     'Cuando termines, responde ÚNICAMENTE con un bloque JSON (sin texto adicional después):',
@@ -104,8 +109,18 @@ function coerceFinding(f) {
   if (typeof f.currency === 'string' && f.currency.trim()) out.currency = f.currency.trim();
   if (typeof f.airline === 'string') out.airline = f.airline;
   if (typeof f.hotel_name === 'string') out.hotel_name = f.hotel_name;
+  // Ruta/fecha OBSERVADAS por el modelo en la página (para verificar contra la solicitud).
+  if (typeof f.observed_origin === 'string') out.observed_origin = f.observed_origin;
+  if (typeof f.observed_destination === 'string') out.observed_destination = f.observed_destination;
+  if (typeof f.observed_departure_date === 'string') out.observed_departure_date = f.observed_departure_date;
+  if (typeof f.observed_check_in_date === 'string') out.observed_check_in_date = f.observed_check_in_date;
+  // Compat: origin/destination sueltos también se pasan (el adapter usa observed_* si existe).
   if (typeof f.origin === 'string') out.origin = f.origin;
   if (typeof f.destination === 'string') out.destination = f.destination;
+  // Banderas de verificación (solo si el modelo las declara explícitamente booleanas).
+  if (typeof f.date_observable === 'boolean') out.date_observable = f.date_observable;
+  if (typeof f.price_is_generic === 'boolean') out.price_is_generic = f.price_is_generic;
+  if (typeof f.dynamic_page === 'boolean') out.dynamic_page = f.dynamic_page;
   return out;
 }
 
