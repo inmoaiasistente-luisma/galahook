@@ -12,7 +12,7 @@ const { sendJson, sendError, logServer, getTenantId } = require('../lib/http');
 const { requireAdmin } = require('../lib/admin-auth');
 const { getSupabase } = require('../lib/supabase');
 const { DEFAULT_MILU_SETTINGS, resolveMiluModel } = require('../lib/milu-cost');
-const { getMiluFlags, providerState } = require('../lib/milu-flags');
+const { getMiluFlags, providerState, webResearchEnabled } = require('../lib/milu-flags');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only GET is allowed'); }
@@ -26,6 +26,7 @@ module.exports = async function handler(req, res) {
     const supabase = getSupabase();
     const r = await supabase.from('milu_settings').select('*').eq('tenant_id', tenant).maybeSingle();
     const settings = r.data || Object.assign({ tenant_id: tenant }, DEFAULT_MILU_SETTINGS);
+    const merged = Object.assign({}, DEFAULT_MILU_SETTINGS, r.data || {});
     const model = resolveMiluModel(process.env);
     const flags = getMiluFlags(process.env);
     return sendJson(res, 200, {
@@ -35,7 +36,17 @@ module.exports = async function handler(req, res) {
       settings: settings,
       model: { label: model.ok ? model.label : 'Haiku', configured: model.ok },
       providers: { flights: providerState(process.env, 'flights'), hotels: providerState(process.env, 'hotels') },
-      flags: flags
+      flags: flags,
+      // Web research (8D): compuerta doble + límites (para el panel owner/admin).
+      web_research: {
+        env_enabled: flags.web_research_enabled,
+        db_enabled: !!merged.web_research_enabled,
+        effective: webResearchEnabled(process.env, merged),
+        max_searches: merged.web_research_max_searches,
+        max_fetches: merged.web_research_max_fetches,
+        max_content_tokens_per_fetch: merged.web_research_max_content_tokens_per_fetch,
+        max_cost_per_job_usd: merged.web_research_max_cost_per_job_usd
+      }
     });
   } catch (err) {
     logServer('milu-settings-get', err && err.message);

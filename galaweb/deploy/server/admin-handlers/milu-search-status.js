@@ -12,8 +12,8 @@
 const { sendJson, sendError, logServer, getTenantId } = require('../lib/http');
 const { requireAdmin } = require('../lib/admin-auth');
 const { getSupabase } = require('../lib/supabase');
-const { resolveMiluModel } = require('../lib/milu-cost');
-const { providerState } = require('../lib/milu-flags');
+const { resolveMiluModel, DEFAULT_MILU_SETTINGS } = require('../lib/milu-cost');
+const { providerState, webResearchEnabled } = require('../lib/milu-flags');
 
 async function latestJob(supabase, tenant, bookingId) {
   const r = await supabase.from('travel_search_jobs').select('*')
@@ -76,14 +76,31 @@ module.exports = async function handler(req, res) {
     const rows = llmR.data || [];
     let cost = 0; rows.forEach(function (r) { cost += Number(r.estimated_cost_usd) || 0; });
 
+    // Telemetría de web research (owner/admin): límites y consumo por propuesta.
+    const settingsR = await supabase.from('milu_settings').select('*').eq('tenant_id', tenant).maybeSingle();
+    const settings = Object.assign({}, DEFAULT_MILU_SETTINGS, settingsR.data || {});
+    const web_research = {
+      enabled: webResearchEnabled(process.env, settings),
+      searches_used: job.web_search_count || 0,
+      searches_max: settings.web_research_max_searches,
+      searches_remaining: Math.max(0, (settings.web_research_max_searches || 0) - (job.web_search_count || 0)),
+      fetches_used: job.web_fetch_count || 0,
+      fetches_max: settings.web_research_max_fetches,
+      research_cost_usd: Math.round((Number(job.research_cost_usd) || 0) * 1e6) / 1e6,
+      budget_max_usd: settings.web_research_max_cost_per_job_usd,
+      rerun_count: job.rerun_count || 0
+    };
+
     return sendJson(res, 200, {
       role: session.role,
       module: moduleState,
       job: { id: job.id, status: job.status, search_type: job.search_type, created_at: job.created_at, updated_at: job.updated_at },
       requirements: job.requirements_snapshot || {},
+      itinerary: (job.requirements_snapshot && job.requirements_snapshot.itinerary) || null,
       subtasks: subtasks,
       logistics: logistics,
-      ai_usage: { calls: rows.length, cost_usd: Math.round(cost * 1e6) / 1e6 }
+      ai_usage: { calls: rows.length, cost_usd: Math.round(cost * 1e6) / 1e6 },
+      web_research: web_research
     });
   } catch (err) {
     logServer('milu-search-status', err && err.message);

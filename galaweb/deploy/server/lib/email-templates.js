@@ -9,6 +9,8 @@
    Sin JavaScript y sin imágenes externas obligatorias.
    ========================================================= */
 
+const reminders = require('./pretrip-reminders');
+
 const BRAND = 'Galápagos Hook Adventure';
 const INK = '#11302f', GOLD = '#cf9f54', PAPER = '#fbf8f1', SOFT = '#3c534f', LINE = '#e2ddd0';
 
@@ -410,6 +412,100 @@ function customerPassengerFormCompleted(b) {
 }
 
 /* ---------------- registro ---------------- */
+/* --- 11. Cliente: recordatorio pre-viaje (7 / 5 / 3 / 1 / 0 días) ---
+   Una sola plantilla parametrizada por la etapa. El texto en español es el
+   que fijó el owner e indica SIEMPRE cuántos días faltan; el día 0 cambia
+   de tono. Se adjunta el QR y se incluye lo que EXISTA del viaje (vuelos,
+   hotel, punto de encuentro, horarios, contactos, documentos): lo que no
+   está, no se inventa — sencillamente no aparece. */
+function buildPretripReminder(days) {
+  return function (b, ctx) {
+    ctx = ctx || {};
+    const c = reminders.copyFor(days);
+    const subject = c.subjectEn + ' — ' + (b.booking_code || '');
+
+    const facts = reminders.tripFacts(b, ctx).map(function (f) {
+      return [f.en + ' / ' + f.es, esc(f.value)];
+    });
+
+    const html = shell(subject,
+      h1(c.en, c.es)
+      + para('Hello ' + (b.customer_name || '') + ', here is everything we have ready for your trip.',
+             'Hola ' + (b.customer_name || '') + ', esto es todo lo que tenemos listo para tu viaje.')
+      + rows(facts)
+      + (ctx.qrUrl ? qrBlock(ctx.qrUrl, ctx.cid) : '')
+      + (ctx.notes ? para(String(ctx.notes), String(ctx.notes)) : '')
+      + para('If anything has changed, reply to this email and we will help you.',
+             'Si algo cambió, responde a este correo y te ayudamos.'));
+
+    const text = textBlock([
+      c.en.toUpperCase(), c.es.toUpperCase(), '',
+      'Booking code / Código: ' + (b.booking_code || ''),
+      'Tour: ' + (b.tour_name || ''),
+      'Date / Fecha: ' + (b.booking_date || ''),
+      'Guests / Pax: ' + (b.guests || ''),
+      ctx.flights ? ('Flights / Vuelos: ' + ctx.flights) : null,
+      ctx.hotel ? ('Hotel: ' + ctx.hotel) : null,
+      ctx.meetingPoint ? ('Meeting point / Punto de encuentro: ' + ctx.meetingPoint) : null,
+      ctx.schedule ? ('Schedule / Horario: ' + ctx.schedule) : null,
+      ctx.contact ? ('Contact / Contacto: ' + ctx.contact) : null,
+      ctx.documents ? ('Documents / Documentos: ' + ctx.documents) : null,
+      ctx.qrUrl ? ('QR: ' + ctx.qrUrl) : null, '',
+      'If anything has changed, reply to this email. / Si algo cambió, responde a este correo.'
+    ]);
+    return { subject: subject, html: html, text: text };
+  };
+}
+
+/* --- 12. Cliente: mensaje enviado A MANO desde la reserva ---
+   Reenvío de QR o confirmación, envío de tickets aéreos, vouchers de hotel,
+   itinerarios, instrucciones o aviso de un cambio. Va FUERA del registro
+   idempotente de email_notifications (que existe para que un correo
+   transaccional no se duplique nunca): estos envíos SÍ pueden repetirse a
+   voluntad del owner y se anotan en booking_communications. */
+const MESSAGE_TITLES = {
+  qr_resend: ['Your QR code', 'Tu código QR'],
+  confirmation_resend: ['Your booking confirmation', 'Tu confirmación de reserva'],
+  air_ticket: ['Your flight tickets', 'Tus tickets aéreos'],
+  hotel_voucher: ['Your hotel voucher', 'Tu voucher de hotel'],
+  itinerary: ['Your itinerary', 'Tu itinerario'],
+  instructions: ['Instructions for your trip', 'Instrucciones para tu viaje'],
+  change_notice: ['An update about your booking', 'Una actualización de tu reserva'],
+  reminder_manual: ['A reminder about your trip', 'Un recordatorio de tu viaje'],
+  other: ['A message about your booking', 'Un mensaje sobre tu reserva']
+};
+
+function messageTitle(type) { return MESSAGE_TITLES[type] || MESSAGE_TITLES.other; }
+
+function bookingMessage(b, ctx) {
+  ctx = ctx || {};
+  const t = messageTitle(ctx.messageType);
+  const subject = t[0] + ' — ' + (b.booking_code || '');
+  const note = ctx.note ? String(ctx.note) : '';
+
+  const html = shell(subject,
+    h1(t[0], t[1])
+    + para('Hello ' + (b.customer_name || '') + ',', 'Hola ' + (b.customer_name || '') + ',')
+    + rows(bookingPairs(b, {}))
+    + (note ? '<p style="margin:0 0 18px;color:' + INK + ';white-space:pre-wrap;">' + esc(note) + '</p>' : '')
+    + (ctx.documentUrl ? ctaButton(ctx.documentUrl, ctx.documentLabel || 'Open document / Abrir documento') : '')
+    + (ctx.qrUrl ? qrBlock(ctx.qrUrl, ctx.cid) : '')
+    + para('If you have any questions, just reply to this email.',
+           'Si tienes alguna duda, responde a este correo.'));
+
+  const text = textBlock([
+    t[0].toUpperCase() + ' / ' + t[1].toUpperCase(), '',
+    'Booking code / Código: ' + (b.booking_code || ''),
+    'Tour: ' + (b.tour_name || ''),
+    'Date / Fecha: ' + (b.booking_date || ''), '',
+    note || null,
+    ctx.documentUrl ? ((ctx.documentLabel || 'Document / Documento') + ': ' + ctx.documentUrl) : null,
+    ctx.qrUrl ? ('QR: ' + ctx.qrUrl) : null, '',
+    'If you have any questions, just reply to this email. / Si tienes dudas, responde a este correo.'
+  ]);
+  return { subject: subject, html: html, text: text };
+}
+
 const TEMPLATES = {
   customer_booking_confirmation: { build: customerBookingConfirmation, qr: true },
   owner_booking_notification: { build: ownerBookingNotification, qr: false },
@@ -420,7 +516,13 @@ const TEMPLATES = {
   customer_passenger_form_invitation: { build: customerPassengerFormInvitation, qr: false },
   owner_passenger_form_submitted: { build: ownerPassengerFormSubmitted, qr: false },
   customer_passenger_form_changes_requested: { build: customerPassengerFormChangesRequested, qr: false },
-  customer_passenger_form_completed: { build: customerPassengerFormCompleted, qr: false }
+  customer_passenger_form_completed: { build: customerPassengerFormCompleted, qr: false },
+  /* Recordatorios pre-viaje: 7, 5, 3, 1 y 0 días antes. Llevan QR adjunto. */
+  pretrip_reminder_d7: { build: buildPretripReminder(7), qr: true },
+  pretrip_reminder_d5: { build: buildPretripReminder(5), qr: true },
+  pretrip_reminder_d3: { build: buildPretripReminder(3), qr: true },
+  pretrip_reminder_d1: { build: buildPretripReminder(1), qr: true },
+  pretrip_reminder_d0: { build: buildPretripReminder(0), qr: true }
 };
 
-module.exports = { TEMPLATES, esc, money, methodLabel };
+module.exports = { TEMPLATES, esc, money, methodLabel, bookingMessage, MESSAGE_TITLES };

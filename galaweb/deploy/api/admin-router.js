@@ -38,6 +38,7 @@ ROUTES['logout'] = require('../server/admin-handlers/logout');
 ROUTES['session'] = require('../server/admin-handlers/session');
 ROUTES['bookings'] = require('../server/admin-handlers/bookings');
 ROUTES['booking-update'] = require('../server/admin-handlers/booking-update');
+ROUTES['booking-delete'] = require('../server/admin-handlers/booking-delete');
 ROUTES['agency-booking-create'] = require('../server/admin-handlers/agency-booking-create');
 ROUTES['finance-summary'] = require('../server/admin-handlers/finance-summary');
 ROUTES['qr-rotate'] = require('../server/admin-handlers/qr-rotate');
@@ -46,6 +47,20 @@ ROUTES['booking-notifications'] = require('../server/admin-handlers/booking-noti
 ROUTES['email-retry'] = require('../server/admin-handlers/email-retry');
 ROUTES['finance-settings-list'] = require('../server/admin-handlers/finance-settings-list');
 ROUTES['finance-settings-save'] = require('../server/admin-handlers/finance-settings-save');
+// Finanzas reales por reserva (Fase 9, Etapa 3)
+ROUTES['booking-finance'] = require('../server/admin-handlers/booking-finance');
+ROUTES['booking-cost-line-add'] = require('../server/admin-handlers/booking-cost-line-add');
+ROUTES['booking-cost-line-delete'] = require('../server/admin-handlers/booking-cost-line-delete');
+ROUTES['booking-costs-confirm'] = require('../server/admin-handlers/booking-costs-confirm');
+ROUTES['booking-comms'] = require('../server/admin-handlers/booking-comms');
+ROUTES['booking-document-save'] = require('../server/admin-handlers/booking-document-save');
+ROUTES['booking-document-upload-url'] = require('../server/admin-handlers/booking-document-upload-url');
+ROUTES['booking-document-confirm'] = require('../server/admin-handlers/booking-document-confirm');
+ROUTES['booking-document-download-url'] = require('../server/admin-handlers/booking-document-download-url');
+ROUTES['booking-communication-send'] = require('../server/admin-handlers/booking-communication-send');
+ROUTES['booking-communication-detail'] = require('../server/admin-handlers/booking-communication-detail');
+ROUTES['reminders-run'] = require('../server/admin-handlers/reminders-run');
+ROUTES['reminders-toggle'] = require('../server/admin-handlers/reminders-toggle');
 ROUTES['discount-rules-list'] = require('../server/admin-handlers/discount-rules-list');
 ROUTES['discount-rule-save'] = require('../server/admin-handlers/discount-rule-save');
 ROUTES['discount-rule-toggle'] = require('../server/admin-handlers/discount-rule-toggle');
@@ -81,6 +96,9 @@ ROUTES['milu-search-cancel'] = require('../server/admin-handlers/milu-search-can
 ROUTES['milu-options-list'] = require('../server/admin-handlers/milu-options-list');
 ROUTES['milu-settings-get'] = require('../server/admin-handlers/milu-settings-get');
 ROUTES['milu-settings-save'] = require('../server/admin-handlers/milu-settings-save');
+ROUTES['milu-research-rerun'] = require('../server/admin-handlers/milu-research-rerun');
+ROUTES['milu-research-approve'] = require('../server/admin-handlers/milu-research-approve');
+ROUTES['milu-itinerary-preview'] = require('../server/admin-handlers/milu-itinerary-preview');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */

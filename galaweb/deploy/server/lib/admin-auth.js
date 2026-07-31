@@ -174,6 +174,28 @@ async function requireAdmin(req, res, allowedRoles) {
 function requireOwner(req, res) { return requireAdmin(req, res, ['owner']); }
 function requireOwnerOrAdmin(req, res) { return requireAdmin(req, res, ['owner', 'admin']); }
 
+/* ---------------- matriz de permisos (Fase 9) ----------------
+   Roles y ESCRITURA:
+     · owner → ve todo y modifica todo (auditoría automática en segundo plano).
+     · admin → ve LA MISMA información que el owner, pero es SOLO LECTURA.
+     · staff → operativo sin dinero; su única escritura es registrar ventas.
+
+   WRITE_ROLES es la fuente única de verdad: cualquier endpoint que MODIFIQUE
+   datos usa requireWriter(). Ocultar botones en la interfaz no basta — la
+   compuerta real está aquí, en el servidor. */
+const WRITE_ROLES = ['owner'];
+const SALE_WRITE_ROLES = ['owner', 'staff'];   // registrar ventas: owner y staff
+
+/** true si el rol puede modificar datos (owner). Se usa también en las pruebas. */
+function canWrite(role) { return WRITE_ROLES.indexOf(role) !== -1; }
+/** true si el rol puede registrar una venta manual (owner o staff). */
+function canRecordSale(role) { return SALE_WRITE_ROLES.indexOf(role) !== -1; }
+
+/** Compuerta de ESCRITURA. admin y staff reciben 403. */
+function requireWriter(req, res) { return requireAdmin(req, res, WRITE_ROLES); }
+/** Compuerta para registrar ventas: owner y staff (admin es solo lectura). */
+function requireSaleWriter(req, res) { return requireAdmin(req, res, SALE_WRITE_ROLES); }
+
 /* Defensa CSRF adicional: exige mismo origen cuando hay Origin/Referer. */
 function sameOrigin(req) {
   const origin = (req.headers && req.headers.origin) || '';
@@ -190,5 +212,7 @@ module.exports = {
   readCookies, buildSessionCookie, clearSessionCookie,
   loadProfile, isProfileUsable,
   requireAdmin, requireOwner, requireOwnerOrAdmin,
+  WRITE_ROLES, SALE_WRITE_ROLES, canWrite, canRecordSale,
+  requireWriter, requireSaleWriter,
   sendUnauthorized, sendForbidden, sameOrigin
 };

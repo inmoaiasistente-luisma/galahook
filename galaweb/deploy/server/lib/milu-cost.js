@@ -24,6 +24,10 @@ const PRICES = {
   'claude-sonnet-5':  { input: 3.0, output: 15.0 }
 };
 
+/* Web Search server tool: $10 por 1000 búsquedas → $0.01/búsqueda.
+   Web Fetch: sin cargo extra (solo tokens del contenido leído). */
+const WEB_SEARCH_COST_PER_REQUEST = 10.0 / 1000;
+
 /* Allowlist v1: EXCLUSIVAMENTE Haiku. Sonnet reservado (gated por flag). */
 const HAIKU_ALLOWLIST = ['claude-haiku-4-5', 'claude-haiku-4-5-20251001'];
 const SONNET_ALLOWLIST = ['claude-sonnet-5'];
@@ -37,7 +41,13 @@ const DEFAULT_MILU_SETTINGS = {
   llm_max_cost_per_booking_usd: 5.00,
   llm_max_cost_daily_usd: 25.00,
   sonnet_enabled: false,
-  primary_hotel_provider: 'manual'
+  primary_hotel_provider: 'manual',
+  // Web Research (8D). Espejo DB de milu_settings; se sobreescribe con la BD.
+  web_research_enabled: false,               // mitad DB de la compuerta doble
+  web_research_max_searches: 6,
+  web_research_max_fetches: 2,
+  web_research_max_content_tokens_per_fetch: 4000,
+  web_research_max_cost_per_job_usd: 0.30
 };
 
 function isTrue(v) { return String(v == null ? '' : v).trim().toLowerCase() === 'true'; }
@@ -102,7 +112,32 @@ function checkBudget(settings, spent, next) {
   return { ok: true };
 }
 
+/** Costo de una investigación = tokens (Haiku) + $0.01 × web_search_requests.
+ *  Web fetch no tiene cargo extra. */
+function estimateResearchCostUsd(model, usage, webSearchRequests) {
+  const tokenCost = estimateCostUsd(model, usage);
+  const searchCost = (Number(webSearchRequests) || 0) * WEB_SEARCH_COST_PER_REQUEST;
+  return Math.round((tokenCost + searchCost) * 1e6) / 1e6;
+}
+
+/**
+ * Presupuesto DURO por propuesta (job) para web research.
+ * @param settings milu_settings (web_research_max_cost_per_job_usd)
+ * @param spentJobUsd  costo de investigación ya acumulado en el job
+ * @param nextUsd      costo estimado de la próxima investigación
+ * @returns {ok:true} o {ok:false, reason:'research_budget_exceeded'}
+ */
+function checkResearchBudget(settings, spentJobUsd, nextUsd) {
+  const s = Object.assign({}, DEFAULT_MILU_SETTINGS, settings || {});
+  const cap = Number(s.web_research_max_cost_per_job_usd);
+  const spent = Number(spentJobUsd) || 0;
+  const n = Number(nextUsd) || 0;
+  if (!(cap >= 0)) return { ok: true };
+  if (spent + n > cap) return { ok: false, reason: 'research_budget_exceeded', cap: cap, spent: spent };
+  return { ok: true };
+}
+
 module.exports = {
-  PRICES, HAIKU_ALLOWLIST, SONNET_ALLOWLIST, DEFAULT_MILU_SETTINGS,
-  resolveMiluModel, estimateCostUsd, checkBudget
+  PRICES, WEB_SEARCH_COST_PER_REQUEST, HAIKU_ALLOWLIST, SONNET_ALLOWLIST, DEFAULT_MILU_SETTINGS,
+  resolveMiluModel, estimateCostUsd, estimateResearchCostUsd, checkBudget, checkResearchBudget
 };

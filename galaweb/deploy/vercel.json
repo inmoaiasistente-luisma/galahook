@@ -6,6 +6,7 @@
     { "source": "/api/admin-session", "destination": "/api/admin-router?action=session" },
     { "source": "/api/admin-bookings", "destination": "/api/admin-router?action=bookings" },
     { "source": "/api/admin-booking-update", "destination": "/api/admin-router?action=booking-update" },
+    { "source": "/api/admin-booking-delete", "destination": "/api/admin-router?action=booking-delete" },
     { "source": "/api/admin-agency-booking-create", "destination": "/api/admin-router?action=agency-booking-create" },
     { "source": "/api/admin-finance-summary", "destination": "/api/admin-router?action=finance-summary" },
     { "source": "/api/admin-booking-qr-rotate", "destination": "/api/admin-router?action=qr-rotate" },
@@ -14,6 +15,19 @@
     { "source": "/api/admin-email-retry", "destination": "/api/admin-router?action=email-retry" },
     { "source": "/api/admin-finance-settings", "destination": "/api/admin-router?action=finance-settings-list" },
     { "source": "/api/admin-finance-settings-save", "destination": "/api/admin-router?action=finance-settings-save" },
+    { "source": "/api/admin-booking-finance", "destination": "/api/admin-router?action=booking-finance" },
+    { "source": "/api/admin-booking-cost-line-add", "destination": "/api/admin-router?action=booking-cost-line-add" },
+    { "source": "/api/admin-booking-cost-line-delete", "destination": "/api/admin-router?action=booking-cost-line-delete" },
+    { "source": "/api/admin-booking-costs-confirm", "destination": "/api/admin-router?action=booking-costs-confirm" },
+    { "source": "/api/admin-booking-comms", "destination": "/api/admin-router?action=booking-comms" },
+    { "source": "/api/admin-booking-document-save", "destination": "/api/admin-router?action=booking-document-save" },
+    { "source": "/api/admin-booking-document-upload-url", "destination": "/api/admin-router?action=booking-document-upload-url" },
+    { "source": "/api/admin-booking-document-confirm", "destination": "/api/admin-router?action=booking-document-confirm" },
+    { "source": "/api/admin-booking-document-download-url", "destination": "/api/admin-router?action=booking-document-download-url" },
+    { "source": "/api/admin-booking-communication-send", "destination": "/api/admin-router?action=booking-communication-send" },
+    { "source": "/api/admin-booking-communication-detail", "destination": "/api/admin-router?action=booking-communication-detail" },
+    { "source": "/api/admin-reminders-run", "destination": "/api/admin-router?action=reminders-run" },
+    { "source": "/api/admin-reminders-toggle", "destination": "/api/admin-router?action=reminders-toggle" },
     { "source": "/api/admin-discount-rules", "destination": "/api/admin-router?action=discount-rules-list" },
     { "source": "/api/admin-discount-rule-save", "destination": "/api/admin-router?action=discount-rule-save" },
     { "source": "/api/admin-discount-rule-toggle", "destination": "/api/admin-router?action=discount-rule-toggle" },
@@ -46,7 +60,13 @@
     { "source": "/api/admin-milu-search-cancel", "destination": "/api/admin-router?action=milu-search-cancel" },
     { "source": "/api/admin-milu-options-list", "destination": "/api/admin-router?action=milu-options-list" },
     { "source": "/api/admin-milu-settings", "destination": "/api/admin-router?action=milu-settings-get" },
-    { "source": "/api/admin-milu-settings-save", "destination": "/api/admin-router?action=milu-settings-save" }
+    { "source": "/api/admin-milu-settings-save", "destination": "/api/admin-router?action=milu-settings-save" },
+    { "source": "/api/admin-milu-research-rerun", "destination": "/api/admin-router?action=milu-research-rerun" },
+    { "source": "/api/admin-milu-research-approve", "destination": "/api/admin-router?action=milu-research-approve" },
+    { "source": "/api/admin-milu-itinerary-preview", "destination": "/api/admin-router?action=milu-itinerary-preview" }
+  ],
+  "crons": [
+    { "path": "/api/admin-reminders-run", "schedule": "0 13 * * *" }
   ],
   "headers": [
     { "source": "/assets/(.*)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" } ] },

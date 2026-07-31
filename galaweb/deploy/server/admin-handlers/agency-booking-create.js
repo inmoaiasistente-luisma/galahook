@@ -6,7 +6,8 @@
    Registra una venta directa (agencia / teléfono / presencial).
    No pasa por Stripe: no crea PaymentIntent ni acepta uno.
 
-   Autorizado para owner, admin y staff. La identidad del vendedor,
+   Fase 9 — autorizado para owner y staff (el admin es SOLO LECTURA y no
+   puede registrar ventas). La identidad del vendedor,
    la fecha contable y todos los estados los fija el SERVIDOR desde
    la sesión validada — el navegador no puede falsificarlos.
 
@@ -16,7 +17,8 @@
 
 const crypto = require('crypto');
 const { getSupabase } = require('../lib/supabase');
-const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { requireSaleWriter, sameOrigin } = require('../lib/admin-auth');
+const { recordAudit } = require('../lib/admin-audit');
 const { notifyBooking } = require('../lib/booking-email-service');
 const { ensurePassengerForm } = require('../lib/passenger-intake');
 const { sendInvitation } = require('../lib/passenger-intake-emails');
@@ -29,8 +31,9 @@ const {
   isRealYmd, todayInGalapagos, getTenantId
 } = require('../lib/http');
 
+const { SALE_SOURCES } = require('../lib/booking-finance');
 const ALLOWED_KEYS = ['request_id', 'customer_name', 'customer_phone', 'customer_email',
-  'tour_id', 'tour_name', 'booking_date', 'guests', 'amount_cents', 'payment_method', 'notes'];
+  'tour_id', 'tour_name', 'booking_date', 'guests', 'amount_cents', 'payment_method', 'notes', 'sale_source'];
 const PAYMENT_METHODS = ['cash', 'card', 'bank_transfer', 'zelle', 'other'];
 const MAX_GUESTS = 50;
 const MAX_AMOUNT_CENTS = 100000000;      // $1,000,000
@@ -72,8 +75,9 @@ async function findByRequestId(supabase, tenant, requestId) {
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
 
-  // Los tres roles pueden registrar una venta directa.
-  const session = await requireAdmin(req, res, ['owner', 'admin', 'staff']);
+  // Fase 9: registrar una venta es la ÚNICA escritura del staff. El admin es
+  // solo lectura y por eso NO puede registrar ventas.
+  const session = await requireSaleWriter(req, res);
   if (!session) return;                                   // 401/403 ya enviado
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 
@@ -100,6 +104,10 @@ module.exports = async function handler(req, res) {
     return sendError(res, 400, 'INVALID_NOTES', 'notes is too long');
   }
   if (PAYMENT_METHODS.indexOf(b.payment_method) === -1) return sendError(res, 400, 'INVALID_PAYMENT_METHOD', 'Invalid payment_method');
+  // Canal fino de la venta manual (opcional). El canal contable (sales_channel) sigue 'agency'.
+  if (b.sale_source != null && b.sale_source !== '' && SALE_SOURCES.indexOf(b.sale_source) === -1) {
+    return sendError(res, 400, 'INVALID_SALE_SOURCE', 'Invalid sale_source');
+  }
 
   if (!isPositiveInt(b.guests) || b.guests > MAX_GUESTS) return sendError(res, 400, 'INVALID_GUESTS', 'guests must be between 1 and ' + MAX_GUESTS);
   if (!Number.isInteger(b.amount_cents) || b.amount_cents < 1 || b.amount_cents > MAX_AMOUNT_CENTS) {
@@ -160,6 +168,7 @@ module.exports = async function handler(req, res) {
         client_request_id: b.request_id,
         request_type: 'booking',
         sales_channel: 'agency',
+        sale_source: (b.sale_source && b.sale_source !== '') ? b.sale_source : 'agency',
         tour_id: tourId,
         tour_name: tourName,
         unit: unit,
@@ -199,6 +208,13 @@ module.exports = async function handler(req, res) {
           const form = await ensurePassengerForm(data);
           if (form) await sendInvitation(data, form);
         } catch (e) { logServer('agency-create', 'intake failed'); }
+        await recordAudit(session, {
+          action: 'sale.create', entity_type: 'booking', entity_id: data.booking_code, always: true,
+          before: null,
+          after: { tour_id: data.tour_id, booking_date: data.booking_date, guests: data.guests,
+            amount_cents: data.amount_cents, payment_method: data.payment_method,
+            sales_channel: data.sales_channel, sale_source: data.sale_source }
+        });
         const view = session.role === 'staff' ? pick(data, STAFF_VIEW) : data;
         return sendJson(res, 200, { booking: view });
       }

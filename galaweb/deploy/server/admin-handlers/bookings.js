@@ -27,7 +27,7 @@ const { requireAdmin } = require('../lib/admin-auth');
 const ADMIN_FIELDS = 'id,booking_code,request_type,tour_id,tour_name,unit,booking_date,guests,' +
   'customer_name,customer_email,customer_phone,notes,amount_cents,currency,' +
   'payment_status,booking_status,paid_at,created_at,updated_at,' +
-  'sales_channel,payment_method,created_by_name,sold_at';
+  'sales_channel,payment_method,created_by_name,sold_at,is_test';
 
 /* Campos operativos (staff). Sin datos financieros ni internos.
    La restricción va en el SELECT: esos campos NO salen de la base de datos. */

@@ -11,7 +11,7 @@
 
 const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, isNonEmptyString, isUuid, getTenantId } = require('../lib/http');
 const { getSupabase } = require('../lib/supabase');
-const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { requireWriter, sameOrigin } = require('../lib/admin-auth');
 const catalog = require('../lib/tour-catalog');
 
 const ALLOWED_KEYS = ['id', 'name', 'tour_id', 'discount_type', 'percentage_bps', 'amount_cents',
@@ -29,7 +29,7 @@ function isIsoOrNull(v) {
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  const session = await requireAdmin(req, res, ['owner', 'admin']);   // owner y admin
+  const session = await requireWriter(req, res);   // Fase 9: escritura = SOLO owner
   if (!session) return;
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 

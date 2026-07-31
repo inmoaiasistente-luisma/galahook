@@ -18,6 +18,8 @@
 const { getSupabase } = require('./supabase');
 const { getFlightAdapter, getHotelAdapter } = require('./milu-adapters');
 const { sanitizeErrorText } = require('./http');
+const { webResearchEnabled } = require('./milu-flags');
+const webResearch = require('./milu-adapters/web-research');
 
 const DEFAULT_LEASE_SECONDS = 120;
 /* Estados que cuentan como contenido utilizable (no "provider not connected"). */
@@ -30,7 +32,13 @@ async function claimNextSubtask(tenant, workerId, leaseSeconds) {
     p_tenant: tenant, p_worker: workerId, p_lease_seconds: leaseSeconds || DEFAULT_LEASE_SECONDS
   });
   if (r.error) return { ok: false, error: r.error };
-  return { ok: true, subtask: r.data || null };
+  // Una función plpgsql que retorna un composite NULL puede serializarse como una
+  // FILA all-null {id:null,kind:null,job_id:null} en vez de null. Una subtarea
+  // válida DEBE tener id + kind + job_id; si falta alguno → sin subtarea (nunca
+  // se llama runSubtask ni se marca un job inexistente).
+  const row = r.data || null;
+  if (!row || !row.id || !row.kind || !row.job_id) return { ok: true, subtask: null };
+  return { ok: true, subtask: row };
 }
 
 async function heartbeatSubtask(id, workerId, leaseSeconds) {
@@ -81,9 +89,19 @@ async function loadJob(jobId) {
   return r.data || null;
 }
 
+/* Subtareas NO-web que en la fase web-only quedan 'partial' sin poder completar
+   (los proveedores/LLM de ranking no están conectados en la prueba controlada) y
+   NO deben degradar el job cuando las web_research requeridas terminaron completed:
+     · proveedores externos (Duffel/hotel) → partial(provider_not_connected)
+     · orquestación LLM (ranking/summary)  → partial(llm_not_available)
+   Un 'failed' (fallo real) SÍ degrada: nunca se fuerza completed sobre un fallo. */
+const PROVIDER_KINDS = ['flights_duffel', 'hotels_primary_provider', 'hotel_preferred_links'];
+const WEB_RESEARCH_KINDS_WC = ['web_research_flights', 'web_research_lodging'];
+const NON_DEGRADING_PARTIAL_KINDS = PROVIDER_KINDS.concat(['anthropic_ranking', 'final_summary']);
+
 async function recomputeJobStatus(jobId) {
   const supabase = getSupabase();
-  const r = await supabase.from('travel_search_subtasks').select('status').eq('job_id', jobId);
+  const r = await supabase.from('travel_search_subtasks').select('kind,status').eq('job_id', jobId);
   const subs = r.data || [];
   const total = subs.length;
   const completed = subs.filter(function (s) { return s.status === 'completed'; }).length;
@@ -96,7 +114,21 @@ async function recomputeJobStatus(jobId) {
   else if (completed === total) status = 'completed';
   else if (failed === total) status = 'failed';
   else if (pending > 0) status = 'running';
-  else status = 'partial';                 // sin pendientes pero mezcla → parcial
+  else {
+    // Sin pendientes pero mezcla → normalmente 'partial'. EXCEPCIÓN fase web-only:
+    // si hay web_research y TODAS terminaron completed, y las únicas subtareas
+    // no-completadas son NO-web en 'partial' (proveedores Duffel/hotel + ranking/
+    // summary de LLM, no conectados en la prueba controlada), el job cuenta como
+    // 'completed' (fallback esperado; no degrada por lo no conectado). Un 'failed'
+    // real SÍ degrada. Estado EXISTENTE del CHECK (sin migración).
+    const webSubs = subs.filter(function (s) { return WEB_RESEARCH_KINDS_WC.indexOf(s.kind) !== -1; });
+    const webAllDone = webSubs.length > 0 && webSubs.every(function (s) { return s.status === 'completed'; });
+    const notCompleted = subs.filter(function (s) { return s.status !== 'completed'; });
+    const onlyNonDegradingPartials = notCompleted.length > 0 && notCompleted.every(function (s) {
+      return s.status === 'partial' && NON_DEGRADING_PARTIAL_KINDS.indexOf(s.kind) !== -1;
+    });
+    status = (webAllDone && onlyNonDegradingPartials) ? 'completed' : 'partial';
+  }
 
   await supabase.from('travel_search_jobs').update({ status: status }).eq('id', jobId);
   return status;
@@ -116,7 +148,9 @@ function flightRow(job, o) {
     connection_risk: o.connection_risk || null, availability_status: o.availability_status,
     recommendation_score: o.recommendation_score == null ? null : o.recommendation_score,
     recommendation_reason: o.recommendation_reason || null, raw_snapshot_sanitized: o.raw_snapshot_sanitized || null,
-    checked_at: o.checked_at || null
+    checked_at: o.checked_at || null,
+    research_source_url: o.research_source_url || null,
+    research_review_status: o.research_review_status || null
   };
 }
 function hotelRow(job, o) {
@@ -135,7 +169,9 @@ function hotelRow(job, o) {
     preferred_hotel_rejection_reason: o.preferred_hotel_rejection_reason || null,
     recommendation_score: o.recommendation_score == null ? null : o.recommendation_score,
     recommendation_reason: o.recommendation_reason || null, raw_snapshot_sanitized: o.raw_snapshot_sanitized || null,
-    checked_at: o.checked_at || null
+    checked_at: o.checked_at || null,
+    research_source_url: o.research_source_url || null,
+    research_review_status: o.research_review_status || null
   };
 }
 
@@ -188,6 +224,28 @@ async function upsertHotelOptions(job, opts, opts2) {
       await supabase.from('travel_hotel_options').insert(Object.assign({ tenant_id: job.tenant_id, search_job_id: job.id, booking_id: job.booking_id, active: true, result_version: 1 }, payload));
     }
   }
+}
+
+/* ---------------- web research (8D) ---------------- */
+/** Cuenta opciones ACTIVAS de web research de un job (parada temprana). */
+async function countActiveResearchOptions(jobId, kind) {
+  const supabase = getSupabase();
+  const table = kind === 'flight' ? 'travel_flight_options' : 'travel_hotel_options';
+  const r = await supabase.from(table).select('id').eq('search_job_id', jobId).eq('active', true).eq('provider', 'web_research');
+  return (r.data || []).length;
+}
+
+/** Suma búsquedas/fetches/costo al contador del job (telemetría por propuesta). */
+async function bumpJobResearchCounters(jobId, stats) {
+  const supabase = getSupabase();
+  stats = stats || {};
+  const jr = await supabase.from('travel_search_jobs').select('web_search_count,web_fetch_count,research_cost_usd').eq('id', jobId).maybeSingle();
+  const cur = jr.data || {};
+  await supabase.from('travel_search_jobs').update({
+    web_search_count: (cur.web_search_count || 0) + (Number(stats.web_search_requests) || 0),
+    web_fetch_count: (cur.web_fetch_count || 0) + (Number(stats.web_fetch_requests) || 0),
+    research_cost_usd: Math.round(((Number(cur.research_cost_usd) || 0) + (Number(stats.cost) || 0)) * 1e6) / 1e6
+  }).eq('id', jobId);
 }
 
 function buildFlightReq(snapshot) {
@@ -252,6 +310,49 @@ async function runSubtask(subtask, deps) {
       return { status: 'completed' };
     }
 
+    if (subtask.kind === 'web_research_flights' || subtask.kind === 'web_research_lodging') {
+      const settings = deps.settings || {};
+      // COMPUERTA DOBLE: sin ambas mitades (env + DB) → sin llamada externa.
+      if (!webResearchEnabled(deps.env || process.env, settings)) return { status: 'partial', reason: 'web_research_disabled' };
+      const isFlights = subtask.kind === 'web_research_flights';
+      // Parada temprana: ya hay suficientes opciones activas.
+      const existing = await countActiveResearchOptions(job.id, isFlights ? 'flight' : 'hotel');
+      if (existing >= (deps.enoughOptions || 3)) return { status: 'completed', reason: 'enough_options', count: existing };
+
+      // Presupuesto RESTANTE POR JOB, leído de los contadores PERSISTIDOS (no del job
+      // en memoria, que puede estar desfasado). Acumulativo a través de flights,
+      // lodging, cualquier reanudación pause_turn y toda la vida del job desde el rerun.
+      const jc = await getSupabase().from('travel_search_jobs')
+        .select('web_search_count,web_fetch_count,research_cost_usd').eq('id', job.id).maybeSingle();
+      const cur = (jc && jc.data) || job;
+      const maxSearch = settings.web_research_max_searches || 6;
+      const maxFetch = settings.web_research_max_fetches || 2;
+      const maxCost = (settings.web_research_max_cost_per_job_usd != null) ? Number(settings.web_research_max_cost_per_job_usd) : 0.30;
+      const remSearch = Math.max(0, maxSearch - (Number(cur.web_search_count) || 0));
+      const remFetch = Math.max(0, maxFetch - (Number(cur.web_fetch_count) || 0));
+      const spentCost = Number(cur.research_cost_usd) || 0;
+      const remCost = maxCost - spentCost;
+      // Sin presupuesto ÚTIL de tools (ni búsquedas ni fetches) → NO se llama a Anthropic.
+      if (remSearch <= 0 && remFetch <= 0) return { status: 'partial', reason: 'search_budget_reached' };
+      if (remCost <= 0) return { status: 'partial', reason: 'cost_budget_reached' };
+      // buildResearchTools omite web_fetch si remFetch=0 (solo web_search si queda presupuesto).
+      const effSettings = Object.assign({}, settings, { web_research_max_searches: remSearch, web_research_max_fetches: remFetch });
+      const rdeps = { settings: effSettings, spentJobUsd: spentCost, env: deps.env, client: deps.researchClient };
+      const r = isFlights
+        ? await webResearch.researchFlights(job, snapshot, rdeps)
+        : await webResearch.researchLodging(job, snapshot, rdeps);
+      const opts = r.options || [];
+      if (isFlights) await upsertFlightOptions(job, opts, { refresh: deps.refresh });
+      else await upsertHotelOptions(job, opts, { refresh: deps.refresh });
+      await bumpJobResearchCounters(job.id, r.stats || {});
+      // Persistir el CÓDIGO saneado del error (sin secretos/contenido/PII) para observabilidad.
+      const errCode = r.error_code || (r.stats && r.stats.error_code) || null;
+      if (errCode) {
+        try { await getSupabase().from('travel_search_subtasks').update({ last_sanitized_error: String(errCode).slice(0, 80) }).eq('id', subtask.id); } catch (e) { /* el logging nunca rompe */ }
+      }
+      return { status: r.status || 'partial', reason: r.reason || null, error_code: errCode, count: opts.length };
+    }
+
     return { status: 'partial', reason: 'unknown_kind' };
   } catch (e) {
     return { status: 'failed', reason: 'exception', error: e };
@@ -262,5 +363,6 @@ module.exports = {
   DEFAULT_LEASE_SECONDS, USABLE_STATUSES,
   claimNextSubtask, heartbeatSubtask, completeSubtask, failOrRetrySubtask, reclaimExpiredLeases,
   loadJob, recomputeJobStatus, runSubtask,
-  upsertFlightOptions, upsertHotelOptions, buildFlightReq
+  upsertFlightOptions, upsertHotelOptions, buildFlightReq,
+  countActiveResearchOptions, bumpJobResearchCounters
 };

@@ -179,6 +179,15 @@ async function sendBookingEmail(o) {
       status: 'sent', provider_message_id: messageId,
       sent_at: new Date().toISOString(), last_error: null
     }).eq('id', row.id);
+
+    /* Guarda el asunto y el cuerpo para poder abrir el correo desde la reserva
+       (0021). Best-effort: si las columnas no existen todavía, se ignora. */
+    try {
+      const bodyUpd = await supabase.from('email_notifications')
+        .update({ subject: tpl.subject, body_html: tpl.html, body_text: tpl.text })
+        .eq('id', row.id);
+      if (bodyUpd.error) logServer('email-service', 'body: ' + sanitize(bodyUpd.error.message));
+    } catch (e) { /* 0021 sin aplicar: no es crítico */ }
     await finishAttempt(supabase, notifId, attemptNumber, 'sent', { providerMessageId: messageId });
 
     emailDiag(booking, type, 'sent', { hasId: true });

@@ -11,12 +11,13 @@
 
 const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('../lib/http');
 const { getSupabase } = require('../lib/supabase');
-const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { requireWriter, sameOrigin } = require('../lib/admin-auth');
+const { recordAudit } = require('../lib/admin-audit');
 const { ensureBookingQrAccess, generateBookingQrPng, computeExpiresAt, isQrEligible } = require('../lib/booking-qr');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  const session = await requireAdmin(req, res, ['owner', 'admin']);
+  const session = await requireWriter(req, res);   // Fase 9: escritura = SOLO owner
   if (!session) return;                                   // 401/403 ya enviado
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 
@@ -51,6 +52,11 @@ module.exports = async function handler(req, res) {
     }
 
     const qr = await generateBookingQrPng(upd.data[0], bk.data.booking_code);
+    await recordAudit(session, {
+      action: 'qr.rotate', entity_type: 'booking', entity_id: bk.data.booking_code || body.booking_id, always: true,
+      before: { token_version: Number(access.token_version) || 1 },
+      after: { token_version: upd.data[0].token_version, previous_invalidated: true }
+    });
     return sendJson(res, 200, {
       rotated: true,
       previousInvalidated: true,          // el QR ya enviado al cliente dejó de servir

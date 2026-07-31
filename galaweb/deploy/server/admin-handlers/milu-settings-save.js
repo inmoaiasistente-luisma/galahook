@@ -14,7 +14,10 @@ const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
 const { getSupabase } = require('../lib/supabase');
 
 const ALLOWED = ['hotel_target_min_cents', 'hotel_target_max_cents', 'llm_max_cost_per_call_usd',
-  'llm_max_cost_per_job_usd', 'llm_max_cost_per_booking_usd', 'llm_max_cost_daily_usd', 'primary_hotel_provider'];
+  'llm_max_cost_per_job_usd', 'llm_max_cost_per_booking_usd', 'llm_max_cost_daily_usd', 'primary_hotel_provider',
+  // Web research (8D). web_research_enabled = mitad DB de la compuerta doble.
+  'web_research_enabled', 'web_research_max_searches', 'web_research_max_fetches',
+  'web_research_max_content_tokens_per_fetch', 'web_research_max_cost_per_job_usd'];
 const PROVIDERS = ['manual', 'duffel_stays', 'hotelbeds', 'expedia_rapid'];
 
 function isPosNum(v) { return typeof v === 'number' && isFinite(v) && v > 0; }
@@ -38,6 +41,25 @@ module.exports = async function handler(req, res) {
   ['llm_max_cost_per_call_usd', 'llm_max_cost_per_job_usd', 'llm_max_cost_per_booking_usd', 'llm_max_cost_daily_usd'].forEach(function (k) {
     if (body[k] !== undefined) patch[k] = body[k];
   });
+  // Web research (8D): compuerta DB + límites. web_research_max_cost_per_job_usd
+  // termina en _usd → lo valida el bucle de abajo (> 0).
+  if (body.web_research_enabled !== undefined) {
+    if (typeof body.web_research_enabled !== 'boolean') return sendError(res, 400, 'INVALID_WR', 'web_research_enabled must be boolean');
+    patch.web_research_enabled = body.web_research_enabled;
+  }
+  if (body.web_research_max_searches !== undefined) {
+    if (!isPositiveInt(body.web_research_max_searches) || body.web_research_max_searches > 20) return sendError(res, 400, 'INVALID_WR', 'max_searches 1..20');
+    patch.web_research_max_searches = body.web_research_max_searches;
+  }
+  if (body.web_research_max_fetches !== undefined) {
+    if (!Number.isInteger(body.web_research_max_fetches) || body.web_research_max_fetches < 0 || body.web_research_max_fetches > 10) return sendError(res, 400, 'INVALID_WR', 'max_fetches 0..10');
+    patch.web_research_max_fetches = body.web_research_max_fetches;
+  }
+  if (body.web_research_max_content_tokens_per_fetch !== undefined) {
+    if (!isPositiveInt(body.web_research_max_content_tokens_per_fetch)) return sendError(res, 400, 'INVALID_WR', 'max_content_tokens_per_fetch > 0');
+    patch.web_research_max_content_tokens_per_fetch = body.web_research_max_content_tokens_per_fetch;
+  }
+  if (body.web_research_max_cost_per_job_usd !== undefined) patch.web_research_max_cost_per_job_usd = body.web_research_max_cost_per_job_usd;
   for (var k in patch) { if (/_usd$/.test(k) && !isPosNum(patch[k])) return sendError(res, 400, 'INVALID_CAP', 'Invalid cap: ' + k); }
   if (body.primary_hotel_provider !== undefined) {
     if (PROVIDERS.indexOf(body.primary_hotel_provider) === -1) return sendError(res, 400, 'INVALID_PROVIDER', 'Invalid provider');
