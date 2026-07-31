@@ -29,8 +29,9 @@ const {
   isRealYmd, todayInGalapagos, getTenantId
 } = require('../lib/http');
 
+const { SALE_SOURCES } = require('../lib/booking-finance');
 const ALLOWED_KEYS = ['request_id', 'customer_name', 'customer_phone', 'customer_email',
-  'tour_id', 'tour_name', 'booking_date', 'guests', 'amount_cents', 'payment_method', 'notes'];
+  'tour_id', 'tour_name', 'booking_date', 'guests', 'amount_cents', 'payment_method', 'notes', 'sale_source'];
 const PAYMENT_METHODS = ['cash', 'card', 'bank_transfer', 'zelle', 'other'];
 const MAX_GUESTS = 50;
 const MAX_AMOUNT_CENTS = 100000000;      // $1,000,000
@@ -100,6 +101,10 @@ module.exports = async function handler(req, res) {
     return sendError(res, 400, 'INVALID_NOTES', 'notes is too long');
   }
   if (PAYMENT_METHODS.indexOf(b.payment_method) === -1) return sendError(res, 400, 'INVALID_PAYMENT_METHOD', 'Invalid payment_method');
+  // Canal fino de la venta manual (opcional). El canal contable (sales_channel) sigue 'agency'.
+  if (b.sale_source != null && b.sale_source !== '' && SALE_SOURCES.indexOf(b.sale_source) === -1) {
+    return sendError(res, 400, 'INVALID_SALE_SOURCE', 'Invalid sale_source');
+  }
 
   if (!isPositiveInt(b.guests) || b.guests > MAX_GUESTS) return sendError(res, 400, 'INVALID_GUESTS', 'guests must be between 1 and ' + MAX_GUESTS);
   if (!Number.isInteger(b.amount_cents) || b.amount_cents < 1 || b.amount_cents > MAX_AMOUNT_CENTS) {
@@ -160,6 +165,7 @@ module.exports = async function handler(req, res) {
         client_request_id: b.request_id,
         request_type: 'booking',
         sales_channel: 'agency',
+        sale_source: (b.sale_source && b.sale_source !== '') ? b.sale_source : 'agency',
         tour_id: tourId,
         tour_name: tourName,
         unit: unit,

@@ -114,5 +114,20 @@ ok('46 finance-summary: costo conocido SOLO si cost_status confirmed',
   /cost_status/.test(fsum.slice(fsum.indexOf('.select('), fsum.indexOf('.eq('))) &&
   /bookings_without_confirmed_costs/.test(fsum));
 
+/* ---------------- venta manual: sale_source ---------------- */
+const agency = read('server/admin-handlers/agency-booking-create.js');
+ok('47 agency-create: sale_source en allowlist + validado + insertado (canal contable sigue agency)',
+  /'sale_source'/.test(agency) && /SALE_SOURCES\.indexOf\(b\.sale_source\)/.test(agency) &&
+  /sale_source:.*b\.sale_source.*'agency'/.test(agency) && /sales_channel: 'agency'/.test(agency));
+
+/* ---------------- UI: hub de 5 pestañas + form venta manual ---------------- */
+const adm = read('assets/js/admin.js');
+ok('48 admin.js: panelFinanceHub con 5 pestañas + panelFinance(role, only)',
+  /function panelFinanceHub\(role\)/.test(adm) && /id:'resumen'/.test(adm) && /id:'ventas'/.test(adm) &&
+  /id:'registrar'/.test(adm) && /id:'plantillas'/.test(adm) && /id:'reportes'/.test(adm) &&
+  /function panelFinance\(role, only\)/.test(adm) && /panelFinanceHub\(role\)/.test(adm.slice(adm.indexOf("id:'finance'"), adm.indexOf("id:'finance'") + 200)));
+ok('49 admin.js: form venta manual envía sale_source', /payload\.sale_source=saleSrc\.value/.test(adm) && /function panelRecordSale/.test(adm));
+ok('50 admin.html: estilos .fin-tabs/.fin-tab (tema claro)', /\.fin-tab\.on\{background:var\(--a-gold\)/.test(read('admin.html')));
+
 console.log('\n=== RESULTADO BOOKING-FINANCE: ' + pass + ' PASS · ' + fail + ' FAIL ===');
 if (fail > 0) process.exit(1);

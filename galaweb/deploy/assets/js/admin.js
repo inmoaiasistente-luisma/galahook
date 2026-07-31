@@ -768,6 +768,10 @@ function bkAgencyForm(onCreated){
   const amount=inp('number',{min:0,step:'0.01',placeholder:'0.00'});
   const method=document.createElement('select');
   BK_METHODS.forEach(function(x){ const o=document.createElement('option'); o.value=x[0]; o.textContent=x[1]; method.appendChild(o); });
+  // Canal fino de la venta manual (sale_source). 'web' no aplica (web = Stripe).
+  const BK_SALE_SRC=[['agency',ES?'Agencia':'Agency'],['phone',ES?'Teléfono':'Phone'],['in_person',ES?'Presencial':'In person'],['partner','Partner'],['other',ES?'Otro':'Other']];
+  const saleSrc=document.createElement('select');
+  BK_SALE_SRC.forEach(function(x){ const o=document.createElement('option'); o.value=x[0]; o.textContent=x[1]; saleSrc.appendChild(o); });
   const notes=document.createElement('textarea'); notes.maxLength=1000; notes.style.minHeight='64px';
 
   const g=el('<div class="bk-dls"></div>');
@@ -780,6 +784,7 @@ function bkAgencyForm(onCreated){
   g.appendChild(fld((ES?'Viajeros':'Guests')+' *',guests));
   g.appendChild(fld((ES?'Importe cobrado (USD)':'Amount received (USD)')+' *',amount));
   g.appendChild(fld((ES?'Método de pago':'Payment method')+' *',method));
+  g.appendChild(fld(ES?'Canal de venta':'Sale channel',saleSrc));
   body.appendChild(g);
   const nw=fld(ES?'Notas':'Notes',notes); nw.style.marginTop='10px'; body.appendChild(nw);
 
@@ -803,6 +808,7 @@ function bkAgencyForm(onCreated){
     // Solo campos autorizados: los estados, el vendedor y la fecha contable los pone el servidor.
     const payload={ request_id:rid, customer_name:name.value.trim(), customer_phone:phone.value.trim(),
       booking_date:date.value, guests:gN, amount_cents:cents, payment_method:method.value };
+    if(saleSrc.value) payload.sale_source=saleSrc.value;
     if(mail.value.trim()) payload.customer_email=mail.value.trim();
     if(notes.value.trim()) payload.notes=notes.value.trim();
     if(tourSel.value==='custom'){ payload.tour_id='custom'; payload.tour_name=tourFree.value.trim(); }
@@ -1218,8 +1224,41 @@ function panelDashboard(role){
    servidor es la autoridad: aquí solo se muestran totales y se envían
    configuraciones (nunca se recalcula dinero en el navegador). */
 function fin$(c){ return bkMoney(c,'usd'); }
-function panelFinance(role){
+/* ============ FINANZAS — hub de 5 pestañas (Fase 9-3) ============
+   Reorganiza las funciones existentes en pestañas; no elimina nada. */
+function panelRecordSale(role){
+  const p=el('<div class="bk-screen"></div>');
+  const card=el('<div class="ed-card"><h3>'+(ES?'Registrar venta manual':'Record manual sale')+'</h3>'
+    +'<div class="hint">'+(ES?'Venta directa (agencia, teléfono, presencial, partner…). No pasa por Stripe. Al crearla eliges el canal (sale_source); después agrega sus costos en el detalle de la reserva.':'Direct sale (agency, phone, in person, partner…). Not via Stripe. Pick the channel (sale_source) on creation; then add its costs in the booking detail.')+'</div></div>');
+  const btn=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Nueva venta manual':'New manual sale')+'</button>');
+  btn.addEventListener('click',function(){ bkAgencyForm(function(){ adminToast(ES?'Venta registrada. Agrega sus costos en el detalle de la reserva.':'Sale recorded. Add its costs in the booking detail.'); }); });
+  card.appendChild(btn); p.appendChild(card);
+  return p;
+}
+function panelFinanceHub(role){
+  const p=el('<div class="bk-screen"></div>');
+  const bar=el('<div class="fin-tabs"></div>'); p.appendChild(bar);
+  const body=el('<div></div>'); p.appendChild(body);
+  const TABS=[
+    {id:'resumen', label:(ES?'Resumen':'Summary'), build:function(){ return panelFinance(role,['summary']); }},
+    {id:'ventas', label:(ES?'Ventas y reservas':'Sales & bookings'), build:function(){ return panelBookings(); }},
+    {id:'registrar', label:(ES?'Registrar venta':'Record sale'), build:function(){ return panelRecordSale(role); }},
+    {id:'plantillas', label:(ES?'Plantillas de costos':'Cost templates'), build:function(){ return panelFinance(role,['templates','discounts']); }},
+    {id:'reportes', label:(ES?'Reportes':'Reports'), build:function(){ return panelFinance(role,['reports']); }}
+  ];
+  function open(id){
+    [].forEach.call(bar.children,function(btn){ btn.classList.toggle('on', btn.getAttribute('data-id')===id); });
+    body.innerHTML=''; const t=TABS.filter(function(x){ return x.id===id; })[0]; if(t) body.appendChild(t.build());
+  }
+  TABS.forEach(function(t){ const b=el('<button type="button" class="fin-tab" data-id="'+t.id+'">'+escapeHtml(t.label)+'</button>'); b.addEventListener('click',function(){ open(t.id); }); bar.appendChild(b); });
+  open('resumen');
+  return p;
+}
+function panelFinance(role, only){
   const canEdit = role==='owner' || role==='admin';
+  // `only` (opcional) limita qué secciones renderiza, para montarlas en pestañas
+  // (Fase 9-3). Sin `only` → todas (compatibilidad).
+  const show=function(s){ return !only || only.indexOf(s)!==-1; };
   const wrap=el('<div class="fin-wrap"></div>');
 
   /* ---- filtros ---- */
@@ -1230,13 +1269,14 @@ function panelFinance(role){
   const chanF=bkSelectField(ES?'Canal':'Channel',[['',ES?'Todos':'All'],['web','web'],['agency',ES?'Agencia':'Agency']]);
   const methF=bkSelectField(ES?'Método':'Method',[['',ES?'Todos':'All'],['stripe','stripe'],['cash','cash'],['card','card'],['bank_transfer','bank_transfer'],['zelle','zelle'],['other','other']]);
   [fromF,toF,tourF,chanF,methF].forEach(function(f){ filters.appendChild(f.wrap); });
-  wrap.appendChild(filters);
+  if(show('summary')||show('reports')) wrap.appendChild(filters);
 
   /* ---- KPIs + tabla por tour ---- */
   const tiles=el('<div class="fin-tiles"></div>');
   const partial=el('<div class="fin-partial" style="display:none"></div>');
   const tourWrap=el('<div class="bk-table-wrap fin-tourtable"></div>');
-  wrap.appendChild(tiles); wrap.appendChild(partial); wrap.appendChild(tourWrap);
+  if(show('summary')){ wrap.appendChild(tiles); wrap.appendChild(partial); }
+  if(show('reports')) wrap.appendChild(tourWrap);
 
   function tile(lab,val,cls){ return '<div class="fin-tile'+(cls?' '+cls:'')+'"><span>'+lab+'</span><b>'+val+'</b></div>'; }
   function loadSummary(){
@@ -1294,7 +1334,7 @@ function panelFinance(role){
     +'<p class="bk-sub-hint">'+(canEdit?(ES?'Cambiar un costo NO altera reservas ya creadas; solo afecta a las nuevas.':'Changing a cost does NOT alter existing bookings; only new ones.')
                                         :(ES?'Solo lectura.':'Read-only.'))+'</p></div>');
   const costWrap=el('<div class="bk-table-wrap"></div>'); costSec.appendChild(costWrap);
-  wrap.appendChild(costSec);
+  if(show('templates')) wrap.appendChild(costSec);
 
   function loadTours(){
     apiGet('/api/admin-finance-settings').then(function(r){
@@ -1347,7 +1387,7 @@ function panelFinance(role){
     +'<p class="bk-sub-hint">'+(ES?'El servidor aplica UNA regla por reserva (nunca acumula). No se borran: se activan o desactivan.'
                                   :'The server applies ONE rule per booking (never stacked). Rules are not deleted: toggle active.')+'</p></div>');
   const discList=el('<div class="bk-table-wrap"></div>'); discSec.appendChild(discList);
-  wrap.appendChild(discSec);
+  if(show('templates')||show('discounts')) wrap.appendChild(discSec);
 
   function loadDiscounts(){
     apiGet('/api/admin-discount-rules').then(function(r){
@@ -1441,7 +1481,9 @@ function panelFinance(role){
     discSec.appendChild(form); discSec.appendChild(test);
   }
 
-  loadSummary(); loadTours(); loadDiscounts();
+  if(show('summary')||show('reports')) loadSummary();
+  if(show('templates')) loadTours();
+  if(show('templates')||show('discounts')) loadDiscounts();
   return wrap;
 }
 
@@ -2467,7 +2509,7 @@ function panelsFor(role){
     {id:'passengers', group:G_OP, label:(ES?'Pasajeros y logística':'Passengers & logistics'), build:function(){ return panelPassengers(role); }},
     {id:'notifications', group:G_OP, label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }},
     // — Comercial —
-    {id:'finance', group:G_COM, label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinance(role); }},
+    {id:'finance', group:G_COM, label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinanceHub(role); }},
     {id:'pkgpricing', group:G_COM, label:(ES?'Precios de paquetes':'Package pricing'), build:function(){ return panelPackagePricing(role); }},
     {id:'notes', group:G_COM, label:(ES?'Notas de paquetes':'Package notes'), build:function(){ return panelPackageNotes(role); }},
     {id:'hotels', group:G_COM, label:(ES?'Hoteles preferidos':'Preferred hotels'), build:function(){ return panelHotelPreferences(role); }}
