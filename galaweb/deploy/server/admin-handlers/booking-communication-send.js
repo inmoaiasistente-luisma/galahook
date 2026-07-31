@@ -29,6 +29,7 @@ const { recordAudit } = require('../lib/admin-audit');
 const { getResend, getMailConfig } = require('../lib/resend');
 const { bookingMessage } = require('../lib/email-templates');
 const { ensureBookingQrAccess, generateBookingQrPng } = require('../lib/booking-qr');
+const { BUCKET } = require('../lib/booking-documents');
 
 const ALLOWED_KEYS = ['booking_id', 'message_type', 'recipient', 'note', 'document_id'];
 const MESSAGE_TYPES = ['qr_resend', 'confirmation_resend', 'air_ticket', 'hotel_voucher',
@@ -36,8 +37,21 @@ const MESSAGE_TYPES = ['qr_resend', 'confirmation_resend', 'air_ticket', 'hotel_
 /* Tipos que llevan el QR adjunto. */
 const QR_TYPES = ['qr_resend', 'confirmation_resend'];
 const QR_CID = 'booking-qr';
+/* Por encima de este tamaño se envía un enlace firmado en vez de adjuntar. */
+const ATTACH_MAX_BYTES = 8 * 1024 * 1024;
 
 function sanitize(msg) { return String(msg == null ? '' : msg).replace(/\s+/g, ' ').slice(0, 300); }
+
+/* Normaliza lo que devuelve storage.download() a un Buffer, sea Blob (fetch),
+   ArrayBuffer, Uint8Array o Buffer, según el entorno de ejecución. */
+async function toBuffer(data) {
+  if (!data) return null;
+  if (Buffer.isBuffer(data)) return data;
+  if (typeof data.arrayBuffer === 'function') return Buffer.from(await data.arrayBuffer());
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
+  if (data instanceof Uint8Array) return Buffer.from(data);
+  try { return Buffer.from(data); } catch (e) { return null; }
+}
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
@@ -77,7 +91,7 @@ module.exports = async function handler(req, res) {
     let doc = null;
     if (body.document_id) {
       try {
-        const dq = await supabase.from('booking_documents').select('id,label,url,doc_type')
+        const dq = await supabase.from('booking_documents').select('id,label,url,doc_type,source,storage_path,original_filename,mime_type,file_size')
           .eq('id', body.document_id).eq('booking_id', body.booking_id)
           .eq('tenant_id', tenant).eq('active', true).maybeSingle();
         if (dq.error) throw new Error(dq.error.message);
@@ -99,7 +113,36 @@ module.exports = async function handler(req, res) {
         }
       } catch (e) { logServer('comm-send', 'qr: ' + sanitize(e && e.message)); }
     }
-    if (doc) { ctx.documentUrl = doc.url; ctx.documentLabel = doc.label; }
+    /* Adjuntar el documento:
+       · enlace externo (source='link') → va como enlace en el correo;
+       · archivo subido (source='upload') → se descarga de Storage y se ADJUNTA
+         al correo (nunca se expone la ruta interna). Si es grande o falla la
+         descarga, se manda una URL FIRMADA temporal como respaldo. */
+    if (doc) {
+      ctx.documentLabel = doc.label;
+      if (doc.storage_path) {
+        const big = Number(doc.file_size || 0) > ATTACH_MAX_BYTES;
+        let attached = false;
+        if (!big) {
+          try {
+            const dl = await supabase.storage.from(BUCKET).download(doc.storage_path);
+            const buf = await toBuffer(dl && dl.data);
+            if (buf) {
+              attachments.push({ filename: doc.original_filename || doc.label, content: buf });
+              attached = true;
+            }
+          } catch (e) { logServer('comm-send', 'attach: ' + sanitize(e && e.message)); }
+        }
+        if (!attached) {
+          try {
+            const s = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 3600);
+            if (s && s.data && s.data.signedUrl) ctx.documentUrl = s.data.signedUrl;
+          } catch (e) { logServer('comm-send', 'sign: ' + sanitize(e && e.message)); }
+        }
+      } else {
+        ctx.documentUrl = doc.url;   // enlace externo
+      }
+    }
 
     const tpl = bookingMessage(booking, ctx);
 
@@ -132,6 +175,13 @@ module.exports = async function handler(req, res) {
       });
       if (ins.error) throw new Error(ins.error.message);
     } catch (e) { logged = false; logServer('comm-send', 'log: ' + sanitize(e && e.message)); }
+
+    /* Si se envió un documento con éxito, se marca cuándo se le mandó al
+       pasajero (best-effort: no afecta al resultado del envío). */
+    if (status === 'sent' && doc) {
+      try { await supabase.from('booking_documents').update({ sent_to_passenger_at: new Date().toISOString() }).eq('id', doc.id).eq('tenant_id', tenant); }
+      catch (e) { /* no crítico */ }
+    }
 
     await recordAudit(session, {
       action: 'communication.send', entity_type: 'booking', entity_id: booking.booking_code || booking.id, always: true,

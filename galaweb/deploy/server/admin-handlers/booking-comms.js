@@ -53,12 +53,24 @@ module.exports = async function handler(req, res) {
     let documents = [], communications = [];
 
     try {
+      /* Se piden también los campos de subida (0020). Si 0020 no está aplicada,
+         el select falla y se marca storage_ready=false, cayendo al modo enlace. */
       const dq = await supabase.from('booking_documents')
-        .select('id,doc_type,label,url,notes,created_at')
+        .select('id,doc_type,label,url,notes,created_at,source,original_filename,mime_type,file_size,uploaded_at,sent_to_passenger_at,created_by_user_id')
         .eq('booking_id', q.booking_id).eq('tenant_id', tenant).eq('active', true);
       if (dq.error) throw new Error(dq.error.message);
       documents = dq.data || [];
-    } catch (e) { storageReady = false; }
+    } catch (e) {
+      storageReady = false;
+      // Reintento compatible con solo-0019 (sin columnas de subida): que la
+      // lista de enlaces siga viéndose aunque las subidas no estén disponibles.
+      try {
+        const dq2 = await supabase.from('booking_documents')
+          .select('id,doc_type,label,url,notes,created_at')
+          .eq('booking_id', q.booking_id).eq('tenant_id', tenant).eq('active', true);
+        if (!dq2.error) documents = dq2.data || [];
+      } catch (e2) { /* sin documentos */ }
+    }
 
     try {
       const cq = await supabase.from('booking_communications')
@@ -72,6 +84,24 @@ module.exports = async function handler(req, res) {
     if (isStaff) {
       documents = documents.filter(function (d) { return STAFF_HIDDEN_DOCS.indexOf(d.doc_type) === -1; });
     }
+
+    /* Resuelve el nombre de quién subió cada documento (una consulta a
+       admin_profiles). Best-effort: si falla, la lista no lleva el nombre. */
+    try {
+      const ids = {};
+      documents.forEach(function (d) { if (d.created_by_user_id) ids[d.created_by_user_id] = 1; });
+      const list = Object.keys(ids);
+      if (list.length) {
+        const pq = await supabase.from('admin_profiles').select('user_id,full_name').in('user_id', list);
+        if (!pq.error && pq.data) {
+          const nameOf = {};
+          pq.data.forEach(function (p) { nameOf[p.user_id] = p.full_name; });
+          documents.forEach(function (d) { d.uploaded_by_name = d.created_by_user_id ? (nameOf[d.created_by_user_id] || null) : null; });
+        }
+      }
+    } catch (e) { /* sin nombres: no es motivo para fallar la sección */ }
+    // No exponer el uuid del usuario al cliente; basta el nombre.
+    documents.forEach(function (d) { delete d.created_by_user_id; });
 
     /* Etapas de recordatorio ya registradas (el ledger de correos existe
        desde 0007, así que esto funciona aunque 0019 no esté aplicada). */

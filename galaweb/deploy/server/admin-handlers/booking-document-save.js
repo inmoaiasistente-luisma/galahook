@@ -77,6 +77,9 @@ module.exports = async function handler(req, res) {
     if (bq.error) { logServer('booking-document-save', bq.error.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Server error'); }
     if (!bq.data) return sendError(res, 404, 'BOOKING_NOT_FOUND', 'Booking not found');
 
+    /* source NO se envía a propósito: la columna llega con la migración 0020 y
+       su default es 'link'. Así el alta de enlaces sigue funcionando aunque
+       0020 aún no esté aplicada. */
     const ins = await supabase.from('booking_documents').insert({
       tenant_id: tenant, booking_id: body.booking_id,
       doc_type: body.doc_type, label: body.label.trim(), url: body.url,
