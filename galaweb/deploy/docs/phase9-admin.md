@@ -208,11 +208,38 @@ firmado si es grande).
 
 ---
 
+## 8-bis. Ronda de correcciones finales (Preview)
+
+- **Calendario (bloqueante) reparado.** Causa raíz: `loadFinance()` accedía a
+  `chanF.select` (null en modo calendario) y lanzaba, abortando la
+  construcción del panel — solo quedaba el título. La guarda
+  `finance.parentNode` no cortaba porque `el()` devuelve un nodo cuyo
+  `parentNode` es un `<div>` envoltorio (siempre truthy). Arreglo:
+  `finance.isConnected` + null-check en `chanF/methF`, y `renderCal()`
+  síncrono al arrancar.
+- **Reservas:** encabezados completos (sin `GUE…`/`CHAN…`), columnas clave sin
+  recorte, tooltips en texto secundario, sin scroll horizontal en desktop.
+- **Eliminar reserva (owner):** baja lógica desde la fila y el detalle; el
+  servidor rellena la razón. Insignia **TEST** en la tabla. `booking-delete`.
+- **Configuración** simplificada: fuera Notificaciones y Datos de prueba
+  (dormidos). Quedan Recordatorios, Descuentos y plantillas avanzadas.
+- **Detalle** más ancho (~92vw, tope 1180px) con scroll interno.
+- **Pasajeros:** botón "Ver formulario completo" con todas las respuestas.
+- **Comunicaciones:** historial unificado (manual + automáticos +
+  recordatorios) **clickeable**; cada mensaje abre su cuerpo completo.
+
+**Migración 0021 (PREPARADA, NO APLICADA)** —
+`0021_communication_bodies.sql`: `body_html`/`body_text` en
+`booking_communications` y `email_notifications` (+`subject`). Aditiva. Sin
+0021 el envío funciona y el visor avisa "cuerpo no disponible".
+
+---
+
 ## 9. QA
 
 | | |
 |---|---|
 | Suites | 18 |
-| Pruebas | **1102 PASS · 0 FAIL** |
-| `node --check` | **116 / 116** |
-| `vercel.json` | válido (61 rewrites, 1 cron) |
+| Pruebas | **1121 PASS · 0 FAIL** |
+| `node --check` | **118 / 118** |
+| `vercel.json` | válido (63 rewrites, 1 cron, 0 duplicadas) |
