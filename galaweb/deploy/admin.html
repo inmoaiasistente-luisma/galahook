@@ -197,12 +197,14 @@
   .bk-fbtns{display:flex;gap:8px;flex-wrap:wrap;padding-bottom:12px;}
   .bk-tbl-title{color:var(--a-text);font-family:var(--display);font-weight:700;font-size:16px;margin:0 2px 10px;text-transform:capitalize;}
   /* tabla compacta (clara, limpia) */
-  .bk-table-wrap{border:1px solid var(--a-border);border-radius:14px;overflow:auto;max-height:64vh;background:var(--a-card-2);box-shadow:var(--a-shadow-sm);}
-  table.bk-table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:820px;}
+  /* Desktop: la tabla ocupa todo el ancho y NO hay scroll horizontal (solo
+     vertical para la cabecera fija). En móvil/tablet pequeño sí se permite. */
+  .bk-table-wrap{border:1px solid var(--a-border);border-radius:14px;overflow-x:hidden;overflow-y:auto;max-height:64vh;background:var(--a-card-2);box-shadow:var(--a-shadow-sm);}
+  table.bk-table{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:fixed;}
   table.bk-table thead th{position:sticky;top:0;z-index:2;background:var(--a-bg-2);color:var(--a-text-soft);
     font-weight:700;font-size:11px;letter-spacing:.07em;text-transform:uppercase;text-align:left;padding:12px 14px;white-space:nowrap;
-    border-bottom:1px solid var(--a-border);}
-  table.bk-table tbody td{padding:0 14px;height:48px;color:var(--a-text);border-bottom:1px solid var(--a-border);white-space:nowrap;}
+    overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--a-border);}
+  table.bk-table tbody td{padding:0 14px;height:48px;color:var(--a-text);border-bottom:1px solid var(--a-border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   table.bk-table tbody tr:last-child td{border-bottom:0;}
   table.bk-table tbody tr:nth-child(even){background:rgba(17,48,47,.018);}
   table.bk-table tbody tr:hover{background:var(--a-bg-2);cursor:pointer;}
@@ -267,6 +269,12 @@
   .bk-add{margin-top:10px;}
   .bk-add summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--a-text-soft);padding:6px 0;}
   .bk-add summary:hover{color:var(--a-text);}
+  .bk-doc-name{color:var(--a-text);font-size:13.5px;}
+  .bk-doc-meta{color:var(--a-text-soft);font-size:11.5px;}
+  input[type=file]{font-size:12.5px;color:var(--a-text-soft);}
+  /* Barra de progreso de subida (dorada sobre arena). */
+  .up-progress{height:8px;border-radius:6px;background:var(--a-bg-2);border:1px solid var(--a-border);overflow:hidden;margin:8px 0;}
+  .up-progress > i{display:block;height:100%;width:0;background:var(--a-gold);transition:width .15s ease;}
   /* ---------- Dashboard (Fase 9) ---------- */
   .dash-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px;}
   .dash-card{background:var(--a-card);border:1px solid var(--a-border);border-radius:14px;padding:18px 20px;box-shadow:var(--a-shadow-sm);}
@@ -302,7 +310,10 @@
     .bk-cal-grid,.bk-cal-dow{gap:3px;}
     .bk-cal-day{min-height:46px;padding:4px;}
     .bk-cal-day .c{font-size:9px;}
-    .bk-table-wrap{max-height:none;}
+    /* En pantallas pequeñas SÍ se permite scroll horizontal: la tabla recupera
+       un ancho mínimo legible y el contenedor desplaza. */
+    .bk-table-wrap{max-height:none;overflow-x:auto;}
+    table.bk-table{table-layout:auto;min-width:760px;}
     .bk-dls{grid-template-columns:1fr;}
     .bk-modal{padding:0;}
     .bk-modal-card{max-width:none;max-height:100vh;height:100vh;border-radius:0;}

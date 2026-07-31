@@ -730,6 +730,19 @@ const BK_DOC_TYPES=[
   ['other', ES?'Otro':'Other']
 ];
 function bkLabelOf(list,v){ const x=list.filter(function(o){return o[0]===v;})[0]; return x?x[1]:v; }
+/* Tamaño legible (KB/MB) a partir de bytes. */
+function bkFileSize(bytes){ const n=Number(bytes)||0; if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(0)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
+/* Extensiones permitidas — espejo de server/lib/booking-documents.js. */
+var BK_UP_EXT=['jpg','jpeg','png','webp','pdf','doc','docx'];
+function bkExtOk(name){ const s=String(name||''); const d=s.lastIndexOf('.'); const e=d>0?s.slice(d+1).toLowerCase():''; return BK_UP_EXT.indexOf(e)!==-1; }
+function bkUploadErr(code){
+  const m={BAD_EXTENSION:ES?'Extensión no permitida.':'Extension not allowed.',
+    BAD_MIME:ES?'Tipo de archivo no permitido.':'File type not allowed.',
+    BAD_SIZE:ES?'Tamaño de archivo inválido.':'Invalid file size.',
+    FILE_TOO_LARGE:ES?'El archivo supera el límite permitido.':'The file exceeds the size limit.',
+    STORAGE_NOT_READY:ES?'El almacenamiento aún no está disponible.':'Storage is not available yet.'};
+  return m[code]||(ES?'No se pudo subir el archivo.':'Could not upload the file.');
+}
 
 function bkCommsSection(b){
   const wrap=el('<div class="bk-sub"><h4>'+(ES?'Comunicaciones y documentos':'Communications & documents')+'</h4></div>');
@@ -778,10 +791,36 @@ function bkCommsSection(b){
     docs.forEach(function(doc){
       const row=el('<div class="bk-doc-row"></div>');
       row.appendChild(el('<span class="bdg bdg-muted">'+escapeHtml(bkLabelOf(BK_DOC_TYPES,doc.doc_type))+'</span>'));
-      row.appendChild(el('<a href="'+escapeHtml(doc.url)+'" target="_blank" rel="noopener">'+escapeHtml(doc.label)+'</a>'));
+      row.appendChild(el('<b class="bk-doc-name">'+escapeHtml(doc.label)+'</b>'));
+      // Metadatos: tipo/tamaño/fecha/quién (lo que exista).
+      const meta=[];
+      if(doc.source==='upload'){
+        if(doc.original_filename) meta.push(escapeHtml(doc.original_filename));
+        if(doc.file_size) meta.push(bkFileSize(doc.file_size));
+      }else meta.push(ES?'enlace externo':'external link');
+      if(doc.uploaded_by_name) meta.push(escapeHtml(doc.uploaded_by_name));
+      if(doc.sent_to_passenger_at) meta.push((ES?'enviado ':'sent ')+bkFmtDate((doc.uploaded_at||doc.created_at||'').slice(0,10)));
+      if(meta.length) row.appendChild(el('<span class="bk-doc-meta">'+meta.join(' · ')+'</span>'));
+
+      /* Ver/Descargar: para SUBIDAS se pide una URL firmada temporal; para
+         ENLACES se abre el enlace directamente. Nunca se expone la ruta. */
+      const viewB=el('<button class="mini-btn" type="button">'+(ES?'Ver':'View')+'</button>');
+      viewB.addEventListener('click',function(){
+        if(doc.source!=='upload' && doc.url){ window.open(doc.url,'_blank','noopener'); return; }
+        viewB.disabled=true;
+        apiGet('/api/admin-booking-document-download-url?'+bkQS({document_id:doc.id})).then(function(r){
+          viewB.disabled=false;
+          if(r.status===401){ onUnauthorized(); return; }
+          if(!r.ok||!r.data||!r.data.url){ adminToast(ES?'No se pudo abrir el documento.':'Could not open the document.'); return; }
+          window.open(r.data.url,'_blank','noopener');
+        }).catch(function(){ viewB.disabled=false; adminToast(ES?'No se pudo abrir.':'Could not open.'); });
+      });
+      row.appendChild(viewB);
+
       if(canWrite()){
-        const rm=el('<button class="mini-btn" type="button">'+(ES?'Quitar':'Remove')+'</button>');
+        const rm=el('<button class="mini-btn" type="button">'+(ES?'Eliminar':'Delete')+'</button>');
         rm.addEventListener('click',function(){
+          if(!confirm(ES?'¿Retirar este documento de la reserva?':'Remove this document from the booking?')) return;
           rm.disabled=true;
           apiPost('/api/admin-booking-document-save',{booking_id:b.id,action:'remove',document_id:doc.id}).then(function(r){
             if(r.status===401){ onUnauthorized(); return; }
@@ -795,14 +834,65 @@ function bkCommsSection(b){
     });
 
     if(canWrite()){
-      const add=el('<details class="bk-add"><summary>'+(ES?'Adjuntar documento':'Attach document')+'</summary></details>');
+      /* --- SUBIR ARCHIVO (flujo principal) --- */
+      const up=el('<details class="bk-add" open><summary>'+(ES?'Subir archivo':'Upload file')+'</summary></details>');
+      const uf=el('<div class="ed-row"></div>');
+      const uType=document.createElement('select');
+      BK_DOC_TYPES.forEach(function(o){ const op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; uType.appendChild(op); });
+      const uLabel=document.createElement('input'); uLabel.type='text'; uLabel.maxLength=160; uLabel.placeholder=ES?'Etiqueta (p. ej. Ticket AV1630)':'Label (e.g. Ticket AV1630)';
+      const uFile=document.createElement('input'); uFile.type='file';
+      uFile.accept='.jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      [uType,uLabel,uFile].forEach(function(x){ const w=el('<div class="ed-field"></div>'); w.appendChild(x); uf.appendChild(w); });
+      const bar=el('<div class="up-progress" style="display:none"><i></i></div>');
+      const uBtn=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Subir archivo':'Upload file')+'</button>');
+      const uMsg=el('<div class="bk-sub-hint"></div>');
+      up.appendChild(el('<div class="bk-sub-hint">'+(ES?'JPG, PNG, WEBP, PDF, DOC o DOCX. Se guarda en almacenamiento privado y se envía con enlace firmado.':'JPG, PNG, WEBP, PDF, DOC or DOCX. Stored privately and sent via a signed link.')+'</div>'));
+      up.appendChild(uf); up.appendChild(bar); up.appendChild(uBtn); up.appendChild(uMsg);
+
+      uBtn.addEventListener('click',function(){
+        const file=uFile.files&&uFile.files[0];
+        if(!uLabel.value.trim()){ adminToast(ES?'La etiqueta es obligatoria.':'The label is required.'); return; }
+        if(!file){ adminToast(ES?'Elige un archivo.':'Choose a file.'); return; }
+        if(!bkExtOk(file.name)){ adminToast(ES?'Tipo de archivo no permitido.':'File type not allowed.'); return; }
+        uBtn.disabled=true; uMsg.textContent=ES?'Preparando…':'Preparing…'; bar.style.display=''; bar.firstChild.style.width='2%';
+        apiPost('/api/admin-booking-document-upload-url',{
+          booking_id:b.id, doc_type:uType.value, label:uLabel.value.trim(),
+          filename:file.name, mime_type:file.type||'application/octet-stream', file_size:file.size
+        }).then(function(r){
+          if(r.status===401){ onUnauthorized(); return; }
+          if(r.status===503){ uBtn.disabled=false; bar.style.display='none'; uMsg.textContent=ES?'El almacenamiento aún no está disponible (falta aplicar 0020).':'Storage is not available yet (0020 not applied).'; return; }
+          if(!r.ok||!r.data||!r.data.signed_url){ uBtn.disabled=false; bar.style.display='none'; uMsg.textContent=(r.data&&r.data.error)?bkUploadErr(r.data.error):(ES?'No se pudo iniciar la subida.':'Could not start the upload.'); return; }
+          const info=r.data; uMsg.textContent=ES?'Subiendo…':'Uploading…';
+          const xhr=new XMLHttpRequest();
+          xhr.open('PUT', info.signed_url, true);
+          xhr.setRequestHeader('content-type', file.type||'application/octet-stream');
+          xhr.upload.onprogress=function(e){ if(e.lengthComputable){ bar.firstChild.style.width=Math.max(2,Math.round(e.loaded/e.total*100))+'%'; } };
+          xhr.onload=function(){
+            if(xhr.status>=200 && xhr.status<300){
+              uMsg.textContent=ES?'Confirmando…':'Confirming…'; bar.firstChild.style.width='100%';
+              apiPost('/api/admin-booking-document-confirm',{document_id:info.document_id}).then(function(cr){
+                uBtn.disabled=false; bar.style.display='none'; bar.firstChild.style.width='0%';
+                if(cr.status===401){ onUnauthorized(); return; }
+                if(!cr.ok){ uMsg.textContent=ES?'El archivo subió pero no se pudo confirmar.':'The file uploaded but could not be confirmed.'; return; }
+                uLabel.value=''; uFile.value=''; uMsg.textContent=''; adminToast(ES?'Documento subido':'Document uploaded'); load();
+              }).catch(function(){ uBtn.disabled=false; bar.style.display='none'; uMsg.textContent=ES?'No se pudo confirmar.':'Could not confirm.'; });
+            }else{ uBtn.disabled=false; bar.style.display='none'; uMsg.textContent=ES?'La subida falló.':'The upload failed.'; }
+          };
+          xhr.onerror=function(){ uBtn.disabled=false; bar.style.display='none'; uMsg.textContent=ES?'Error de red durante la subida.':'Network error during upload.'; };
+          xhr.send(file);
+        }).catch(function(){ uBtn.disabled=false; bar.style.display='none'; uMsg.textContent=ES?'No se pudo iniciar la subida.':'Could not start the upload.'; });
+      });
+      docBox.appendChild(up);
+
+      /* --- ENLACE EXTERNO (alternativa secundaria) --- */
+      const add=el('<details class="bk-add"><summary>'+(ES?'…o pegar un enlace externo':'…or paste an external link')+'</summary></details>');
       const f=el('<div class="ed-row"></div>');
       const tSel=document.createElement('select');
       BK_DOC_TYPES.forEach(function(o){ const op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; tSel.appendChild(op); });
-      const lab=document.createElement('input'); lab.type='text'; lab.maxLength=160; lab.placeholder=ES?'Etiqueta (p. ej. Ticket AV1630)':'Label (e.g. Ticket AV1630)';
+      const lab=document.createElement('input'); lab.type='text'; lab.maxLength=160; lab.placeholder=ES?'Etiqueta':'Label';
       const url=document.createElement('input'); url.type='url'; url.maxLength=2000; url.placeholder='https://…';
       [tSel,lab,url].forEach(function(x){ const w=el('<div class="ed-field"></div>'); w.appendChild(x); f.appendChild(w); });
-      const save=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Guardar documento':'Save document')+'</button>');
+      const save=el('<button class="mini-btn" type="button">'+(ES?'Guardar enlace':'Save link')+'</button>');
       save.addEventListener('click',function(){
         if(!lab.value.trim()||!/^https:\/\//i.test(url.value.trim())){
           adminToast(ES?'Etiqueta y enlace https son obligatorios.':'Label and an https link are required.'); return;
@@ -1154,8 +1244,15 @@ function bkScreen(o){
   const COLS = isStaff
     ? [ES?'Fecha':'Date', ES?'Código':'Code', 'Tour', ES?'Cliente':'Customer', ES?'Teléfono':'Phone', ES?'Viajeros':'Guests', ES?'Notas':'Notes']
     : [ES?'Fecha':'Date', ES?'Código':'Code', 'Tour', ES?'Cliente':'Customer', ES?'Teléfono':'Phone', ES?'Viajeros':'Guests', 'Total', ES?'Pago':'Payment', ES?'Reserva':'Booking', ES?'Canal':'Channel', ES?'Acciones':'Actions'];
+  /* Anchos por columna (Fase 9, corrección): con table-layout:fixed la tabla
+     ocupa el 100% del ancho y el texto largo se corta con ellipsis, en vez de
+     empujar la tabla y provocar scroll horizontal en desktop. */
+  const COLW = isStaff
+    ? ['9%','11%','22%','19%','14%','8%','17%']
+    : ['8%','9%','16%','14%','11%','6%','8%','8%','8%','7%','11%'];
   const wrap=el('<div class="bk-table-wrap"></div>');
-  const table=el('<table class="bk-table"><thead><tr>'+COLS.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody></tbody></table>');
+  const colg='<colgroup>'+COLW.map(function(w){return '<col style="width:'+w+'">';}).join('')+'</colgroup>';
+  const table=el('<table class="bk-table">'+colg+'<thead><tr>'+COLS.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody></tbody></table>');
   const tbody=table.querySelector('tbody');
   wrap.appendChild(table);
   p.appendChild(tblTitle); p.appendChild(wrap);
@@ -1261,6 +1358,7 @@ function bkScreen(o){
 
   /* --- carga --- */
   function loadCal(){
+    if(!isCal) return;                        // el calendario solo existe en la pantalla Calendario
     if(state.busyCal) return; state.busyCal=true;
     const b=bkMonthBounds(state.y,state.m);
     const q=baseParams(); q.date_from=b[0]; q.date_to=b[1]; q.sort='booking_date_asc';
@@ -1325,9 +1423,19 @@ function bkScreen(o){
   prevP.addEventListener('click',function(){ if(state.page>1){ state.page--; loadTable(); } });
   nextP.addEventListener('click',function(){ state.page++; loadTable(); });
 
-  /* --- arranque: mes actual --- */
-  (function(){ const b=bkMonthBounds(state.y,state.m); fromF.input.value=b[0]; toF.input.value=b[1]; })();
-  loadCal(); loadTable(); loadFinance();
+  /* --- arranque ---
+     Calendario: mes actual, navegable con ‹ ›.
+     Reservas: TODAS por defecto (from/to VACÍOS). Los filtros son opcionales
+     y solo se aplican al pulsar "Aplicar". Este era el bug: la tabla arrancaba
+     prefiltrada al mes actual y mostraba 0 si los datos estaban en otro mes. */
+  if(isCal){
+    const b=bkMonthBounds(state.y,state.m); fromF.input.value=b[0]; toF.input.value=b[1];
+    loadCal(); loadTable();
+  }else{
+    fromF.input.value=''; toF.input.value='';
+    loadTable();
+  }
+  loadFinance();
   return p;
 }
 
