@@ -117,12 +117,30 @@ function setClient(db) { CLIENT = makeClient(db); }
 
 function mockModule(rel, exp) { const p = require.resolve(BASE + rel); require.cache[p] = { id: p, filename: p, loaded: true, exports: exp }; }
 mockModule('/server/lib/supabase.js', { getSupabase: function () { return CLIENT; } });
+/* Compuerta de roles simulada. Fase 9: la ESCRITURA es solo del owner
+   (requireWriter) y registrar ventas es de owner+staff (requireSaleWriter);
+   el admin quedó en solo lectura. El mock replica esa matriz para que las
+   pruebas de rol sigan siendo reales y no una comodidad del arnés. */
+async function mockGate(req, res, allowed) {
+  if (allowed && allowed.indexOf(CURRENT_ROLE) === -1) { res.statusCode = 403; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ error: 'FORBIDDEN' })); return null; }
+  return { user_id: 'u-' + CURRENT_ROLE, role: CURRENT_ROLE, tenant_id: 'hook-adventure', email: 'x@y.z', full_name: 'X' };
+}
 mockModule('/server/lib/admin-auth.js', {
-  requireAdmin: async function (req, res, allowed) {
-    if (allowed && allowed.indexOf(CURRENT_ROLE) === -1) { res.statusCode = 403; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ error: 'FORBIDDEN' })); return null; }
-    return { user_id: 'u-' + CURRENT_ROLE, role: CURRENT_ROLE, tenant_id: 'hook-adventure', email: 'x@y.z', full_name: 'X' };
-  },
+  WRITE_ROLES: ['owner'], SALE_WRITE_ROLES: ['owner', 'staff'],
+  canWrite: function (r) { return r === 'owner'; },
+  canRecordSale: function (r) { return r === 'owner' || r === 'staff'; },
+  requireAdmin: mockGate,
+  requireOwner: function (req, res) { return mockGate(req, res, ['owner']); },
+  requireOwnerOrAdmin: function (req, res) { return mockGate(req, res, ['owner', 'admin']); },
+  requireWriter: function (req, res) { return mockGate(req, res, ['owner']); },
+  requireSaleWriter: function (req, res) { return mockGate(req, res, ['owner', 'staff']); },
   sameOrigin: function () { return true; }
+});
+/* La auditoría se registra en memoria: nunca debe bloquear ni ensuciar la BD
+   simulada, y así las pruebas pueden afirmar QUÉ se auditó. */
+const AUDIT = [];
+mockModule('/server/lib/admin-audit.js', {
+  recordAudit: async function (session, entry) { AUDIT.push({ role: session && session.role, entry: entry }); return true; }
 });
 mockModule('/server/lib/passenger-intake.js', { buildTravelRequirements: async function () { return CONTRACT; } });
 
@@ -353,9 +371,10 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   let hr = await run(startH, { method: 'POST', headers: {}, body: { booking_id: f.booking.id } });
   ok('30 owner inicia', hr.statusCode === 200 && j(hr).started === true);
 
+  // Fase 9: el admin pasó a SOLO LECTURA — iniciar una búsqueda es escritura → 403.
   f = freshDb(); CONTRACT = baseContract(f.booking); setClient(f.db); CURRENT_ROLE = 'admin';
   hr = await run(startH, { method: 'POST', headers: {}, body: { booking_id: f.booking.id } });
-  ok('31 admin inicia', hr.statusCode === 200 && j(hr).started === true);
+  ok('31 admin NO inicia (solo lectura)', hr.statusCode === 403 && j(hr).error === 'FORBIDDEN');
 
   CURRENT_ROLE = 'staff';
   hr = await run(startH, { method: 'POST', headers: {}, body: { booking_id: f.booking.id } });
@@ -909,10 +928,10 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   let e2eD2 = await run(startH, { method: 'POST', headers: {}, body: { booking_id: e2eD.booking.id } });
   ok('135 start: doble clic no duplica job', j(e2eD1).created === true && j(e2eD2).created === false && j(e2eD1).job.id === j(e2eD2).job.id && e2eD.db.travel_search_jobs.length === 1);
 
-  // 136 admin permitido
+  // 136 admin → 403 (Fase 9: solo lectura; no crea jobs)
   CURRENT_ROLE = 'admin'; let e2eA = freshDb(); CONTRACT = baseContract(e2eA.booking); setClient(e2eA.db);
   let e2eAH = await run(startH, { method: 'POST', headers: {}, body: { booking_id: e2eA.booking.id } });
-  ok('136 start: admin permitido', e2eAH.statusCode === 200 && j(e2eAH).started === true);
+  ok('136 start: admin rechazado y sin job creado', e2eAH.statusCode === 403 && e2eA.db.travel_search_jobs.length === 0);
 
   // 137 staff → 403
   CURRENT_ROLE = 'staff'; let e2eS = freshDb(); CONTRACT = baseContract(e2eS.booking); setClient(e2eS.db);

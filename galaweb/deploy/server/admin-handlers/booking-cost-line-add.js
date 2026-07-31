@@ -10,7 +10,8 @@
    ========================================================= */
 
 const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId, isUuid } = require('../lib/http');
-const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { requireWriter, sameOrigin } = require('../lib/admin-auth');
+const { recordAudit } = require('../lib/admin-audit');
 const { getSupabase } = require('../lib/supabase');
 const bf = require('../lib/booking-finance');
 
@@ -18,7 +19,7 @@ const ALLOWED_KEYS = ['booking_id', 'category', 'description', 'quantity', 'unit
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  const session = await requireAdmin(req, res, ['owner', 'admin']);
+  const session = await requireWriter(req, res);   // Fase 9: escritura = SOLO owner
   if (!session) return;
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 
@@ -56,6 +57,12 @@ module.exports = async function handler(req, res) {
     }
 
     const line = ins.data;
+    await recordAudit(session, {
+      action: 'cost_line.add', entity_type: 'booking', entity_id: body.booking_id, always: true,
+      before: null,
+      after: { line_id: line.id, category: line.category, quantity: Number(line.quantity),
+        unit_cost_cents: line.unit_cost_cents, total_cents: line.total_cents, vendor: line.vendor }
+    });
     return sendJson(res, 200, {
       added: true, cost_status: 'estimated',
       line: { id: line.id, category: line.category, description: line.description, quantity: Number(line.quantity),

@@ -12,6 +12,7 @@
 
 const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('../lib/http');
 const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { recordAudit } = require('../lib/admin-audit');
 const pricing = require('../lib/package-pricing');
 
 const ALLOWED_KEYS = ['package_id', 'base_price_cents'];
@@ -44,6 +45,10 @@ module.exports = async function handler(req, res) {
   try {
     const r = await pricing.updateLivePrice({ tenantId: tenant, packageId: b.package_id, basePriceCents: b.base_price_cents, userId: session.user_id });
     if (!r.ok) return mapError(res, r.error);
+    await recordAudit(session, {
+      action: 'package_price.update', entity_type: 'package_price', entity_id: b.package_id, always: true,
+      before: null, after: { base_price_cents: b.base_price_cents, pricing_version: r.version }
+    });
     return sendJson(res, 200, { updated: true, price: r.published, pricing_version: r.version });
   } catch (err) {
     logServer('package-price-update', err && err.message);

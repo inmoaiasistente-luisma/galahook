@@ -9,11 +9,12 @@
 
 const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('../lib/http');
 const { getSupabase } = require('../lib/supabase');
-const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { requireWriter, sameOrigin } = require('../lib/admin-auth');
+const { recordAudit } = require('../lib/admin-audit');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  const session = await requireAdmin(req, res, ['owner', 'admin']);
+  const session = await requireWriter(req, res);   // Fase 9: escritura = SOLO owner
   if (!session) return;
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 
@@ -34,6 +35,10 @@ module.exports = async function handler(req, res) {
       .select();
     if (upd.error) { logServer('qr-revoke', upd.error.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to revoke the code'); }
     if (!upd.data || upd.data.length === 0) return sendError(res, 404, 'NOT_FOUND', 'QR access not found');
+    await recordAudit(session, {
+      action: 'qr.revoke', entity_type: 'booking', entity_id: body.booking_id, always: true,
+      before: { active: true }, after: { active: false, revoked_at: upd.data[0].revoked_at }
+    });
     return sendJson(res, 200, { revoked: true, revokedAt: upd.data[0].revoked_at });
   } catch (err) {
     logServer('qr-revoke', err && err.message);

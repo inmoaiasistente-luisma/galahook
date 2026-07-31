@@ -87,10 +87,10 @@ const add = read('server/admin-handlers/booking-cost-line-add.js');
 const del = read('server/admin-handlers/booking-cost-line-delete.js');
 const conf = read('server/admin-handlers/booking-costs-confirm.js');
 const get = read('server/admin-handlers/booking-finance.js');
-ok('30 add: owner/admin + sameOrigin + POST + valida vía lib', /requireAdmin\(req, res, \['owner', 'admin'\]\)/.test(add) && /sameOrigin\(req\)/.test(add) && /bf\.validateCostLine\(body\)/.test(add) && /'POST'/.test(add));
+ok('30 add: escritura SOLO owner + sameOrigin + POST + valida vía lib', /requireWriter\(req, res\)/.test(add) && /sameOrigin\(req\)/.test(add) && /bf\.validateCostLine\(body\)/.test(add) && /'POST'/.test(add));
 ok('31 add: NO envía total_cents (columna GENERATED)', !/total_cents:/.test(add.slice(add.indexOf('.insert('), add.indexOf('.select()'))));
 ok('32 add: agregar deja cost_status estimated', /cost_status: 'estimated'/.test(add));
-ok('33 delete: baja lógica active=false + recomputa estado', /active: false/.test(del) && /'estimated'/.test(del) && /'unset'/.test(del) && /requireAdmin\(req, res, \['owner', 'admin'\]\)/.test(del));
+ok('33 delete: baja lógica active=false + recomputa estado', /active: false/.test(del) && /'estimated'/.test(del) && /'unset'/.test(del) && /requireWriter\(req, res\)/.test(del));
 ok('34 confirm: fija cost_cents = suma + cost_status confirmed + actor/fecha',
   /cost_cents: fin\.cost_total_cents/.test(conf) && /cost_status: 'confirmed'/.test(conf) && /cost_confirmed_at:/.test(conf) && /cost_confirmed_by_user_id: session\.user_id/.test(conf));
 const confUpdate = (conf.match(/\.update\(\{([\s\S]*?)\}\)/) || [null, ''])[1];

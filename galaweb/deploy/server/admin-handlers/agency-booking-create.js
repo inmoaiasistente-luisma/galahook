@@ -6,7 +6,8 @@
    Registra una venta directa (agencia / teléfono / presencial).
    No pasa por Stripe: no crea PaymentIntent ni acepta uno.
 
-   Autorizado para owner, admin y staff. La identidad del vendedor,
+   Fase 9 — autorizado para owner y staff (el admin es SOLO LECTURA y no
+   puede registrar ventas). La identidad del vendedor,
    la fecha contable y todos los estados los fija el SERVIDOR desde
    la sesión validada — el navegador no puede falsificarlos.
 
@@ -16,7 +17,8 @@
 
 const crypto = require('crypto');
 const { getSupabase } = require('../lib/supabase');
-const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { requireSaleWriter, sameOrigin } = require('../lib/admin-auth');
+const { recordAudit } = require('../lib/admin-audit');
 const { notifyBooking } = require('../lib/booking-email-service');
 const { ensurePassengerForm } = require('../lib/passenger-intake');
 const { sendInvitation } = require('../lib/passenger-intake-emails');
@@ -73,8 +75,9 @@ async function findByRequestId(supabase, tenant, requestId) {
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
 
-  // Los tres roles pueden registrar una venta directa.
-  const session = await requireAdmin(req, res, ['owner', 'admin', 'staff']);
+  // Fase 9: registrar una venta es la ÚNICA escritura del staff. El admin es
+  // solo lectura y por eso NO puede registrar ventas.
+  const session = await requireSaleWriter(req, res);
   if (!session) return;                                   // 401/403 ya enviado
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 
@@ -205,6 +208,13 @@ module.exports = async function handler(req, res) {
           const form = await ensurePassengerForm(data);
           if (form) await sendInvitation(data, form);
         } catch (e) { logServer('agency-create', 'intake failed'); }
+        await recordAudit(session, {
+          action: 'sale.create', entity_type: 'booking', entity_id: data.booking_code, always: true,
+          before: null,
+          after: { tour_id: data.tour_id, booking_date: data.booking_date, guests: data.guests,
+            amount_cents: data.amount_cents, payment_method: data.payment_method,
+            sales_channel: data.sales_channel, sale_source: data.sale_source }
+        });
         const view = session.role === 'staff' ? pick(data, STAFF_VIEW) : data;
         return sendJson(res, 200, { booking: view });
       }

@@ -12,7 +12,8 @@
 
 const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, getTenantId } = require('../lib/http');
 const { getSupabase } = require('../lib/supabase');
-const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { requireWriter, sameOrigin } = require('../lib/admin-auth');
+const { recordAudit } = require('../lib/admin-audit');
 
 const BOOKING_STATUSES = ['new', 'pending_payment', 'confirmed', 'cancelled', 'completed', 'failed'];
 const FIELDS = 'id,booking_code,request_type,tour_id,tour_name,unit,booking_date,guests,' +
@@ -22,7 +23,7 @@ const FIELDS = 'id,booking_code,request_type,tour_id,tour_name,unit,booking_date
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
   // Solo owner y admin. staff → 403 FORBIDDEN (aunque llame al endpoint directamente).
-  const session = await requireAdmin(req, res, ['owner', 'admin']);
+  const session = await requireWriter(req, res);   // Fase 9: escritura = SOLO owner
   if (!session) return;                               // 401/403 ya enviado
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 
@@ -42,6 +43,15 @@ module.exports = async function handler(req, res) {
 
   try {
     const supabase = getSupabase();
+
+    /* Estado anterior, para la auditoría automática (valores antes/después). */
+    let prevStatus = null;
+    try {
+      const prev = await supabase.from('bookings')
+        .select('booking_status').eq('id', booking_id).eq('tenant_id', tenant).maybeSingle();
+      if (prev && prev.data) prevStatus = prev.data.booking_status;
+    } catch (e) { /* la auditoría nunca bloquea la actualización */ }
+
     const upd = await supabase.from('bookings')
       .update({ booking_status: booking_status })       // solo este campo
       .eq('id', booking_id).eq('tenant_id', tenant)
@@ -51,6 +61,14 @@ module.exports = async function handler(req, res) {
     const rows = upd.data || [];
     if (rows.length === 0) return sendError(res, 404, 'NOT_FOUND', 'Booking not found');
     if (rows.length !== 1) { logServer('admin-booking-update', 'unexpected multi-row update'); return sendError(res, 500, 'INTERNAL_ERROR', 'Update error'); }
+
+    await recordAudit(session, {
+      action: 'booking.status_update',
+      entity_type: 'booking',
+      entity_id: rows[0].booking_code || booking_id,
+      before: { booking_status: prevStatus },
+      after: { booking_status: booking_status }
+    });
 
     // Nota: cancelar una reserva pagada NO reembolsa en Stripe (no se llama a Stripe aquí).
     return sendJson(res, 200, { booking: rows[0], refundIssued: false });

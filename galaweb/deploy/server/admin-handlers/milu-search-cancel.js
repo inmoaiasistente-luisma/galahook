@@ -7,14 +7,14 @@
    ========================================================= */
 
 const { sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys, isUuid } = require('../lib/http');
-const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { requireWriter, sameOrigin } = require('../lib/admin-auth');
 const milu = require('../lib/milu-tourism');
 
 const ALLOWED = ['booking_id', 'job_id'];
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return methodNotAllowed(res);
-  const session = await requireAdmin(req, res, ['owner', 'admin']);
+  const session = await requireWriter(req, res);   // Fase 9: escritura = SOLO owner
   if (!session) return;
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 

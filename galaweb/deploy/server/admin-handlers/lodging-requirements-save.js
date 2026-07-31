@@ -14,7 +14,7 @@
 
 const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, isUuid, isRealYmd, getTenantId } = require('../lib/http');
 const { getSupabase } = require('../lib/supabase');
-const { requireAdmin, sameOrigin } = require('../lib/admin-auth');
+const { requireWriter, sameOrigin } = require('../lib/admin-auth');
 
 const ALLOWED_KEYS = ['id', 'form_id', 'destination', 'lodging_required', 'check_in_date', 'check_out_date',
   'guest_count', 'rooms_required', 'room_preferences', 'approximate_budget_cents',
@@ -34,7 +34,7 @@ function optText(v, max) { return v == null ? null : (typeof v === 'string' && v
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  const session = await requireAdmin(req, res, ['owner', 'admin']);
+  const session = await requireWriter(req, res);   // Fase 9: escritura = SOLO owner
   if (!session) return;
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
 
