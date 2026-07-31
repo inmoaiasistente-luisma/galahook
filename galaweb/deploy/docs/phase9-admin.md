@@ -145,25 +145,55 @@ recordatorios no encuentran sus tipos de correo.
 
 ---
 
+## 6-bis. Migración 0020 — subida real de documentos (PREPARADA, NO APLICADA)
+
+`supabase/migrations/0020_booking_document_uploads.sql`
+
+- Bucket **privado** `booking-documents` (15 MiB, tipos JPG/PNG/WEBP/PDF/DOC/DOCX).
+- Metadatos de subida en `booking_documents`: `source`, `storage_path`,
+  `original_filename`, `mime_type`, `file_size`, `uploaded_at`,
+  `sent_to_passenger_at`.
+- `url` pasa a **nullable** (una subida no tiene enlace externo) + CHECK de
+  coherencia (enlace→url, subida→storage_path).
+
+Aditiva: no borra nada. Bucket privado sin políticas anon/authenticated —
+solo el backend accede y siempre entrega **URLs firmadas** temporales. El
+alta de **enlace externo** sigue funcionando aunque 0020 no esté aplicada.
+
+**Mientras no se aplique**, subir archivos responde `STORAGE_NOT_READY`; los
+enlaces externos siguen operativos.
+
+---
+
 ## 7. Variables de entorno nuevas
 
 ```
-CRON_SECRET=   # secreto del cron de recordatorios (32+ bytes aleatorios)
+CRON_SECRET=          # secreto del cron de recordatorios (32+ bytes aleatorios)
+DOCUMENT_MAX_BYTES=15728640   # límite por archivo (debe coincidir con el bucket)
 ```
+
+Flujo de subida real (owner): `Reservas → abrir reserva → Comunicaciones y
+documentos → Subir archivo`. El navegador pide una URL firmada, sube el
+archivo directamente a Storage y lo confirma. Ver/Descargar usan una URL
+firmada de corta duración; Enviar adjunta el archivo al correo (o un enlace
+firmado si es grande).
 
 ---
 
 ## 8. Cómo probar en Preview
 
-1. Aplicar `0019` en Supabase Preview.
-2. Configurar `CRON_SECRET` en Vercel (Preview).
+1. Aplicar `0019` (ya hecho) y **`0020`** en Supabase Preview.
+2. Configurar `CRON_SECRET` y `DOCUMENT_MAX_BYTES` en Vercel (Preview).
 3. Entrar como **owner** → comprobar las 7 entradas del menú.
-4. **Reservas** → abrir una reserva → verificar en el mismo detalle:
-   pasajeros, logística, QR, notificaciones, comunicaciones, costos y
-   "Vuelos — próximamente".
-5. En *Comunicaciones y documentos*: adjuntar un documento con enlace https,
-   enviarlo, y comprobar que aparece en el historial con destinatario, fecha,
-   tipo y usuario.
+4. **Reservas** → debe mostrar **todas** las reservas al entrar (fechas
+   vacías). Verificar sin scroll horizontal en 1366/1440/1920. "Ver todo"
+   limpia; "Hoy"/"Este mes" filtran; búsqueda por código/cliente/tour.
+5. **Calendario** → mes actual, navegar con ‹ ›, clic en un día lista sus
+   reservas y cada una abre el detalle unificado.
+6. Abrir una reserva → *Comunicaciones y documentos* → **Subir archivo**
+   (PDF/imagen): ver la barra de progreso, que aparezca en la lista con
+   tamaño y quién lo subió, **Ver** (abre con URL firmada) y **Enviar**
+   (llega adjunto al correo). Probar también un tipo no permitido (rechazo).
 6. Pausar y reanudar los recordatorios de esa reserva.
 7. **Configuración → Recordatorios** → "Ejecutar barrido ahora" y leer el
    resumen (revisadas / corresponden / enviados / ya enviados).
@@ -182,7 +212,7 @@ CRON_SECRET=   # secreto del cron de recordatorios (32+ bytes aleatorios)
 
 | | |
 |---|---|
-| Suites | 17 |
-| Pruebas | **1057 PASS · 0 FAIL** |
-| `node --check` | **111 / 111** |
-| `vercel.json` | válido (58 rewrites, 1 cron) |
+| Suites | 18 |
+| Pruebas | **1102 PASS · 0 FAIL** |
+| `node --check` | **116 / 116** |
+| `vercel.json` | válido (61 rewrites, 1 cron) |
