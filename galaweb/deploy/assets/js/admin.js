@@ -1266,45 +1266,41 @@ function bkDeleteBooking(b, onDone){
 /* Insignia TEST para reservas de prueba (se administran desde Reservas). */
 function bkTestBadge(b){ return b && b.is_test ? ' <span class="bdg bdg-warn bk-test">TEST</span>' : ''; }
 
+/* Fila de Reservas (owner/admin). Diseño limpio: 8 columnas, toda la fila
+   clickeable (un clic o doble clic) abre el MISMO detalle unificado. El icono
+   de eliminar (al extremo derecho) solo lo ve el owner. */
 function bkAdminRow(b, open, opts){
   opts=opts||{};
-  const tr=document.createElement('tr');
+  const tr=document.createElement('tr'); tr.className='bk-rowclick';
   const isQuote=b.request_type==='quote';
-  tr.innerHTML='<td title="'+escapeHtml(bkFmtDate(b.booking_date))+'">'+bkFmtDate(b.booking_date)+'</td>'
-    +'<td class="mono">'+escapeHtml(b.booking_code||'')+bkTestBadge(b)+'</td>'
-    +'<td class="ell" title="'+escapeHtml(b.tour_name||'')+'">'+escapeHtml(b.tour_name||'')+'</td>'
+  tr.innerHTML='<td class="mono">'+escapeHtml(b.booking_code||'')+bkTestBadge(b)+'</td>'
     +'<td class="ell" title="'+escapeHtml(b.customer_name||'')+'">'+escapeHtml(b.customer_name||'')+'</td>'
-    +'<td class="ell" title="'+escapeHtml(b.customer_phone||'')+'">'+escapeHtml(b.customer_phone||'—')+'</td>'
+    +'<td class="ell" title="'+escapeHtml(b.tour_name||'')+'">'+escapeHtml(b.tour_name||'')+'</td>'
+    +'<td>'+bkFmtDate(b.booking_date)+'</td>'
     +'<td class="num">'+escapeHtml(b.guests)+'</td>'
     +'<td class="num">'+(isQuote?(ES?'Cotización':'Quote'):bkMoney(b.amount_cents,b.currency))+'</td>'
-    +'<td>'+bkBadge(b.payment_status, BK_PAY_KIND[b.payment_status])+'</td>'
     +'<td>'+bkBadge(b.booking_status, BK_BOOK_KIND[b.booking_status])+'</td>'
-    +'<td>'+(b.sales_channel==='agency'
-        ? bkBadge(ES?'agencia':'agency','info')+(b.payment_method?' <small class="bk-meth">'+escapeHtml(b.payment_method)+'</small>':'')
-        : bkBadge('web','muted'))+'</td>';
-  const td=document.createElement('td'); td.className='bk-actions';
-  const btn=el('<button class="mini-btn" type="button">'+(ES?'Ver':'View')+'</button>');
-  btn.addEventListener('click',function(e){ e.stopPropagation(); open(b); });
-  td.appendChild(btn);
+    +'<td>'+bkBadge(b.payment_status, BK_PAY_KIND[b.payment_status])+'</td>';
   if(canWrite()){
-    const del=el('<button class="mini-btn bk-del" type="button" title="'+(ES?'Eliminar':'Delete')+'">🗑</button>');
+    const td=document.createElement('td'); td.className='bk-del-cell';
+    const del=el('<button class="bk-del-icon" type="button" title="'+(ES?'Eliminar':'Delete')+'" aria-label="'+(ES?'Eliminar':'Delete')+'">🗑</button>');
     del.addEventListener('click',function(e){ e.stopPropagation(); bkDeleteBooking(b, opts.onChange); });
-    td.appendChild(del);
+    td.appendChild(del); tr.appendChild(td);
   }
-  tr.appendChild(td);
+  tr.addEventListener('click',function(){ open(b); });
   tr.addEventListener('dblclick',function(){ open(b); });
   return tr;
 }
-/* Fila de STAFF: sin columnas financieras y SIN botones ni selects. */
+/* Fila de STAFF: operativa, sin dinero, sin botones. Fila clickeable. */
 function bkStaffRow(b, open){
-  const tr=document.createElement('tr');
+  const tr=document.createElement('tr'); tr.className='bk-rowclick';
   tr.innerHTML='<td>'+bkFmtDate(b.booking_date)+'</td>'
     +'<td class="mono">'+escapeHtml(b.booking_code||'')+'</td>'
     +'<td class="ell" title="'+escapeHtml(b.tour_name||'')+'">'+escapeHtml(b.tour_name||'')+'</td>'
     +'<td class="ell" title="'+escapeHtml(b.customer_name||'')+'">'+escapeHtml(b.customer_name||'')+'</td>'
-    +'<td class="ell" title="'+escapeHtml(b.customer_phone||'')+'">'+escapeHtml(b.customer_phone||'—')+'</td>'
     +'<td class="num">'+escapeHtml(b.guests)+'</td>'
     +'<td class="ell" title="'+escapeHtml(b.notes||'')+'">'+escapeHtml(b.notes||'')+'</td>';
+  tr.addEventListener('click',function(){ open(b); });
   tr.addEventListener('dblclick',function(){ open(b); });
   return tr;
 }
@@ -1369,11 +1365,15 @@ function bkScreen(o){
     sortF=bkSelectField(ES?'Orden':'Sort',[['newest',ES?'Más recientes':'Newest'],['oldest',ES?'Más antiguas':'Oldest'],['booking_date_asc',ES?'Fecha viaje ↑':'Travel date ↑'],['booking_date_desc',ES?'Fecha viaje ↓':'Travel date ↓']]);
     chanF=bkSelectField(ES?'Canal':'Channel',[['',ES?'Todos':'All'],['web','web'],['agency',ES?'agencia':'agency']]);
     methF=bkSelectField(ES?'Método de pago':'Payment method',[['',ES?'Todos':'All'],['stripe','stripe'],['cash','cash'],['card','card'],['bank_transfer','bank_transfer'],['zelle','zelle'],['other','other']]);
+    /* Filtros avanzados plegados: la barra queda compacta (búsqueda + fechas)
+       y la tabla es la protagonista. Se abren con "Más filtros". */
+    const more=el('<details class="bk-more-filters"><summary>'+(ES?'Más filtros':'More filters')+'</summary></details>');
     const row2=el('<div class="bk-frow"></div>');
     row2.appendChild(typeF.wrap); row2.appendChild(payF.wrap); row2.appendChild(bookF.wrap); row2.appendChild(sortF.wrap);
     const row3=el('<div class="bk-frow"></div>');
     row3.appendChild(chanF.wrap); row3.appendChild(methF.wrap);
-    fcard.appendChild(row2); fcard.appendChild(row3);
+    more.appendChild(row2); more.appendChild(row3);
+    fcard.appendChild(more);
   }
   const btns=el('<div class="bk-fbtns"></div>');
   const applyB=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Aplicar':'Apply')+'</button>');
@@ -1385,17 +1385,23 @@ function bkScreen(o){
   /* Registrar una venta ya no vive aquí: tiene su propia pantalla (Ventas). */
   if(!isCal) p.appendChild(fcard);
 
-  /* --- tabla --- */
+  /* --- tabla ---
+     Diseño limpio (petición del owner): pocas columnas, aireada, la tabla es
+     la protagonista. Teléfono y canal se ven en el detalle, no aquí.
+       Código · Cliente · Tour · Fecha · Pax · Total · Reserva · Pago
+     El icono de eliminar (columna final, estrecha) es EXCLUSIVO del owner. */
+  const rowOwner = !isStaff && canWrite();
   const tblTitle=el('<div class="bk-tbl-title"></div>');
   const COLS = isStaff
-    ? [ES?'Fecha':'Date', ES?'Código':'Code', 'Tour', ES?'Cliente':'Customer', ES?'Teléfono':'Phone', ES?'Viajeros':'Guests', ES?'Notas':'Notes']
-    : [ES?'Fecha':'Date', ES?'Código':'Code', 'Tour', ES?'Cliente':'Customer', ES?'Teléfono':'Phone', ES?'Viajeros':'Guests', 'Total', ES?'Pago':'Payment', ES?'Reserva':'Booking', ES?'Canal':'Channel', ES?'Acciones':'Actions'];
-  /* Anchos por columna (Fase 9, corrección): con table-layout:fixed la tabla
-     ocupa el 100% del ancho y el texto largo se corta con ellipsis, en vez de
-     empujar la tabla y provocar scroll horizontal en desktop. */
+    ? [ES?'Fecha':'Date', ES?'Código':'Code', 'Tour', ES?'Cliente':'Customer', ES?'Viajeros':'Guests', ES?'Notas':'Notes']
+    : [ES?'Código':'Code', ES?'Cliente':'Customer', 'Tour', ES?'Fecha':'Date', 'Pax', 'Total', ES?'Reserva':'Booking', ES?'Pago':'Payment'].concat(rowOwner?['']:[]);
+  /* Anchos: código/fecha/pax/total/badges FIJOS; cliente y tour FLEXIBLES.
+     table-layout:fixed → 100% del ancho, sin scroll horizontal en desktop. */
   const COLW = isStaff
-    ? ['9%','12%','24%','20%','15%','8%','12%']
-    : ['7%','11%','15%','13%','11%','6%','8%','8%','8%','8%','13%'];
+    ? ['11%','14%','28%','25%','9%','13%']
+    : (rowOwner
+        ? ['13%','21%','23%','11%','6%','11%','8%','8%','5%']
+        : ['13%','22%','24%','11%','6%','12%','8%','8%']);
   const wrap=el('<div class="bk-table-wrap"></div>');
   const colg='<colgroup>'+COLW.map(function(w){return '<col style="width:'+w+'">';}).join('')+'</colgroup>';
   const table=el('<table class="bk-table">'+colg+'<thead><tr>'+COLS.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody></tbody></table>');

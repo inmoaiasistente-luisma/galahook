@@ -213,11 +213,29 @@ ok('48 el calendario dibuja la rejilla de inmediato (no depende del fetch)',
   /if\(isCal\)\{[\s\S]{0,160}renderCal\(\);\s*\/\/[^\n]*\n\s*loadCal\(\); loadTable\(\);/.test(adm));
 
 /* Tabla — encabezados legibles. */
-ok('49 encabezados sin truncar: padding y tipografía compactos, sin ellipsis en th',
-  /table\.bk-table thead th\{[^}]*font-size:10\.5px;[^}]*padding:11px 9px;[^}]*overflow:visible/.test(html));
-ok('50 columnas clave (código/total/estados/canal/acciones) no se recortan',
+ok('49 encabezados sin truncar: filas aireadas (54px), th sin ellipsis',
+  /table\.bk-table thead th\{[^}]*font-size:10\.5px;[^}]*padding:14px 12px;[^}]*overflow:visible/.test(html) &&
+  /table\.bk-table tbody td\{padding:0 12px;height:54px/.test(html));
+ok('50 columnas clave (código/total/estados) no se recortan',
   /table\.bk-table td\.mono,table\.bk-table td\.num\{overflow:visible;\}/.test(html) &&
-  /td\.bk-actions\{overflow:visible/.test(html));
+  /td\.bk-del-cell\{overflow:visible/.test(html));
+
+/* Tabla limpia (petición final): 8 columnas, sin teléfono/canal/acciones/Ver,
+   fila entera clickeable, icono de eliminar solo owner, filtros plegables. */
+const rowAdmin = adm.slice(adm.indexOf('function bkAdminRow'), adm.indexOf('function bkStaffRow'));
+ok('65 la fila de reservas ya no muestra teléfono, canal ni el botón Ver',
+  !/customer_phone/.test(rowAdmin) && !/sales_channel/.test(rowAdmin) && !/'Ver':'View'/.test(rowAdmin));
+ok('66 columnas exactas: Código, Cliente, Tour, Fecha, Pax, Total, Reserva, Pago',
+  /\[ES\?'Código':'Code', ES\?'Cliente':'Customer', 'Tour', ES\?'Fecha':'Date', 'Pax', 'Total', ES\?'Reserva':'Booking', ES\?'Pago':'Payment'\]/.test(adm));
+ok('67 toda la fila es clickeable (click + dblclick) y usa cursor pointer',
+  /tr\.className='bk-rowclick'/.test(rowAdmin) &&
+  /tr\.addEventListener\('click',function\(\)\{ open\(b\); \}\)/.test(rowAdmin) &&
+  /tr\.addEventListener\('dblclick'/.test(rowAdmin) &&
+  /tbody tr\.bk-rowclick\{cursor:pointer;\}/.test(html));
+ok('68 icono de eliminar SOLO owner (canWrite), al extremo derecho, con stopPropagation',
+  /if\(canWrite\(\)\)\{[\s\S]*?bk-del-cell[\s\S]*?bk-del-icon[\s\S]*?e\.stopPropagation\(\); bkDeleteBooking/.test(rowAdmin));
+ok('69 filtros avanzados plegados en "Más filtros" (barra compacta)',
+  /bk-more-filters/.test(adm) && /Más filtros|More filters/.test(adm) && /\.bk-more-filters>summary/.test(html));
 ok('51 texto secundario con tooltip (title) en tour/cliente/teléfono',
   /<td class="ell" title="'\+escapeHtml\(b\.tour_name/.test(adm) && /title="'\+escapeHtml\(b\.customer_name/.test(adm));
 

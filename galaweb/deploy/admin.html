@@ -203,17 +203,32 @@
   table.bk-table{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:fixed;}
   /* Padding y tipografía compactos para que los encabezados (GUESTS, CHANNEL…)
      NO se trunquen a GUE…/CHAN… en desktop. */
+  /* Tabla limpia y aireada (mismo estilo de referencia, NUESTROS colores):
+     encabezados suaves, filas altas, separador tenue, la tabla es protagonista. */
   table.bk-table thead th{position:sticky;top:0;z-index:2;background:var(--a-bg-2);color:var(--a-text-soft);
-    font-weight:700;font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;text-align:left;padding:11px 9px;white-space:nowrap;
+    font-weight:700;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;text-align:left;padding:14px 12px;white-space:nowrap;
     overflow:visible;border-bottom:1px solid var(--a-border);}
-  table.bk-table tbody td{padding:0 9px;height:48px;color:var(--a-text);border-bottom:1px solid var(--a-border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  /* Columnas clave nunca se recortan: código, total, estados y canal completos. */
+  table.bk-table tbody td{padding:0 12px;height:54px;color:var(--a-text);border-bottom:1px solid var(--a-border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* Columnas clave nunca se recortan: código, total y badges completos. */
   table.bk-table td.mono,table.bk-table td.num{overflow:visible;}
-  table.bk-table td.bk-actions{overflow:visible;display:flex;align-items:center;gap:6px;height:48px;}
-  table.bk-table td.bk-actions .mini-btn{padding:6px 10px;}
-  .bk-del{color:var(--a-bad-tx);font-size:14px;line-height:1;padding:6px 9px;}
-  .bk-del:hover{background:var(--a-bad-bg);border-color:var(--a-bad-bd);}
+  table.bk-table tbody tr.bk-rowclick{cursor:pointer;}
   .bk-test{font-size:9px;padding:2px 6px;margin-left:6px;vertical-align:middle;}
+  /* Icono de eliminar (owner): discreto, al extremo derecho; se resalta al pasar. */
+  table.bk-table td.bk-del-cell{overflow:visible;text-align:right;}
+  .bk-del-icon{background:transparent;border:1px solid transparent;border-radius:7px;padding:5px 7px;font-size:14px;line-height:1;color:var(--a-text-mut);cursor:pointer;opacity:.5;transition:.15s;}
+  tr:hover .bk-del-icon{opacity:1;}
+  .bk-del-icon:hover{color:var(--a-bad-tx);background:var(--a-bad-bg);border-color:var(--a-bad-bd);}
+  /* Botón eliminar del detalle (texto) conserva su estilo. */
+  .bk-del{color:var(--a-bad-tx);}
+  .bk-del:hover{background:var(--a-bad-bg);border-color:var(--a-bad-bd);}
+  /* Filtros avanzados plegables — barra compacta. */
+  .bk-more-filters{margin-top:4px;}
+  .bk-more-filters>summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--a-text-soft);padding:6px 0;list-style:none;}
+  .bk-more-filters>summary::-webkit-details-marker{display:none;}
+  .bk-more-filters>summary::before{content:'+ ';font-weight:800;}
+  .bk-more-filters[open]>summary::before{content:'– ';}
+  .bk-more-filters>summary:hover{color:var(--a-text);}
+  .bk-more-filters[open]>summary{margin-bottom:10px;}
   table.bk-table tbody tr:last-child td{border-bottom:0;}
   table.bk-table tbody tr:nth-child(even){background:rgba(17,48,47,.018);}
   table.bk-table tbody tr:hover{background:var(--a-bg-2);cursor:pointer;}
