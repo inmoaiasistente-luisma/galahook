@@ -348,6 +348,68 @@ ok('19 buildAuditRow: sin sesión o sin acción → null',
     vj.rewrites.some(function (r) { return r.source === '/api/admin-reminders-run'; }) &&
     vj.rewrites.some(function (r) { return r.source === '/api/admin-reminders-toggle'; }));
 
-  console.log('\n=== RESULTADO FASE 9 (permisos + auditoría + recordatorios): ' + pass + ' PASS · ' + fail + ' FAIL ===');
+  /* =====================================================================
+     D) COMUNICACIONES Y DOCUMENTOS DESDE LA RESERVA
+     ===================================================================== */
+
+  const comms = read('server/admin-handlers/booking-comms.js');
+  const docSave = read('server/admin-handlers/booking-document-save.js');
+  const send = read('server/admin-handlers/booking-communication-send.js');
+
+  ok('56 la lectura de la sección la ven owner, admin y staff',
+    /requireAdmin\(req, res, \['owner', 'admin', 'staff'\]\)/.test(comms));
+
+  ok('57 el staff NO ve documentos con importes (filtrado en el servidor)',
+    /STAFF_HIDDEN_DOCS/.test(comms) && /'receipt'/.test(comms) && /isStaff/.test(comms));
+
+  ok('58 la sección no se cae si 0019 no está aplicada (storage_ready)',
+    /storage_ready/.test(comms) && /storageReady = false/.test(comms));
+
+  ok('59 enviar y adjuntar documentos es SOLO del owner',
+    /requireWriter\(req, res\)/.test(send) && /requireWriter\(req, res\)/.test(docSave));
+
+  ok('60 los documentos exigen enlace https (nunca http en claro)',
+    /isHttpsUrl/.test(docSave) && /\^https:/.test(docSave));
+
+  ok('61 retirar un documento es baja lógica, no borrado',
+    /active: false/.test(docSave) && !/\.delete\(/.test(docSave));
+
+  ok('62 el documento enviado debe pertenecer A ESA reserva',
+    /\.eq\('booking_id', body\.booking_id\)/.test(send) && /DOCUMENT_NOT_FOUND/.test(send));
+
+  ok('63 cada envío registra destinatario, tipo, estado, archivo y usuario',
+    /recipient: recipient/.test(send) && /message_type: body\.message_type/.test(send) &&
+    /status: status/.test(send) && /document_label:/.test(send) &&
+    /sent_by_user_id: session\.user_id/.test(send) && /sent_by_name: session\.full_name/.test(send));
+
+  ok('64 un fallo de envío se registra como failed y responde error honesto',
+    /status = 'failed'/.test(send) && /SEND_FAILED/.test(send));
+
+  ok('65 si la bitácora no está disponible se informa logged:false (no se miente)',
+    /logged = false/.test(send) && /logged: logged/.test(send));
+
+  /* Se mira la consulta real, no el comentario que lo explica. */
+  ok('66 los envíos manuales NO tocan el registro idempotente de correos',
+    !/from\('email_notifications'\)/.test(send) && /from\('booking_communications'\)/.test(send));
+
+  /* La plantilla del mensaje manual. */
+  const et = require(BASE + '/server/lib/email-templates');
+  const msg = et.bookingMessage({ booking_code: 'HA-2026-AAA111', customer_name: 'Ana', tour_name: 'Tour', booking_date: '2026-08-08' },
+    { messageType: 'air_ticket', note: 'Tu vuelo sale 09:15', documentUrl: 'https://x.co/t.pdf', documentLabel: 'Ticket AV1630' });
+  ok('67 el mensaje manual incluye la nota y el enlace del documento',
+    msg.text.indexOf('Tu vuelo sale 09:15') !== -1 && msg.text.indexOf('https://x.co/t.pdf') !== -1 &&
+    msg.subject.indexOf('HA-2026-AAA111') !== -1);
+
+  ok('68 cada tipo de mensaje tiene su título propio',
+    et.MESSAGE_TITLES.qr_resend[1] === 'Tu código QR' &&
+    et.MESSAGE_TITLES.hotel_voucher[1] === 'Tu voucher de hotel' &&
+    et.MESSAGE_TITLES.change_notice[1] === 'Una actualización de tu reserva');
+
+  const vj2 = JSON.parse(read('vercel.json'));
+  ok('69 vercel.json expone las tres rutas de comunicaciones',
+    ['/api/admin-booking-comms', '/api/admin-booking-document-save', '/api/admin-booking-communication-send']
+      .every(function (p) { return vj2.rewrites.some(function (r) { return r.source === p; }); }));
+
+  console.log('\n=== RESULTADO FASE 9 (permisos + auditoría + recordatorios + comunicaciones): ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail) process.exitCode = 1;
 })();

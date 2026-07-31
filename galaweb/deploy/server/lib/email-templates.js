@@ -457,6 +457,55 @@ function buildPretripReminder(days) {
   };
 }
 
+/* --- 12. Cliente: mensaje enviado A MANO desde la reserva ---
+   Reenvío de QR o confirmación, envío de tickets aéreos, vouchers de hotel,
+   itinerarios, instrucciones o aviso de un cambio. Va FUERA del registro
+   idempotente de email_notifications (que existe para que un correo
+   transaccional no se duplique nunca): estos envíos SÍ pueden repetirse a
+   voluntad del owner y se anotan en booking_communications. */
+const MESSAGE_TITLES = {
+  qr_resend: ['Your QR code', 'Tu código QR'],
+  confirmation_resend: ['Your booking confirmation', 'Tu confirmación de reserva'],
+  air_ticket: ['Your flight tickets', 'Tus tickets aéreos'],
+  hotel_voucher: ['Your hotel voucher', 'Tu voucher de hotel'],
+  itinerary: ['Your itinerary', 'Tu itinerario'],
+  instructions: ['Instructions for your trip', 'Instrucciones para tu viaje'],
+  change_notice: ['An update about your booking', 'Una actualización de tu reserva'],
+  reminder_manual: ['A reminder about your trip', 'Un recordatorio de tu viaje'],
+  other: ['A message about your booking', 'Un mensaje sobre tu reserva']
+};
+
+function messageTitle(type) { return MESSAGE_TITLES[type] || MESSAGE_TITLES.other; }
+
+function bookingMessage(b, ctx) {
+  ctx = ctx || {};
+  const t = messageTitle(ctx.messageType);
+  const subject = t[0] + ' — ' + (b.booking_code || '');
+  const note = ctx.note ? String(ctx.note) : '';
+
+  const html = shell(subject,
+    h1(t[0], t[1])
+    + para('Hello ' + (b.customer_name || '') + ',', 'Hola ' + (b.customer_name || '') + ',')
+    + rows(bookingPairs(b, {}))
+    + (note ? '<p style="margin:0 0 18px;color:' + INK + ';white-space:pre-wrap;">' + esc(note) + '</p>' : '')
+    + (ctx.documentUrl ? ctaButton(ctx.documentUrl, ctx.documentLabel || 'Open document / Abrir documento') : '')
+    + (ctx.qrUrl ? qrBlock(ctx.qrUrl, ctx.cid) : '')
+    + para('If you have any questions, just reply to this email.',
+           'Si tienes alguna duda, responde a este correo.'));
+
+  const text = textBlock([
+    t[0].toUpperCase() + ' / ' + t[1].toUpperCase(), '',
+    'Booking code / Código: ' + (b.booking_code || ''),
+    'Tour: ' + (b.tour_name || ''),
+    'Date / Fecha: ' + (b.booking_date || ''), '',
+    note || null,
+    ctx.documentUrl ? ((ctx.documentLabel || 'Document / Documento') + ': ' + ctx.documentUrl) : null,
+    ctx.qrUrl ? ('QR: ' + ctx.qrUrl) : null, '',
+    'If you have any questions, just reply to this email. / Si tienes dudas, responde a este correo.'
+  ]);
+  return { subject: subject, html: html, text: text };
+}
+
 const TEMPLATES = {
   customer_booking_confirmation: { build: customerBookingConfirmation, qr: true },
   owner_booking_notification: { build: ownerBookingNotification, qr: false },
@@ -476,4 +525,4 @@ const TEMPLATES = {
   pretrip_reminder_d0: { build: buildPretripReminder(0), qr: true }
 };
 
-module.exports = { TEMPLATES, esc, money, methodLabel };
+module.exports = { TEMPLATES, esc, money, methodLabel, bookingMessage, MESSAGE_TITLES };
