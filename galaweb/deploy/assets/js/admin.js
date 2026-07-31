@@ -518,6 +518,92 @@ function bkNotifPanel(b){
 }
 
 /* Detalle de OWNER/ADMIN: información completa + cambio de booking_status. */
+/* ---- Fase 9: secciones UNIFICADAS del detalle de reserva ----
+   Pasajeros, logística, costos/utilidad y "Flights" viven DENTRO del detalle,
+   para no obligar a ir a módulos separados. Todo con endpoints existentes. */
+function bkPaxRow(px){
+  const name=((px.legal_first_name||'')+' '+(px.legal_last_name||'')).trim()||('#'+(px.passenger_number||'?'));
+  const bits=[];
+  if(px.nationality) bits.push(escapeHtml(px.nationality));
+  if(px.document_masked) bits.push(escapeHtml(px.document_masked)); else if(px.has_document) bits.push(ES?'doc. cargado':'doc on file');
+  const flags=[];
+  if(px.special_assistance) flags.push(ES?'asistencia':'assistance');
+  if(px.dietary_requirements) flags.push(ES?'dieta':'dietary');
+  if(px.accessibility_or_mobility_needs) flags.push(ES?'movilidad':'mobility');
+  return '<div class="dash-row"><div class="who"><b>'+escapeHtml(name)+'</b><small>'+(bits.join(' · ')||'—')+(flags.length?(' · '+flags.join(', ')):'')+'</small></div></div>';
+}
+function bkLodgeRow(l){
+  const dates=(l.check_in_date?bkFmtDate(l.check_in_date):'—')+' → '+(l.check_out_date?bkFmtDate(l.check_out_date):'—');
+  const meta=[]; if(l.nights) meta.push(l.nights+'n'); if(l.rooms_required) meta.push(l.rooms_required+(ES?' hab':' rm')); if(l.guest_count) meta.push(l.guest_count+'p');
+  return '<div class="dash-row"><div class="who"><b>'+escapeHtml(l.destination||'—')+'</b><small>'+dates+(meta.length?(' · '+meta.join(' · ')):'')+'</small></div>'+bkBadge(l.status||'—','muted')+'</div>';
+}
+function bkRenderPaxDetail(bodyEl,d,hit,b){
+  const f=d.form||{}, pax=d.passengers||[], lodg=d.lodging||[];
+  const stKind=(f.status==='complete'||f.status==='reviewed')?'ok':(f.status==='submitted'?'info':'warn');
+  var html='<div style="margin-bottom:10px">'+(ES?'Formulario':'Form')+': '+bkBadge(f.status||hit.status||'—',stKind)
+    +' · '+(ES?'pasajeros':'passengers')+' '+(hit.pax_completed!=null?hit.pax_completed:pax.length)+'/'+(hit.pax_expected||b.guests||'—');
+  if(f.preferred_connection_city) html+=' · '+(ES?'conexión':'connection')+' '+escapeHtml(f.preferred_connection_city);
+  html+='</div>';
+  html+=pax.length?('<div class="dash-list" style="margin-bottom:10px">'+pax.map(bkPaxRow).join('')+'</div>'):('<div class="dash-empty">'+(ES?'Sin pasajeros cargados.':'No passengers on file.')+'</div>');
+  html+='<div style="font-weight:700;color:var(--a-text);font-size:13px;margin:8px 0 2px">'+(ES?'Logística / hospedaje':'Logistics / lodging')+'</div>';
+  html+=lodg.length?('<div class="dash-list">'+lodg.map(bkLodgeRow).join('')+'</div>'):('<div class="dash-empty">'+(ES?'Sin requerimientos de hospedaje.':'No lodging requirements.')+'</div>');
+  if(f.connection_notes) html+='<div class="bk-sub-hint" style="margin-top:8px">'+(ES?'Notas de conexión':'Connection notes')+': '+escapeHtml(f.connection_notes)+'</div>';
+  bodyEl.innerHTML=html;
+}
+function bkPaxSection(b){
+  const sec=el('<div class="bk-sub"><h4>'+(ES?'Pasajeros y logística':'Passengers & logistics')+'</h4><div class="bk-sub-hint" data-role="pax-body">'+(ES?'Cargando…':'Loading…')+'</div></div>');
+  const bodyEl=sec.querySelector('[data-role="pax-body"]');
+  // Resuelve el form_id por booking_code (endpoints existentes; sin UUID manual).
+  function findForm(page){
+    return apiGet('/api/admin-passenger-intakes?'+bkQS({page:page,limit:100})).then(function(r){
+      if(r.status===401){ onUnauthorized(); return null; }
+      if(!r.ok||!r.data) return null;
+      const rows=r.data.intakes||[]; const hit=rows.filter(function(x){ return x.booking_code===b.booking_code; })[0];
+      if(hit) return hit;
+      const pg=r.data.pagination||{}; if(page<(pg.totalPages||1) && page<3) return findForm(page+1);
+      return null;
+    });
+  }
+  findForm(1).then(function(hit){
+    if(!hit){ bodyEl.textContent=(ES?'Sin formulario de pasajeros para esta reserva todavía.':'No passenger form for this booking yet.'); return; }
+    return apiGet('/api/admin-passenger-intake-detail?'+bkQS({form_id:hit.form_id})).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data){ bodyEl.textContent=(ES?'No se pudo cargar el detalle de pasajeros.':'Could not load passenger detail.'); return; }
+      bkRenderPaxDetail(bodyEl,r.data,hit,b);
+    });
+  }).catch(function(){ bodyEl.textContent=(ES?'No se pudo cargar.':'Could not load.'); });
+  return sec;
+}
+function bkCostSection(b){
+  const sec=el('<div class="bk-sub"><h4>'+(ES?'Costos y utilidad (estimado)':'Costs & profit (estimated)')+'</h4><div class="bk-sub-hint" data-role="cost-body">'+(ES?'Cargando…':'Loading…')+'</div></div>');
+  const bodyEl=sec.querySelector('[data-role="cost-body"]');
+  if(b.request_type==='quote'||b.amount_cents==null){ bodyEl.textContent=(ES?'No aplica (cotización o sin importe).':'Not applicable (quote or no amount).'); return sec; }
+  apiGet('/api/admin-finance-settings').then(function(r){
+    if(r.status===401){ onUnauthorized(); return; }
+    if(r.status===403){ bodyEl.textContent=(ES?'Solo owner/admin.':'Owner/admin only.'); return; }
+    if(!r.ok||!r.data){ bodyEl.textContent=(ES?'No se pudo cargar la configuración de costos.':'Could not load cost settings.'); return; }
+    const s=(r.data.settings||[]).filter(function(x){ return x.tour_id===b.tour_id; })[0];
+    if(!s||!s.configured){ bodyEl.innerHTML='<span class="notif-badge notif-pending">'+(ES?'costo no configurado':'cost not configured')+'</span> '+(ES?'Configúralo en Finanzas para ver la utilidad.':'Set it in Finance to see profit.'); return; }
+    const guests=+b.guests||0;
+    const cost=(s.fixed_cost_cents||0)+(s.cost_per_pax_cents||0)*guests;
+    const profit=(b.amount_cents||0)-cost;
+    const margin=b.amount_cents?Math.round(profit/b.amount_cents*1000)/10:0;
+    bodyEl.innerHTML='<div class="bk-dls">'
+      +bkDl(ES?'Importe':'Amount',bkMoney(b.amount_cents,b.currency))
+      +bkDl(ES?'Costo estimado':'Estimated cost',bkMoney(cost,'usd'))
+      +bkDl(ES?'Utilidad estimada':'Estimated profit','<b style="color:'+(profit>=0?'var(--a-ok-tx)':'var(--a-bad-tx)')+'">'+bkMoney(profit,'usd')+'</b>')
+      +bkDl(ES?'Margen':'Margin',margin+'%')
+      +'</div><div class="bk-sub-hint" style="margin-top:8px">'+(ES?'Estimado con la configuración de costos ACTUAL del tour (fijo + por pax). La utilidad contable oficial vive en Finanzas.':'Estimated from the tour\'s CURRENT cost config (fixed + per pax). Official accounting profit lives in Finance.')+'</div>';
+  }).catch(function(){ bodyEl.textContent=(ES?'No se pudo cargar.':'Could not load.'); });
+  return sec;
+}
+function bkFlightsPlaceholder(){
+  // Placeholder DESACTIVADO para la futura integración Duffel. No expone Milu/Web Research.
+  return el('<div class="bk-sub" style="opacity:.62"><h4>'+(ES?'Vuelos':'Flights')+'</h4>'
+    +'<div class="bk-sub-hint"><span class="notif-badge notif-skipped">'+(ES?'próximamente':'coming soon')+'</span> '
+    +(ES?'Integración de vuelos por proveedor API (Duffel) — no disponible aún.':'Flight integration via API provider (Duffel) — not available yet.')+'</div></div>');
+}
+
 function bkAdminDetail(b, onUpdated){
   const m=bkModal(), body=m.querySelector('.bk-modal-body');
   const isQuote=b.request_type==='quote';
@@ -546,6 +632,12 @@ function bkAdminDetail(b, onUpdated){
   if(b.payment_status==='paid' && (b.booking_status==='confirmed'||b.booking_status==='completed')){
     body.appendChild(bkQrPanel(b));
     body.appendChild(bkNotifPanel(b));
+  }
+  // UNIFICADO (Fase 9): pasajeros, logística, costos/utilidad y "Flights" en el mismo detalle.
+  if(!isQuote){
+    body.appendChild(bkPaxSection(b));
+    body.appendChild(bkCostSection(b));
+    body.appendChild(bkFlightsPlaceholder());
   }
 
   const ctrl=el('<div class="bk-modal-actions"></div>');
@@ -937,6 +1029,96 @@ function bkScreen(o){
 
 function panelBookings(){ return bkScreen({isStaff:false}); }
 function panelStaffSchedule(){ return bkScreen({isStaff:true}); }
+
+/* ============ DASHBOARD (owner/admin) — Fase 9 ============
+   Pantalla inicial con SOLO datos reales del sistema (admin-bookings +
+   admin-finance-summary + admin-passenger-intakes). No inventa métricas:
+   la serie de ingresos por mes se arma llamando finance-summary por mes
+   (no existe un endpoint de serie temporal). El navegador nunca suma dinero
+   por su cuenta: los ingresos siempre vienen de finance-summary (por fecha
+   de venta). */
+const DASH_BOOK_LBL={ confirmed:['confirmada','confirmed'], pending_payment:['pend. pago','pending'],
+  new:['nueva','new'], cancelled:['cancelada','cancelled'], completed:['completada','completed'], failed:['fallida','failed'] };
+function dashBookLabel(s){ const l=DASH_BOOK_LBL[s]; return l?(ES?l[0]:l[1]):(s||'—'); }
+function dashMoShort(y,m){ try{ return new Date(y,m,1).toLocaleDateString(ES?'es-ES':'en-US',{month:'short'}); }catch(e){ return String(m+1); } }
+function panelDashboard(role){
+  const p=el('<div class="bk-screen"></div>');
+  p.appendChild(el('<p class="sub" style="margin-top:-2px">'+(ES
+    ?'Resumen operativo con datos reales del sistema.'
+    :'Operations overview from live system data.')+'</p>'));
+  const kpis=el('<div class="fin-tiles"></div>'); p.appendChild(kpis);
+  const cols=el('<div class="dash-cols"></div>');
+  const upCard=el('<div class="dash-card"><h3>'+(ES?'Próximas reservas':'Upcoming bookings')+'</h3><div class="dash-list" id="dashUp"><div class="dash-empty">'+(ES?'Cargando…':'Loading…')+'</div></div></div>');
+  const revCard=el('<div class="dash-card"><h3>'+(ES?'Ingresos últimos 6 meses':'Revenue — last 6 months')+'</h3><div class="dash-bars" id="dashBars"></div></div>');
+  cols.appendChild(upCard); cols.appendChild(revCard); p.appendChild(cols);
+  const alertCard=el('<div class="dash-card" style="margin-top:16px"><h3>'+(ES?'Alertas operativas':'Operational alerts')+'</h3><div id="dashAlerts"><div class="dash-empty">'+(ES?'Cargando…':'Loading…')+'</div></div></div>');
+  p.appendChild(alertCard);
+
+  function tile(label,val,strong){ return '<div class="fin-tile'+(strong?' strong':'')+'"><span>'+label+'</span><b>'+val+'</b></div>'; }
+  function countBookings(params){ return apiGet('/api/admin-bookings?'+bkQS(Object.assign({request_type:'booking',limit:1},params))).then(function(r){ if(r.status===401){onUnauthorized();return 0;} return (r.ok&&r.data&&r.data.pagination&&r.data.pagination.total)||0; }).catch(function(){ return 0; }); }
+  function listBookings(params){ return apiGet('/api/admin-bookings?'+bkQS(Object.assign({request_type:'booking'},params))).then(function(r){ return (r.ok&&r.data&&r.data.bookings)||[]; }).catch(function(){ return []; }); }
+  function finance(from,to){ return apiGet('/api/admin-finance-summary?'+bkQS({date_from:from,date_to:to})).then(function(r){ return (r.ok&&r.data)||null; }).catch(function(){ return null; }); }
+
+  const now=new Date(); const y=now.getFullYear(), mo=now.getMonth();
+  const mB=bkMonthBounds(y,mo); const todayStr=bkToday();
+  const in7=bkYmd(new Date(y,mo,now.getDate()+7));
+  // Serie real de 6 meses (finance-summary por mes; el actual reutiliza para KPIs).
+  const months=[]; for(var i=5;i>=0;i--){ const d=new Date(y,mo-i,1); months.push({y:d.getFullYear(),m:d.getMonth()}); }
+  const monthCalls=months.map(function(mm){ const b=bkMonthBounds(mm.y,mm.m); return finance(b[0],b[1]); });
+
+  Promise.all([
+    countBookings({date_from:mB[0],date_to:mB[1]}),                                    // 0 reservas del mes
+    countBookings({booking_status:'confirmed',date_from:todayStr,date_to:in7}),        // 1 próximas salidas 7d
+    countBookings({payment_status:'pending'}),                                          // 2 pendientes de completar
+    listBookings({date_from:todayStr,sort:'booking_date_asc',limit:6}),                // 3 próximas reservas
+    apiGet('/api/admin-passenger-intakes?limit=100').then(function(r){ return (r.ok&&r.data&&r.data.intakes)||[]; }).catch(function(){ return []; }), // 4 intakes
+    countBookings({payment_status:'pending',date_from:todayStr,date_to:in7}),          // 5 próximas 7d sin pagar
+    Promise.all(monthCalls)                                                            // 6 serie mensual
+  ]).then(function(res){
+    const reservasMes=res[0], salidas7=res[1], pendientes=res[2], upcoming=res[3], intakes=res[4]||[], pend7=res[5], series=res[6]||[];
+    const curFin=series[series.length-1]||{};
+    const ingresosMes=(curFin.revenue&&curFin.revenue.total)||0;
+    const pagosConf=(curFin.counts&&curFin.counts.total)||0;
+    const formsPend=intakes.filter(function(x){ return x.status==='pending'||x.status==='in_progress'; }).length;
+    const intakeAlerts=intakes.filter(function(x){ return (x.alerts||[]).length>0; }).length;
+
+    kpis.innerHTML=
+      tile(ES?'Reservas del mes':'Bookings this month',reservasMes)
+      +tile(ES?'Ingresos del mes':'Revenue this month',bkMoney(ingresosMes,'usd'),true)
+      +tile(ES?'Próximas salidas (7 días)':'Departures (7 days)',salidas7)
+      +tile(ES?'Reservas pendientes':'Pending bookings',pendientes)
+      +tile(ES?'Formularios pendientes':'Pending forms',formsPend)
+      +tile(ES?'Pagos confirmados (mes)':'Confirmed payments (month)',pagosConf);
+
+    const up=document.getElementById('dashUp'); up.innerHTML='';
+    if(!upcoming.length) up.appendChild(el('<div class="dash-empty">'+(ES?'Sin reservas próximas.':'No upcoming bookings.')+'</div>'));
+    else upcoming.forEach(function(b){
+      up.appendChild(el('<div class="dash-row"><div class="who"><b>'+escapeHtml(b.customer_name||'—')+'</b>'
+        +'<small>'+escapeHtml(b.tour_name||'')+' · '+bkFmtDate(b.booking_date)+' · '+(b.guests||0)+'p</small></div>'
+        +bkBadge(dashBookLabel(b.booking_status),BK_BOOK_KIND[b.booking_status]||'muted')+'</div>'));
+    });
+
+    const bars=document.getElementById('dashBars'); bars.innerHTML='';
+    const vals=series.map(function(f){ return (f&&f.revenue&&f.revenue.total)||0; });
+    const maxV=Math.max.apply(null,vals.concat([1]));
+    months.forEach(function(mm,idx){
+      const v=vals[idx]; const h=Math.max(3,Math.round((v/maxV)*130));
+      const cur=(idx===months.length-1)?' cur':'';
+      bars.appendChild(el('<div class="dash-bar"><div class="amt">'+bkMoney(v,'usd')+'</div>'
+        +'<div class="bar'+cur+'" style="height:'+h+'px"></div><div class="mo">'+escapeHtml(dashMoShort(mm.y,mm.m))+'</div></div>'));
+    });
+
+    const al=document.getElementById('dashAlerts'); al.innerHTML='';
+    const alerts=[];
+    if(formsPend>0) alerts.push(ES?(formsPend+' formulario(s) de pasajeros pendiente(s)'):(formsPend+' passenger form(s) pending'));
+    if(intakeAlerts>0) alerts.push(ES?(intakeAlerts+' reserva(s) con datos de intake incompletos'):(intakeAlerts+' booking(s) with incomplete intake data'));
+    if(pend7>0) alerts.push(ES?(pend7+' reserva(s) próxima(s) (7d) pendiente(s) de pago'):(pend7+' upcoming booking(s) (7d) pending payment'));
+    if(!alerts.length) al.appendChild(el('<div class="dash-alert ok">'+(ES?'✓ Sin alertas operativas. Todo al día.':'✓ No operational alerts. All clear.')+'</div>'));
+    else alerts.forEach(function(t){ al.appendChild(el('<div class="dash-alert">'+escapeHtml(t)+'</div>')); });
+  });
+
+  return p;
+}
 
 /* ============ FINANZAS (owner/admin) ============
    owner puede gestionar costos y descuentos; admin solo consulta. El
@@ -2185,6 +2367,7 @@ function panelsFor(role){
   const G_SYS = (ES?'Sistema':'System');
   const panels=[
     // — Operación —
+    {id:'dashboard', group:G_OP, label:'Dashboard', build:function(){ return panelDashboard(role); }},
     {id:'bookings', group:G_OP, label:(ES?'Reservas':'Bookings'), build:panelBookings},
     {id:'passengers', group:G_OP, label:(ES?'Pasajeros y logística':'Passengers & logistics'), build:function(){ return panelPassengers(role); }},
     {id:'notifications', group:G_OP, label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }},
