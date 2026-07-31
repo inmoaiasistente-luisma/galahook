@@ -95,7 +95,7 @@ module.exports = async function handler(req, res) {
 
     for (let page = 0; page < MAX_PAGES; page++) {
       let query = supabase.from('bookings')
-        .select('amount_cents,gross_amount_cents,discount_cents,cost_cents,guests,tour_id,tour_name,sales_channel,payment_method,sold_at,paid_at,stripe_payment_intent_id')
+        .select('amount_cents,gross_amount_cents,discount_cents,cost_cents,cost_status,guests,tour_id,tour_name,sales_channel,payment_method,sold_at,paid_at,stripe_payment_intent_id')
         .eq('tenant_id', tenant)
         .eq('request_type', 'booking')
         .eq('payment_status', 'paid')
@@ -139,7 +139,10 @@ module.exports = async function handler(req, res) {
       const gross = r.gross_amount_cents != null ? Number(r.gross_amount_cents) : net;
       const disc = Number(r.discount_cents) || 0;
       const pax = Number(r.guests) || 0;
-      const hasCost = r.cost_cents != null;
+      // Utilidad OFICIAL = SOLO costos CONFIRMADOS (decisión del owner, Fase 9-3):
+      // un snapshot de plantilla ('estimated') o sin costo ('unset') NO cuenta como
+      // costo conocido; esas reservas se listan como "sin costos confirmados".
+      const hasCost = r.cost_cents != null && r.cost_status === 'confirmed';
       const cost = hasCost ? Number(r.cost_cents) : 0;
       const ch = r.sales_channel === 'agency' ? 'agency' : 'web';
 
@@ -185,16 +188,20 @@ module.exports = async function handler(req, res) {
       gross_revenue_cents: agg.gross,
       discounts_cents: agg.discount,
       net_revenue_cents: agg.net,
-      known_costs_cents: agg.knownCost,
-      gross_profit_cents: grossProfit,
+      known_costs_cents: agg.knownCost,       // = costos CONFIRMADOS
+      confirmed_costs_cents: agg.knownCost,   // alias explícito
+      gross_profit_cents: grossProfit,        // utilidad OFICIAL (solo confirmados)
       margin_percent: marginPercent,
       total_sales: counts.total,
       total_pax: agg.pax,
       revenue_per_pax_cents: perPax(agg.net, agg.pax),
       known_cost_per_pax_cents: perPax(agg.knownCost, agg.pax),
       known_profit_per_pax_cents: perPax(grossProfit, agg.pax),
-      missing_cost_sales_count: agg.missingCost,
+      missing_cost_sales_count: agg.missingCost,             // = ventas sin costo confirmado
+      bookings_without_confirmed_costs: agg.missingCost,     // alias explícito (alertas)
       profit_is_partial: agg.missingCost > 0,
+      web_sales: counts.web,
+      manual_sales: counts.agency,
       by_tour: by_tour
     });
   } catch (err) {

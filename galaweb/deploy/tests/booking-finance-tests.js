@@ -107,9 +107,12 @@ const vercel = read('vercel.json');
   ok((42 + i) + ' vercel rewrite /api/admin-' + a, new RegExp('"/api/admin-' + a.replace('booking-costs-confirm', 'booking-costs-confirm') + '"').test(vercel) && new RegExp('action=' + a).test(vercel));
 });
 
-/* ---------------- no rompe el contrato de finance-summary (aún) ---------------- */
+/* ---------------- finance-summary: utilidad oficial = SOLO confirmados ---------------- */
 const fsum = read('server/admin-handlers/finance-summary.js');
-ok('46 finance-summary intacto en esta etapa (contrato null=missing conservado)', /cost_cents/.test(fsum));
+ok('46 finance-summary: costo conocido SOLO si cost_status confirmed',
+  /cost_cents != null && r\.cost_status === 'confirmed'/.test(fsum) &&
+  /cost_status/.test(fsum.slice(fsum.indexOf('.select('), fsum.indexOf('.eq('))) &&
+  /bookings_without_confirmed_costs/.test(fsum));
 
 console.log('\n=== RESULTADO BOOKING-FINANCE: ' + pass + ' PASS · ' + fail + ' FAIL ===');
 if (fail > 0) process.exit(1);

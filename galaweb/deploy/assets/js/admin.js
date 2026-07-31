@@ -574,27 +574,108 @@ function bkPaxSection(b){
   }).catch(function(){ bodyEl.textContent=(ES?'No se pudo cargar.':'Could not load.'); });
   return sec;
 }
-function bkCostSection(b){
-  const sec=el('<div class="bk-sub"><h4>'+(ES?'Costos y utilidad (estimado)':'Costs & profit (estimated)')+'</h4><div class="bk-sub-hint" data-role="cost-body">'+(ES?'Cargando…':'Loading…')+'</div></div>');
-  const bodyEl=sec.querySelector('[data-role="cost-body"]');
-  if(b.request_type==='quote'||b.amount_cents==null){ bodyEl.textContent=(ES?'No aplica (cotización o sin importe).':'Not applicable (quote or no amount).'); return sec; }
-  apiGet('/api/admin-finance-settings').then(function(r){
-    if(r.status===401){ onUnauthorized(); return; }
-    if(r.status===403){ bodyEl.textContent=(ES?'Solo owner/admin.':'Owner/admin only.'); return; }
-    if(!r.ok||!r.data){ bodyEl.textContent=(ES?'No se pudo cargar la configuración de costos.':'Could not load cost settings.'); return; }
-    const s=(r.data.settings||[]).filter(function(x){ return x.tour_id===b.tour_id; })[0];
-    if(!s||!s.configured){ bodyEl.innerHTML='<span class="notif-badge notif-pending">'+(ES?'costo no configurado':'cost not configured')+'</span> '+(ES?'Configúralo en Finanzas para ver la utilidad.':'Set it in Finance to see profit.'); return; }
-    const guests=+b.guests||0;
-    const cost=(s.fixed_cost_cents||0)+(s.cost_per_pax_cents||0)*guests;
-    const profit=(b.amount_cents||0)-cost;
-    const margin=b.amount_cents?Math.round(profit/b.amount_cents*1000)/10:0;
-    bodyEl.innerHTML='<div class="bk-dls">'
-      +bkDl(ES?'Importe':'Amount',bkMoney(b.amount_cents,b.currency))
-      +bkDl(ES?'Costo estimado':'Estimated cost',bkMoney(cost,'usd'))
-      +bkDl(ES?'Utilidad estimada':'Estimated profit','<b style="color:'+(profit>=0?'var(--a-ok-tx)':'var(--a-bad-tx)')+'">'+bkMoney(profit,'usd')+'</b>')
-      +bkDl(ES?'Margen':'Margin',margin+'%')
-      +'</div><div class="bk-sub-hint" style="margin-top:8px">'+(ES?'Estimado con la configuración de costos ACTUAL del tour (fijo + por pax). La utilidad contable oficial vive en Finanzas.':'Estimated from the tour\'s CURRENT cost config (fixed + per pax). Official accounting profit lives in Finance.')+'</div>';
-  }).catch(function(){ bodyEl.textContent=(ES?'No se pudo cargar.':'Could not load.'); });
+// Finanzas REALES de la reserva (líneas de costo + confirmación). Todos los
+// cálculos son del servidor (admin-booking-finance); aquí solo se muestran.
+const BK_COST_CAT = [
+  ['flight', ES ? 'Vuelo' : 'Flight'], ['hotel_mainland', ES ? 'Hotel continental' : 'Mainland hotel'],
+  ['hotel_galapagos', ES ? 'Hotel Galápagos' : 'Galápagos hotel'], ['operator', ES ? 'Operador/tour' : 'Operator/tour'],
+  ['transport', ES ? 'Transporte' : 'Transport'], ['interisland_boat', ES ? 'Lancha interislas' : 'Inter-island boat'],
+  ['food', ES ? 'Alimentación' : 'Food'], ['fuel', ES ? 'Combustible' : 'Fuel'], ['captain', ES ? 'Capitán' : 'Captain'],
+  ['crew', ES ? 'Tripulación' : 'Crew'], ['bait_ice', ES ? 'Carnada/hielo' : 'Bait/ice'], ['guide', ES ? 'Guía' : 'Guide'],
+  ['entrance_fees', ES ? 'Entradas' : 'Entrance fees'], ['commission', ES ? 'Comisión' : 'Commission'],
+  ['taxes', ES ? 'Impuestos' : 'Taxes'], ['other', ES ? 'Otros' : 'Other']
+];
+function bkCatLabel(c) { const x = BK_COST_CAT.filter(function (o) { return o[0] === c; })[0]; return x ? x[1] : c; }
+function bkFinStatusBadge(st) {
+  if (st === 'confirmed') return bkBadge(ES ? 'confirmado' : 'confirmed', 'ok');
+  if (st === 'estimated') return bkBadge(ES ? 'estimado' : 'estimated', 'warn');
+  return bkBadge(ES ? 'sin configurar' : 'unset', 'muted');
+}
+function bkFinanceSection(b) {
+  const sec = el('<div class="bk-sub"><h4>' + (ES ? 'Finanzas de esta reserva' : 'Finances for this booking') + '</h4><div data-role="fin"><div class="bk-sub-hint">' + (ES ? 'Cargando…' : 'Loading…') + '</div></div></div>');
+  const host = sec.querySelector('[data-role="fin"]');
+  function render(d) {
+    host.innerHTML = '';
+    // Resumen financiero ARRIBA (Total cobrado, costo, utilidad, margen, estado).
+    const sum = el('<div class="bk-dls" style="margin-bottom:10px"></div>');
+    sum.innerHTML = bkDl(ES ? 'Total cobrado' : 'Total charged', bkMoney(d.amount_cents, d.currency))
+      + bkDl(ES ? 'Costo total' : 'Total cost', bkMoney(d.cost_total_cents, d.currency))
+      + bkDl(ES ? 'Utilidad' : 'Profit', (d.profit_cents == null) ? '—' : ('<b style="color:' + ((d.profit_cents >= 0) ? 'var(--a-ok-tx)' : 'var(--a-bad-tx)') + '">' + bkMoney(d.profit_cents, d.currency) + '</b>'))
+      + bkDl(ES ? 'Margen' : 'Margin', (d.margin_percent == null) ? '—' : (d.margin_percent + '%'))
+      + bkDl(ES ? 'Estado' : 'Status', bkFinStatusBadge(d.cost_status));
+    host.appendChild(sum);
+    // Líneas de costo DEBAJO.
+    const lines = d.lines || [];
+    if (lines.length) {
+      const lt = el('<div class="dash-list" style="margin-bottom:8px"></div>');
+      lines.forEach(function (l) {
+        const row = el('<div class="dash-row"><div class="who"><b>' + escapeHtml(bkCatLabel(l.category)) + (l.description ? (' · ' + escapeHtml(l.description)) : '') + '</b><small>' + l.quantity + ' × ' + escapeHtml(bkMoney(l.unit_cost_cents, d.currency)) + ' = ' + escapeHtml(bkMoney(l.total_cents, d.currency)) + (l.vendor ? (' · ' + escapeHtml(l.vendor)) : '') + '</small></div></div>');
+        const del = el('<button class="mini-btn danger" type="button">' + (ES ? 'Quitar' : 'Remove') + '</button>');
+        del.addEventListener('click', function () {
+          del.disabled = true;
+          apiPost('/api/admin-booking-cost-line-delete', { line_id: l.id }).then(function (r) {
+            if (r.status === 401) { onUnauthorized(); return; }
+            if (r.ok && r.data && r.data.deleted) { adminToast(ES ? 'Línea eliminada' : 'Line removed'); load(); }
+            else { del.disabled = false; adminToast(ES ? 'No se pudo eliminar.' : 'Could not remove.'); }
+          }).catch(function () { del.disabled = false; });
+        });
+        row.appendChild(del); lt.appendChild(row);
+      });
+      host.appendChild(lt);
+    } else host.appendChild(el('<div class="dash-empty">' + (ES ? 'Sin líneas de costo aún.' : 'No cost lines yet.') + '</div>'));
+    // Botón "Agregar costo" (formulario colapsable).
+    const addWrap = el('<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;color:var(--a-gold-deep)">' + (ES ? 'Agregar costo' : 'Add cost') + '</summary></details>');
+    const catSel = el('<div class="ed-field"><label>' + (ES ? 'Categoría' : 'Category') + '</label><select></select></div>');
+    const cs = catSel.querySelector('select'); BK_COST_CAT.forEach(function (o) { const op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; cs.appendChild(op); });
+    const desc = el('<div class="ed-field"><label>' + (ES ? 'Descripción' : 'Description') + '</label><input type="text" maxlength="300"></div>');
+    const qty = el('<div class="ed-field"><label>' + (ES ? 'Cantidad' : 'Quantity') + '</label><input type="number" min="0.001" step="0.001" value="1"></div>');
+    const unit = el('<div class="ed-field"><label>' + (ES ? 'Costo unitario (USD)' : 'Unit cost (USD)') + '</label><input type="number" min="0" step="0.01" value="0"></div>');
+    const vendor = el('<div class="ed-field"><label>' + (ES ? 'Proveedor (opcional)' : 'Vendor (optional)') + '</label><input type="text" maxlength="160"></div>');
+    const notes = el('<div class="ed-field"><label>' + (ES ? 'Notas (opcional)' : 'Notes (optional)') + '</label><input type="text" maxlength="500"></div>');
+    const r1 = el('<div class="ed-row"></div>'); r1.appendChild(catSel); r1.appendChild(desc);
+    const r2 = el('<div class="ed-row"></div>'); r2.appendChild(qty); r2.appendChild(unit);
+    const r3 = el('<div class="ed-row"></div>'); r3.appendChild(vendor); r3.appendChild(notes);
+    const addBtn = el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:6px">' + (ES ? 'Agregar' : 'Add') + '</button>');
+    addBtn.addEventListener('click', function () {
+      const uc = Math.round((parseFloat(unit.querySelector('input').value || '0') || 0) * 100);
+      const qv = parseFloat(qty.querySelector('input').value || '1') || 1;
+      const payload = { booking_id: b.id, category: cs.value, quantity: qv, unit_cost_cents: uc };
+      const dv = (desc.querySelector('input').value || '').trim(); if (dv) payload.description = dv;
+      const vv = (vendor.querySelector('input').value || '').trim(); if (vv) payload.vendor = vv;
+      const nv = (notes.querySelector('input').value || '').trim(); if (nv) payload.notes = nv;
+      addBtn.disabled = true;
+      apiPost('/api/admin-booking-cost-line-add', payload).then(function (r) {
+        addBtn.disabled = false;
+        if (r.status === 401) { onUnauthorized(); return; }
+        if (r.ok && r.data && r.data.added) { adminToast(ES ? 'Costo agregado' : 'Cost added'); load(); }
+        else { const code = (r.data && r.data.error) || ''; adminToast(code || (ES ? 'No se pudo agregar.' : 'Could not add.')); }
+      }).catch(function () { addBtn.disabled = false; });
+    });
+    addWrap.appendChild(r1); addWrap.appendChild(r2); addWrap.appendChild(r3); addWrap.appendChild(addBtn);
+    host.appendChild(addWrap);
+    // Botón "Confirmar costos" (fija el costo oficial de la reserva).
+    const confBtn = el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:8px">' + (d.cost_status === 'confirmed' ? (ES ? 'Reconfirmar costos' : 'Reconfirm costs') : (ES ? 'Confirmar costos' : 'Confirm costs')) + '</button>');
+    confBtn.addEventListener('click', function () {
+      if (!confirm(ES ? '¿Confirmar los costos de esta reserva? El costo total pasará a ser el OFICIAL (utilidad confirmada).' : 'Confirm this booking\'s costs? The total becomes the OFFICIAL cost (confirmed profit).')) return;
+      confBtn.disabled = true;
+      apiPost('/api/admin-booking-costs-confirm', { booking_id: b.id }).then(function (r) {
+        confBtn.disabled = false;
+        if (r.status === 401) { onUnauthorized(); return; }
+        if (r.ok && r.data && r.data.confirmed) { adminToast(ES ? 'Costos confirmados' : 'Costs confirmed'); load(); }
+        else adminToast(ES ? 'No se pudo confirmar.' : 'Could not confirm.');
+      }).catch(function () { confBtn.disabled = false; });
+    });
+    host.appendChild(confBtn);
+  }
+  function load() {
+    apiGet('/api/admin-booking-finance?booking_id=' + encodeURIComponent(b.id)).then(function (r) {
+      if (r.status === 401) { onUnauthorized(); return; }
+      if (r.status === 403) { host.innerHTML = '<div class="bk-sub-hint">' + (ES ? 'Solo owner/admin.' : 'Owner/admin only.') + '</div>'; return; }
+      if (!(r.ok && r.data)) { host.innerHTML = '<div class="bk-sub-hint">' + (ES ? 'No se pudo cargar.' : 'Could not load.') + '</div>'; return; }
+      render(r.data);
+    }).catch(function () { host.innerHTML = '<div class="bk-sub-hint">' + (ES ? 'Error de red.' : 'Network error.') + '</div>'; });
+  }
+  load();
   return sec;
 }
 function bkFlightsPlaceholder(){
@@ -636,7 +717,7 @@ function bkAdminDetail(b, onUpdated){
   // UNIFICADO (Fase 9): pasajeros, logística, costos/utilidad y "Flights" en el mismo detalle.
   if(!isQuote){
     body.appendChild(bkPaxSection(b));
-    body.appendChild(bkCostSection(b));
+    body.appendChild(bkFinanceSection(b));
     body.appendChild(bkFlightsPlaceholder());
   }
 
@@ -1073,22 +1154,33 @@ function panelDashboard(role){
     listBookings({date_from:todayStr,sort:'booking_date_asc',limit:6}),                // 3 próximas reservas
     apiGet('/api/admin-passenger-intakes?limit=100').then(function(r){ return (r.ok&&r.data&&r.data.intakes)||[]; }).catch(function(){ return []; }), // 4 intakes
     countBookings({payment_status:'pending',date_from:todayStr,date_to:in7}),          // 5 próximas 7d sin pagar
-    Promise.all(monthCalls)                                                            // 6 serie mensual
+    Promise.all(monthCalls),                                                           // 6 serie mensual
+    finance(todayStr,todayStr)                                                         // 7 hoy (ventas del día)
   ]).then(function(res){
-    const reservasMes=res[0], salidas7=res[1], pendientes=res[2], upcoming=res[3], intakes=res[4]||[], pend7=res[5], series=res[6]||[];
+    const reservasMes=res[0], salidas7=res[1], pendientes=res[2], upcoming=res[3], intakes=res[4]||[], pend7=res[5], series=res[6]||[], dayFin=res[7]||{};
     const curFin=series[series.length-1]||{};
     const ingresosMes=(curFin.revenue&&curFin.revenue.total)||0;
-    const pagosConf=(curFin.counts&&curFin.counts.total)||0;
+    // Costos/utilidad OFICIALES = solo confirmados (finance-summary Fase 9-3).
+    const costosMes=curFin.known_costs_cents||0;
+    const utilMes=curFin.gross_profit_cents||0;
+    const margenMes=(curFin.margin_percent!=null)?curFin.margin_percent:null;
+    const ventasDia=(dayFin.counts&&dayFin.counts.total)||0;
+    const manualMes=(curFin.manual_sales!=null)?curFin.manual_sales:((curFin.counts&&curFin.counts.agency)||0);
+    const sinCostos=(curFin.bookings_without_confirmed_costs!=null)?curFin.bookings_without_confirmed_costs:(curFin.missing_cost_sales_count||0);
     const formsPend=intakes.filter(function(x){ return x.status==='pending'||x.status==='in_progress'; }).length;
     const intakeAlerts=intakes.filter(function(x){ return (x.alerts||[]).length>0; }).length;
 
     kpis.innerHTML=
-      tile(ES?'Reservas del mes':'Bookings this month',reservasMes)
-      +tile(ES?'Ingresos del mes':'Revenue this month',bkMoney(ingresosMes,'usd'),true)
+      tile(ES?'Ingresos del mes':'Revenue this month',bkMoney(ingresosMes,'usd'),true)
+      +tile(ES?'Costos del mes':'Costs this month',bkMoney(costosMes,'usd'))
+      +tile(ES?'Utilidad del mes':'Profit this month',bkMoney(utilMes,'usd'),true)
+      +tile(ES?'Margen':'Margin',(margenMes==null)?'—':(margenMes+'%'))
+      +tile(ES?'Ventas del día':'Sales today',ventasDia)
+      +tile(ES?'Ventas manuales (mes)':'Manual sales (month)',manualMes)
+      +tile(ES?'Reservas del mes':'Bookings this month',reservasMes)
       +tile(ES?'Próximas salidas (7 días)':'Departures (7 days)',salidas7)
       +tile(ES?'Reservas pendientes':'Pending bookings',pendientes)
-      +tile(ES?'Formularios pendientes':'Pending forms',formsPend)
-      +tile(ES?'Pagos confirmados (mes)':'Confirmed payments (month)',pagosConf);
+      +tile(ES?'Formularios pendientes':'Pending forms',formsPend);
 
     const up=document.getElementById('dashUp'); up.innerHTML='';
     if(!upcoming.length) up.appendChild(el('<div class="dash-empty">'+(ES?'Sin reservas próximas.':'No upcoming bookings.')+'</div>'));
@@ -1110,6 +1202,7 @@ function panelDashboard(role){
 
     const al=document.getElementById('dashAlerts'); al.innerHTML='';
     const alerts=[];
+    if(sinCostos>0) alerts.push(ES?(sinCostos+' venta(s) del mes sin costos confirmados'):(sinCostos+' sale(s) this month without confirmed costs'));
     if(formsPend>0) alerts.push(ES?(formsPend+' formulario(s) de pasajeros pendiente(s)'):(formsPend+' passenger form(s) pending'));
     if(intakeAlerts>0) alerts.push(ES?(intakeAlerts+' reserva(s) con datos de intake incompletos'):(intakeAlerts+' booking(s) with incomplete intake data'));
     if(pend7>0) alerts.push(ES?(pend7+' reserva(s) próxima(s) (7d) pendiente(s) de pago'):(pend7+' upcoming booking(s) (7d) pending payment'));
@@ -1163,15 +1256,17 @@ function panelFinance(role){
         tile(ES?'Ingresos brutos':'Gross revenue', fin$(d.gross_revenue_cents))
        +tile(ES?'Descuentos':'Discounts', '−'+fin$(d.discounts_cents))
        +tile(ES?'Ingresos netos':'Net revenue', fin$(d.net_revenue_cents),'strong')
-       +tile(ES?'Costos conocidos':'Known costs', fin$(d.known_costs_cents))
-       +tile(ES?'Utilidad conocida':'Known profit', fin$(d.gross_profit_cents),'strong')
+       +tile(ES?'Costos confirmados':'Confirmed costs', fin$(d.known_costs_cents))
+       +tile(ES?'Utilidad confirmada':'Confirmed profit', fin$(d.gross_profit_cents),'strong')
        +tile(ES?'Margen':'Margin', (d.margin_percent!=null?d.margin_percent+'%':'—'))
+       +tile(ES?'Ventas web':'Web sales', (d.web_sales!=null?d.web_sales:'—'))
+       +tile(ES?'Ventas manuales':'Manual sales', (d.manual_sales!=null?d.manual_sales:'—'))
        +tile(ES?'Ventas':'Sales', d.total_sales)
        +tile('Pax', d.total_pax)
        +tile(ES?'Ingreso por pax':'Revenue / pax', fin$(d.revenue_per_pax_cents))
        +tile(ES?'Costo por pax':'Cost / pax', fin$(d.known_cost_per_pax_cents))
        +tile(ES?'Utilidad por pax':'Profit / pax', fin$(d.known_profit_per_pax_cents))
-       +tile(ES?'Ventas sin costo':'Sales missing cost', d.missing_cost_sales_count, d.missing_cost_sales_count>0?'warn':'');
+       +tile(ES?'Ventas sin costo confirmado':'Sales without confirmed cost', d.missing_cost_sales_count, d.missing_cost_sales_count>0?'warn':'');
       partial.style.display=d.profit_is_partial?'':'none';
       partial.textContent=d.profit_is_partial
         ? (ES?'Utilidad PARCIAL: '+d.missing_cost_sales_count+' venta(s) sin costo configurado no se descuentan.'
