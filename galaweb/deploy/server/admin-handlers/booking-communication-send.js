@@ -164,16 +164,24 @@ module.exports = async function handler(req, res) {
     /* La bitácora es parte del requisito, pero si 0019 aún no está aplicada
        el correo YA salió: se informa logged:false en vez de mentir. */
     let logged = true;
+    const baseRow = {
+      tenant_id: tenant, booking_id: booking.id, channel: 'email',
+      message_type: body.message_type, recipient: recipient,
+      subject: tpl.subject, body_preview: (body.note || '').slice(0, 300) || null,
+      document_id: doc ? doc.id : null, document_label: doc ? doc.label : null,
+      status: status, provider_message_id: providerId, error_message: errMsg,
+      sent_by_user_id: session.user_id, sent_by_name: session.full_name
+    };
     try {
-      const ins = await supabase.from('booking_communications').insert({
-        tenant_id: tenant, booking_id: booking.id, channel: 'email',
-        message_type: body.message_type, recipient: recipient,
-        subject: tpl.subject, body_preview: (body.note || '').slice(0, 300) || null,
-        document_id: doc ? doc.id : null, document_label: doc ? doc.label : null,
-        status: status, provider_message_id: providerId, error_message: errMsg,
-        sent_by_user_id: session.user_id, sent_by_name: session.full_name
-      });
-      if (ins.error) throw new Error(ins.error.message);
+      /* Se guarda el CUERPO completo (0021) para poder abrir el mensaje luego.
+         Si 0021 aún no está aplicada, el insert con body falla y se reintenta
+         sin esas columnas: el envío no se pierde, solo el cuerpo. */
+      const withBody = Object.assign({}, baseRow, { body_html: tpl.html, body_text: tpl.text });
+      let ins = await supabase.from('booking_communications').insert(withBody);
+      if (ins.error) {
+        ins = await supabase.from('booking_communications').insert(baseRow);
+        if (ins.error) throw new Error(ins.error.message);
+      }
     } catch (e) { logged = false; logServer('comm-send', 'log: ' + sanitize(e && e.message)); }
 
     /* Si se envió un documento con éxito, se marca cuándo se le mandó al

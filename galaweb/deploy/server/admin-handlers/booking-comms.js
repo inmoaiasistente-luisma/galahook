@@ -81,6 +81,28 @@ module.exports = async function handler(req, res) {
       communications = cq.data || [];
     } catch (e) { storageReady = false; }
 
+    /* Correos automáticos y recordatorios (email_notifications): también forman
+       parte del historial clickeable. El staff solo ve los correos al cliente,
+       nunca los internos del owner (owner_*). */
+    let emails = [];
+    try {
+      const eq = await supabase.from('email_notifications')
+        .select('id,notification_type,recipient_email,status,sent_at,created_at,subject')
+        .eq('booking_id', q.booking_id).eq('tenant_id', tenant)
+        .order('created_at', { ascending: false }).limit(100);
+      if (!eq.error) emails = eq.data || [];
+    } catch (e) {
+      // subject llega con 0021; reintento sin esa columna para no perder la lista
+      try {
+        const eq2 = await supabase.from('email_notifications')
+          .select('id,notification_type,recipient_email,status,sent_at,created_at')
+          .eq('booking_id', q.booking_id).eq('tenant_id', tenant)
+          .order('created_at', { ascending: false }).limit(100);
+        if (!eq2.error) emails = eq2.data || [];
+      } catch (e2) { /* sin correos */ }
+    }
+    if (isStaff) emails = emails.filter(function (e) { return String(e.notification_type || '').indexOf('owner_') !== 0; });
+
     if (isStaff) {
       documents = documents.filter(function (d) { return STAFF_HIDDEN_DOCS.indexOf(d.doc_type) === -1; });
     }
@@ -118,6 +140,7 @@ module.exports = async function handler(req, res) {
       storage_ready: storageReady,
       documents: documents,
       communications: communications,
+      emails: emails,
       reminders: {
         paused: bq.data.reminders_paused === true,
         booking_date: bq.data.booking_date,
