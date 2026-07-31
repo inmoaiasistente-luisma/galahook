@@ -28,11 +28,18 @@ begin;
 alter table public.bookings
   add column if not exists cost_status text not null default 'unset',
   add column if not exists cost_confirmed_at timestamptz,
-  add column if not exists cost_confirmed_by_user_id uuid references auth.users(id);
+  add column if not exists cost_confirmed_by_user_id uuid references auth.users(id),
+  -- Canal fino de venta manual (no toca sales_channel ni chk_agency_integrity).
+  add column if not exists sale_source text;
 
 alter table public.bookings
   add constraint chk_bookings_cost_status
   check (cost_status in ('unset', 'estimated', 'confirmed'));
+
+alter table public.bookings
+  add constraint chk_bookings_sale_source
+  check (sale_source is null or sale_source in
+    ('web', 'agency', 'phone', 'in_person', 'partner', 'other'));
 
 -- Clasificación inicial (SOLO etiqueta; NO cambia ningún monto): una reserva
 -- que ya trae snapshot de costo de plantilla queda 'estimated'; sin costo →

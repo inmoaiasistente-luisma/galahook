@@ -46,6 +46,11 @@ ROUTES['booking-notifications'] = require('../server/admin-handlers/booking-noti
 ROUTES['email-retry'] = require('../server/admin-handlers/email-retry');
 ROUTES['finance-settings-list'] = require('../server/admin-handlers/finance-settings-list');
 ROUTES['finance-settings-save'] = require('../server/admin-handlers/finance-settings-save');
+// Finanzas reales por reserva (Fase 9, Etapa 3)
+ROUTES['booking-finance'] = require('../server/admin-handlers/booking-finance');
+ROUTES['booking-cost-line-add'] = require('../server/admin-handlers/booking-cost-line-add');
+ROUTES['booking-cost-line-delete'] = require('../server/admin-handlers/booking-cost-line-delete');
+ROUTES['booking-costs-confirm'] = require('../server/admin-handlers/booking-costs-confirm');
 ROUTES['discount-rules-list'] = require('../server/admin-handlers/discount-rules-list');
 ROUTES['discount-rule-save'] = require('../server/admin-handlers/discount-rule-save');
 ROUTES['discount-rule-toggle'] = require('../server/admin-handlers/discount-rule-toggle');
