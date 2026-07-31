@@ -865,6 +865,10 @@ function bkCommsSection(b){
           const info=r.data; uMsg.textContent=ES?'Subiendo…':'Uploading…';
           const xhr=new XMLHttpRequest();
           xhr.open('PUT', info.signed_url, true);
+          /* Cabeceras que espera la subida firmada de Supabase Storage (mismas
+             que usa el SDK en uploadToSignedUrl): x-upsert + content-type. */
+          xhr.setRequestHeader('x-upsert','false');
+          xhr.setRequestHeader('cache-control','max-age=3600');
           xhr.setRequestHeader('content-type', file.type||'application/octet-stream');
           xhr.upload.onprogress=function(e){ if(e.lengthComputable){ bar.firstChild.style.width=Math.max(2,Math.round(e.loaded/e.total*100))+'%'; } };
           xhr.onload=function(){

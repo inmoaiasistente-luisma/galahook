@@ -196,5 +196,10 @@ ok('44 frontend: lista con etiqueta, tamaño y quién lo subió',
 ok('45 CSS: barra de progreso dorada sobre arena',
   /\.up-progress > i\{[^}]*background:var\(--a-gold\)/.test(html));
 
+ok('46 la subida firmada usa PUT con x-upsert + content-type (como el SDK)',
+  /xhr\.open\('PUT', info\.signed_url/.test(adm) &&
+  /setRequestHeader\('x-upsert','false'\)/.test(adm) &&
+  /setRequestHeader\('content-type'/.test(adm));
+
 console.log('\n=== RESULTADO FASE 9 CORRECCIONES: ' + pass + ' PASS · ' + fail + ' FAIL ===');
 if (fail) process.exitCode = 1;
