@@ -9,6 +9,8 @@
    Sin JavaScript y sin imágenes externas obligatorias.
    ========================================================= */
 
+const reminders = require('./pretrip-reminders');
+
 const BRAND = 'Galápagos Hook Adventure';
 const INK = '#11302f', GOLD = '#cf9f54', PAPER = '#fbf8f1', SOFT = '#3c534f', LINE = '#e2ddd0';
 
@@ -410,6 +412,51 @@ function customerPassengerFormCompleted(b) {
 }
 
 /* ---------------- registro ---------------- */
+/* --- 11. Cliente: recordatorio pre-viaje (7 / 5 / 3 / 1 / 0 días) ---
+   Una sola plantilla parametrizada por la etapa. El texto en español es el
+   que fijó el owner e indica SIEMPRE cuántos días faltan; el día 0 cambia
+   de tono. Se adjunta el QR y se incluye lo que EXISTA del viaje (vuelos,
+   hotel, punto de encuentro, horarios, contactos, documentos): lo que no
+   está, no se inventa — sencillamente no aparece. */
+function buildPretripReminder(days) {
+  return function (b, ctx) {
+    ctx = ctx || {};
+    const c = reminders.copyFor(days);
+    const subject = c.subjectEn + ' — ' + (b.booking_code || '');
+
+    const facts = reminders.tripFacts(b, ctx).map(function (f) {
+      return [f.en + ' / ' + f.es, esc(f.value)];
+    });
+
+    const html = shell(subject,
+      h1(c.en, c.es)
+      + para('Hello ' + (b.customer_name || '') + ', here is everything we have ready for your trip.',
+             'Hola ' + (b.customer_name || '') + ', esto es todo lo que tenemos listo para tu viaje.')
+      + rows(facts)
+      + (ctx.qrUrl ? qrBlock(ctx.qrUrl, ctx.cid) : '')
+      + (ctx.notes ? para(String(ctx.notes), String(ctx.notes)) : '')
+      + para('If anything has changed, reply to this email and we will help you.',
+             'Si algo cambió, responde a este correo y te ayudamos.'));
+
+    const text = textBlock([
+      c.en.toUpperCase(), c.es.toUpperCase(), '',
+      'Booking code / Código: ' + (b.booking_code || ''),
+      'Tour: ' + (b.tour_name || ''),
+      'Date / Fecha: ' + (b.booking_date || ''),
+      'Guests / Pax: ' + (b.guests || ''),
+      ctx.flights ? ('Flights / Vuelos: ' + ctx.flights) : null,
+      ctx.hotel ? ('Hotel: ' + ctx.hotel) : null,
+      ctx.meetingPoint ? ('Meeting point / Punto de encuentro: ' + ctx.meetingPoint) : null,
+      ctx.schedule ? ('Schedule / Horario: ' + ctx.schedule) : null,
+      ctx.contact ? ('Contact / Contacto: ' + ctx.contact) : null,
+      ctx.documents ? ('Documents / Documentos: ' + ctx.documents) : null,
+      ctx.qrUrl ? ('QR: ' + ctx.qrUrl) : null, '',
+      'If anything has changed, reply to this email. / Si algo cambió, responde a este correo.'
+    ]);
+    return { subject: subject, html: html, text: text };
+  };
+}
+
 const TEMPLATES = {
   customer_booking_confirmation: { build: customerBookingConfirmation, qr: true },
   owner_booking_notification: { build: ownerBookingNotification, qr: false },
@@ -420,7 +467,13 @@ const TEMPLATES = {
   customer_passenger_form_invitation: { build: customerPassengerFormInvitation, qr: false },
   owner_passenger_form_submitted: { build: ownerPassengerFormSubmitted, qr: false },
   customer_passenger_form_changes_requested: { build: customerPassengerFormChangesRequested, qr: false },
-  customer_passenger_form_completed: { build: customerPassengerFormCompleted, qr: false }
+  customer_passenger_form_completed: { build: customerPassengerFormCompleted, qr: false },
+  /* Recordatorios pre-viaje: 7, 5, 3, 1 y 0 días antes. Llevan QR adjunto. */
+  pretrip_reminder_d7: { build: buildPretripReminder(7), qr: true },
+  pretrip_reminder_d5: { build: buildPretripReminder(5), qr: true },
+  pretrip_reminder_d3: { build: buildPretripReminder(3), qr: true },
+  pretrip_reminder_d1: { build: buildPretripReminder(1), qr: true },
+  pretrip_reminder_d0: { build: buildPretripReminder(0), qr: true }
 };
 
 module.exports = { TEMPLATES, esc, money, methodLabel };

@@ -18,6 +18,8 @@
     { "source": "/api/admin-booking-cost-line-add", "destination": "/api/admin-router?action=booking-cost-line-add" },
     { "source": "/api/admin-booking-cost-line-delete", "destination": "/api/admin-router?action=booking-cost-line-delete" },
     { "source": "/api/admin-booking-costs-confirm", "destination": "/api/admin-router?action=booking-costs-confirm" },
+    { "source": "/api/admin-reminders-run", "destination": "/api/admin-router?action=reminders-run" },
+    { "source": "/api/admin-reminders-toggle", "destination": "/api/admin-router?action=reminders-toggle" },
     { "source": "/api/admin-discount-rules", "destination": "/api/admin-router?action=discount-rules-list" },
     { "source": "/api/admin-discount-rule-save", "destination": "/api/admin-router?action=discount-rule-save" },
     { "source": "/api/admin-discount-rule-toggle", "destination": "/api/admin-router?action=discount-rule-toggle" },
@@ -54,6 +56,9 @@
     { "source": "/api/admin-milu-research-rerun", "destination": "/api/admin-router?action=milu-research-rerun" },
     { "source": "/api/admin-milu-research-approve", "destination": "/api/admin-router?action=milu-research-approve" },
     { "source": "/api/admin-milu-itinerary-preview", "destination": "/api/admin-router?action=milu-itinerary-preview" }
+  ],
+  "crons": [
+    { "path": "/api/admin-reminders-run", "schedule": "0 13 * * *" }
   ],
   "headers": [
     { "source": "/assets/(.*)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" } ] },

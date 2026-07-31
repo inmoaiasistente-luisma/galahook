@@ -20,6 +20,8 @@ const path = require('path');
 const BASE = path.resolve(__dirname, '..');
 const auth = require(BASE + '/server/lib/admin-auth');
 const audit = require(BASE + '/server/lib/admin-audit');
+const rem = require(BASE + '/server/lib/pretrip-reminders');
+const { TEMPLATES } = require(BASE + '/server/lib/email-templates');
 
 let pass = 0, fail = 0;
 function ok(name, cond) { if (cond) { pass++; console.log('PASS  ' + name); } else { fail++; console.log('FAIL  ' + name); } }
@@ -210,6 +212,142 @@ ok('19 buildAuditRow: sin sesión o sin acción → null',
   ok('26 0019 NO borra tablas ni columnas',
     !/drop table/i.test(m19) && !/drop column/i.test(m19));
 
-  console.log('\n=== RESULTADO FASE 9 (permisos + auditoría): ' + pass + ' PASS · ' + fail + ' FAIL ===');
+  /* =====================================================================
+     C) RECORDATORIOS PRE-VIAJE — cadencia 7 / 5 / 3 / 1 / 0
+     ===================================================================== */
+
+  ok('27 cadencia exacta: 7, 5, 3, 1 y 0 días',
+    rem.REMINDER_DAYS.length === 5 && rem.REMINDER_DAYS.join(',') === '7,5,3,1,0');
+
+  ok('28 cada etapa tiene su propio tipo de correo',
+    rem.typeForDays(7) === 'pretrip_reminder_d7' && rem.typeForDays(1) === 'pretrip_reminder_d1' &&
+    rem.typeForDays(0) === 'pretrip_reminder_d0');
+
+  ok('29 los días que NO son de cadencia no generan recordatorio',
+    rem.typeForDays(6) === null && rem.typeForDays(4) === null &&
+    rem.typeForDays(2) === null && rem.typeForDays(10) === null);
+
+  ok('30 daysUntil cuenta días enteros y detecta el pasado',
+    rem.daysUntil('2026-08-01', '2026-08-08') === 7 &&
+    rem.daysUntil('2026-08-01', '2026-08-01') === 0 &&
+    rem.daysUntil('2026-08-02', '2026-08-01') === -1);
+
+  ok('31 daysUntil cruza fin de mes y año sin error',
+    rem.daysUntil('2026-12-30', '2027-01-06') === 7 &&
+    rem.daysUntil('2026-02-26', '2026-03-01') === 3);
+
+  /* Los textos EXACTOS que fijó el owner. */
+  ok('32 texto 7 días: "Faltan 7 días para tu aventura en Galápagos."',
+    rem.copyFor(7).es === 'Faltan 7 días para tu aventura en Galápagos.');
+  ok('33 texto 5 y 3 días con el número correcto',
+    rem.copyFor(5).es === 'Faltan 5 días para tu aventura en Galápagos.' &&
+    rem.copyFor(3).es === 'Faltan 3 días para tu aventura en Galápagos.');
+  ok('34 texto 1 día en SINGULAR: "Falta 1 día…"',
+    rem.copyFor(1).es === 'Falta 1 día para tu aventura en Galápagos.');
+  ok('35 texto día 0: "Tu aventura en Galápagos empieza hoy."',
+    rem.copyFor(0).es === 'Tu aventura en Galápagos empieza hoy.');
+
+  /* Elegibilidad: solo viaja lo que de verdad va a viajar. */
+  const baseBk = {
+    id: '11111111-1111-4111-8111-111111111111', request_type: 'booking',
+    booking_status: 'confirmed', customer_email: 'a@b.co', booking_date: '2026-08-08',
+    customer_name: 'Ana', booking_code: 'HA-2026-AAA111', guests: 2
+  };
+  function bk(over) { return Object.assign({}, baseBk, over || {}); }
+
+  ok('36 reserva normal a 7 días → toca recordatorio d7',
+    rem.dueFor(bk(), '2026-08-01').due === true && rem.dueFor(bk(), '2026-08-01').type === 'pretrip_reminder_d7');
+
+  ok('37 a 6 días no toca nada (la cadencia es cada 2 días)',
+    rem.dueFor(bk(), '2026-08-02').due === false && rem.dueFor(bk(), '2026-08-02').reason === 'not_a_reminder_day');
+
+  ok('38 cancelada, cotización, borrada o de prueba → nunca recibe',
+    rem.dueFor(bk({ booking_status: 'cancelled' }), '2026-08-01').reason === 'cancelled' &&
+    rem.dueFor(bk({ request_type: 'quote' }), '2026-08-01').reason === 'not_a_booking' &&
+    rem.dueFor(bk({ deleted_at: '2026-01-01' }), '2026-08-01').reason === 'deleted' &&
+    rem.dueFor(bk({ is_test: true }), '2026-08-01').reason === 'test_data');
+
+  ok('39 pausada → no recibe; sin correo → no recibe',
+    rem.dueFor(bk({ reminders_paused: true }), '2026-08-01').reason === 'paused' &&
+    rem.dueFor(bk({ customer_email: null }), '2026-08-01').reason === 'no_recipient');
+
+  ok('40 sin la columna reminders_paused (0019 sin aplicar) el recordatorio SÍ sale',
+    rem.dueFor(bk({ reminders_paused: undefined }), '2026-08-01').due === true);
+
+  ok('41 viaje pasado → no se envía nada',
+    rem.dueFor(bk({ booking_date: '2026-07-20' }), '2026-08-01').reason === 'past_trip');
+
+  /* El día del viaje sí entra, y es la etapa 0. */
+  ok('42 el día del viaje entra como etapa d0',
+    rem.dueFor(bk({ booking_date: '2026-08-01' }), '2026-08-01').type === 'pretrip_reminder_d0');
+
+  /* Recorrido completo: una reserva recibe exactamente 5 correos. */
+  const trip = '2026-08-10';
+  const got = [];
+  for (let i = 0; i <= 10; i++) {
+    const day = rem.shiftYmd(trip, -i);
+    const d = rem.dueFor(bk({ booking_date: trip }), day);
+    if (d.due) got.push(i);
+  }
+  ok('43 en 10 días previos se disparan exactamente 5 etapas: 7,5,3,1,0',
+    got.length === 5 && got.sort(function (a, b) { return b - a; }).join(',') === '7,5,3,1,0');
+
+  ok('44 windowBounds pide de hoy a hoy+7',
+    rem.windowBounds('2026-08-01')[0] === '2026-08-01' && rem.windowBounds('2026-08-01')[1] === '2026-08-08');
+
+  const many = [bk({ id: 'a', booking_date: '2026-08-08' }), bk({ id: 'b', booking_date: '2026-08-02' }),
+    bk({ id: 'c', booking_date: '2026-08-04' }), bk({ id: 'd', booking_date: '2026-08-01' })];
+  const dl = rem.dueList(many, '2026-08-01');
+  ok('45 dueList selecciona las que tocan hoy (d7, d3, d1, d0) y descarta el resto',
+    dl.length === 4 && dl.map(function (x) { return x.days; }).sort().join(',') === '0,1,3,7');
+
+  /* Plantillas registradas y con el texto correcto. */
+  ok('46 las 5 plantillas están registradas y llevan QR',
+    rem.allTypes().every(function (t) { return TEMPLATES[t] && TEMPLATES[t].qr === true; }));
+
+  const mail7 = TEMPLATES.pretrip_reminder_d7.build(bk(), {});
+  const mail0 = TEMPLATES.pretrip_reminder_d0.build(bk(), {});
+  ok('47 el correo de 7 días dice cuántos días faltan',
+    mail7.html.indexOf('Faltan 7 días') !== -1 && mail7.text.indexOf('FALTAN 7 DÍAS') !== -1);
+  ok('48 el correo del día 0 anuncia que empieza hoy',
+    mail0.html.indexOf('empieza hoy') !== -1 && /empieza hoy/i.test(mail0.subject) === false &&
+    mail0.subject.indexOf('starts today') !== -1);
+
+  ok('49 el correo NO inventa datos que no existen',
+    mail7.text.indexOf('Flights') === -1 && mail7.text.indexOf('Meeting point') === -1);
+
+  const mailFull = TEMPLATES.pretrip_reminder_d3.build(bk(), {
+    flights: 'AV1630 GYE→GPS 09:15', hotel: 'Hotel Casa Blanca',
+    meetingPoint: 'Muelle de San Cristóbal', schedule: '06:30',
+    contact: '+593 99 000 0000', documents: 'Pasaporte y tarjeta de control'
+  });
+  ok('50 cuando SÍ existen, incluye vuelos, hotel, punto de encuentro, horario, contacto y documentos',
+    ['AV1630', 'Casa Blanca', 'Muelle de San Cristóbal', '06:30', '+593 99 000 0000', 'Pasaporte']
+      .every(function (s) { return mailFull.text.indexOf(s) !== -1; }));
+
+  /* Endpoints del barrido. */
+  const runH = read('server/admin-handlers/reminders-run.js');
+  ok('51 el barrido acepta cron (CRON_SECRET) u owner, nunca admin/staff',
+    /CRON_SECRET/.test(runH) && /requireWriter\(req, res\)/.test(runH) && /timingSafeEqual/.test(runH));
+  ok('52 el barrido no cae si 0019 no está aplicada (select \'*\')',
+    /select\('\*'\)/.test(runH));
+  /* Se mira el CÓDIGO, no los comentarios: el barrido solo lee reservas y
+     envía correos — no importa la librería de Stripe ni escribe en bookings. */
+  ok('53 el barrido no toca Stripe ni modifica la reserva',
+    !/require\([^)]*stripe/i.test(runH) && !/amount_cents:/.test(runH) &&
+    !/\.update\(/.test(runH) && !/\.delete\(/.test(runH));
+
+  const togH = read('server/admin-handlers/reminders-toggle.js');
+  ok('54 pausar/reanudar es solo del owner y no borra nada',
+    /requireWriter\(req, res\)/.test(togH) && /reminders_paused/.test(togH) && !/\.delete\(/.test(togH));
+
+  const vj = JSON.parse(read('vercel.json'));
+  ok('55 vercel.json: cron diario + rutas de recordatorios',
+    Array.isArray(vj.crons) && vj.crons.length === 1 &&
+    vj.crons[0].path === '/api/admin-reminders-run' &&
+    vj.rewrites.some(function (r) { return r.source === '/api/admin-reminders-run'; }) &&
+    vj.rewrites.some(function (r) { return r.source === '/api/admin-reminders-toggle'; }));
+
+  console.log('\n=== RESULTADO FASE 9 (permisos + auditoría + recordatorios): ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail) process.exitCode = 1;
 })();
