@@ -556,6 +556,61 @@ function bkLodgeRow(l){
   const meta=[]; if(l.nights) meta.push(l.nights+'n'); if(l.rooms_required) meta.push(l.rooms_required+(ES?' hab':' rm')); if(l.guest_count) meta.push(l.guest_count+'p');
   return '<div class="dash-row"><div class="who"><b>'+escapeHtml(l.destination||'—')+'</b><small>'+dates+(meta.length?(' · '+meta.join(' · ')):'')+'</small></div>'+bkBadge(l.status||'—','muted')+'</div>';
 }
+/* Par etiqueta/valor; se omite si el valor está vacío. */
+function bkKV(label,val){ if(val==null||val==='') return ''; return '<div class="bk-dl"><span>'+label+'</span><b>'+escapeHtml(val)+'</b></div>'; }
+function bkBool(v){ return v===true?(ES?'Sí':'Yes'):(v===false?'No':null); }
+/* Formulario COMPLETO del pasajero: TODAS las respuestas reales guardadas.
+   Los campos que el rol no puede ver ni siquiera llegan del servidor. */
+function bkFullPaxForm(d,b){
+  const f=d.form||{}, pax=d.passengers||[], lodg=d.lodging||[];
+  let h='<div class="bk-fullform">';
+  h+='<div class="bk-sub-hint">'+(ES?'Datos tal como los completó el cliente.':'Answers as submitted by the customer.')+'</div>';
+  /* Logística general del formulario */
+  h+='<h5>'+(ES?'Llegada y conexión':'Arrival & connection')+'</h5><div class="bk-dls">'
+    +bkKV(ES?'Ciudad de conexión':'Connection city', f.preferred_connection_city)
+    +bkKV(ES?'Vuelos internacionales comprados':'Intl flights purchased', bkBool(f.international_flights_purchased))
+    +bkKV(ES?'Llegada a Ecuador (fecha)':'Ecuador arrival (date)', f.ecuador_arrival_date)
+    +bkKV(ES?'Llegada a Ecuador (hora)':'Ecuador arrival (time)', f.ecuador_arrival_time)
+    +bkKV(ES?'Aeropuerto de llegada':'Arrival airport', f.arrival_airport)
+    +bkKV(ES?'Notas de conexión':'Connection notes', f.connection_notes)
+    +'</div>';
+  /* Pasajeros */
+  h+='<h5>'+(ES?'Pasajeros':'Passengers')+' ('+pax.length+')</h5>';
+  if(!pax.length) h+='<div class="dash-empty">'+(ES?'Sin pasajeros cargados.':'No passengers on file.')+'</div>';
+  pax.forEach(function(p){
+    const name=([p.legal_first_name,p.legal_middle_name,p.legal_last_name].filter(Boolean).join(' ')).trim()||('#'+(p.passenger_number||'?'));
+    h+='<div class="bk-pax-card"><div class="bk-pax-name">#'+escapeHtml(p.passenger_number||'?')+' · '+escapeHtml(name)+'</div><div class="bk-dls">'
+      +bkKV(ES?'Nacionalidad':'Nationality', p.nationality)
+      +bkKV(ES?'Fecha de nacimiento':'Date of birth', p.date_of_birth)
+      +bkKV(ES?'Género':'Gender', p.gender)
+      +bkKV(ES?'Tipo de documento':'Document type', p.document_type)
+      +bkKV(ES?'Documento':'Document', p.document_masked || (p.has_document?(ES?'cargado':'on file'):null))
+      +bkKV(ES?'Vence':'Expires', p.document_expiration_date)
+      +bkKV(ES?'País emisor':'Issuing country', p.issuing_country)
+      +bkKV(ES?'Dieta':'Dietary', p.dietary_requirements)
+      +bkKV(ES?'Asistencia / movilidad':'Assistance / mobility', p.accessibility_or_mobility_needs)
+      +bkKV(ES?'Asistencia especial':'Special assistance', bkBool(p.special_assistance))
+      +bkKV(ES?'Notas de equipaje':'Baggage notes', p.baggage_notes)
+      +'</div></div>';
+  });
+  /* Logística / hospedaje detallada */
+  h+='<h5>'+(ES?'Logística y hospedaje':'Logistics & lodging')+'</h5>';
+  if(!lodg.length) h+='<div class="dash-empty">'+(ES?'Sin requerimientos de hospedaje.':'No lodging requirements.')+'</div>';
+  lodg.forEach(function(l){
+    h+='<div class="bk-pax-card"><div class="bk-pax-name">'+escapeHtml(l.destination||'—')+' · '+bkBadge(l.status||'—','muted')+'</div><div class="bk-dls">'
+      +bkKV(ES?'Requiere hospedaje':'Lodging required', bkBool(l.lodging_required))
+      +bkKV('Check-in', l.check_in_date)+bkKV('Check-out', l.check_out_date)
+      +bkKV(ES?'Noches':'Nights', l.nights)+bkKV(ES?'Huéspedes':'Guests', l.guest_count)
+      +bkKV(ES?'Habitaciones':'Rooms', l.rooms_required)
+      +bkKV(ES?'Preferencias':'Preferences', l.room_preferences)
+      +bkKV(ES?'Accesibilidad':'Accessibility', l.accessibility_notes)
+      +bkKV(ES?'Notas':'Notes', l.lodging_notes)
+      +(l.approximate_budget_cents!=null?bkKV(ES?'Presupuesto aprox.':'Approx. budget', bkMoney(l.approximate_budget_cents,'usd')):'')
+      +'</div></div>';
+  });
+  h+='</div>';
+  return h;
+}
 function bkRenderPaxDetail(bodyEl,d,hit,b){
   const f=d.form||{}, pax=d.passengers||[], lodg=d.lodging||[];
   const stKind=(f.status==='complete'||f.status==='reviewed')?'ok':(f.status==='submitted'?'info':'warn');
@@ -568,6 +623,17 @@ function bkRenderPaxDetail(bodyEl,d,hit,b){
   html+=lodg.length?('<div class="dash-list">'+lodg.map(bkLodgeRow).join('')+'</div>'):('<div class="dash-empty">'+(ES?'Sin requerimientos de hospedaje.':'No lodging requirements.')+'</div>');
   if(f.connection_notes) html+='<div class="bk-sub-hint" style="margin-top:8px">'+(ES?'Notas de conexión':'Connection notes')+': '+escapeHtml(f.connection_notes)+'</div>';
   bodyEl.innerHTML=html;
+  /* Botón "Ver formulario completo": abre TODAS las respuestas reales. */
+  const btn=el('<button class="mini-btn" type="button" style="margin-top:10px">'+(ES?'Ver formulario completo':'View full form')+'</button>');
+  const full=el('<div style="display:none;margin-top:10px"></div>');
+  let built=false;
+  btn.addEventListener('click',function(){
+    if(!built){ full.innerHTML=bkFullPaxForm(d,b); built=true; }
+    const showing=full.style.display!=='none';
+    full.style.display=showing?'none':'';
+    btn.textContent=showing?(ES?'Ver formulario completo':'View full form'):(ES?'Ocultar formulario':'Hide form');
+  });
+  bodyEl.appendChild(btn); bodyEl.appendChild(full);
 }
 function bkPaxSection(b){
   const sec=el('<div class="bk-sub"><h4>'+(ES?'Pasajeros y logística':'Passengers & logistics')+'</h4><div class="bk-sub-hint" data-role="pax-body">'+(ES?'Cargando…':'Loading…')+'</div></div>');
@@ -950,18 +1016,62 @@ function bkCommsSection(b){
       box.appendChild(sendBox);
     }
 
-    /* --- bitácora --- */
+    /* --- historial (clickeable): envíos manuales + correos automáticos y
+       recordatorios. Al pulsar una fila se abre el mensaje completo. --- */
     const logBox=el('<div class="bk-block"></div>');
-    logBox.appendChild(el('<div class="bk-block-head"><b>'+(ES?'Historial de envíos':'Send history')+'</b></div>'));
-    const log=d.communications||[];
-    if(!log.length) logBox.appendChild(el('<div class="bk-sub-hint">'+(ES?'Todavía no se ha enviado nada a mano.':'Nothing sent manually yet.')+'</div>'));
-    log.forEach(function(c){
-      logBox.appendChild(el('<div class="bk-log-row">'
+    logBox.appendChild(el('<div class="bk-block-head"><b>'+(ES?'Historial de comunicaciones':'Communications history')+'</b></div>'));
+    const viewer=el('<div class="bk-msg-viewer" style="display:none"></div>');
+    logBox.appendChild(viewer);
+
+    function openMsg(kind,id){
+      viewer.style.display=''; viewer.innerHTML='<div class="bk-sub-hint">'+(ES?'Cargando…':'Loading…')+'</div>';
+      apiGet('/api/admin-booking-communication-detail?'+bkQS({kind:kind,id:id,booking_id:b.id})).then(function(r){
+        if(r.status===401){ onUnauthorized(); return; }
+        if(!r.ok||!r.data||!r.data.message){ viewer.innerHTML='<div class="bk-sub-hint">'+(ES?'No se pudo abrir el mensaje.':'Could not open the message.')+'</div>'; return; }
+        const m=r.data.message;
+        let h='<button class="mini-btn" type="button" data-close="1" style="float:right">'+(ES?'Cerrar':'Close')+'</button>';
+        h+='<div class="bk-dls" style="margin-bottom:10px">'
+          +bkKV(ES?'Tipo':'Type', bkLabelOf(BK_MSG_TYPES,m.message_type)||m.message_type)
+          +bkKV(ES?'Destinatario':'Recipient', m.recipient)
+          +bkKV(ES?'Asunto':'Subject', m.subject)
+          +bkKV(ES?'Estado':'Status', m.status)
+          +bkKV(ES?'Fecha':'Date', bkFmtDT(m.created_at))
+          +(m.sent_by_name?bkKV(ES?'Enviado por':'Sent by', m.sent_by_name):'')
+          +(m.document_label?bkKV(ES?'Adjunto':'Attachment', m.document_label):'')
+          +(m.error_message?bkKV('Error', m.error_message):'')
+          +'</div>';
+        if(m.body_html){ h+='<div class="bk-msg-body">'+m.body_html+'</div>'; }
+        else if(m.body_text){ h+='<pre class="bk-msg-body">'+escapeHtml(m.body_text)+'</pre>'; }
+        else { h+='<div class="bk-sub-hint">'+(ES?'El cuerpo de este mensaje no se guardó (requiere migración 0021 aplicada).':'This message body was not stored (requires migration 0021).')+'</div>'; }
+        viewer.innerHTML=h;
+        const cb=viewer.querySelector('[data-close]'); if(cb) cb.addEventListener('click',function(){ viewer.style.display='none'; });
+      }).catch(function(){ viewer.innerHTML='<div class="bk-sub-hint">'+(ES?'No se pudo abrir.':'Could not open.')+'</div>'; });
+    }
+
+    const manual=d.communications||[];
+    const emails=d.emails||[];
+    if(!manual.length && !emails.length){
+      logBox.appendChild(el('<div class="bk-sub-hint">'+(ES?'Aún no hay comunicaciones.':'No communications yet.')+'</div>'));
+    }
+    manual.forEach(function(c){
+      const row=el('<div class="bk-log-row bk-log-click">'
         +'<span class="notif-badge notif-'+(c.status==='sent'?'sent':'failed')+'">'+escapeHtml(c.status)+'</span> '
         +'<b>'+escapeHtml(bkLabelOf(BK_MSG_TYPES,c.message_type))+'</b> · '+escapeHtml(c.recipient||'')
         +(c.document_label?(' · '+escapeHtml(c.document_label)):'')
         +' · '+bkFmtDT(c.created_at)
-        +(c.sent_by_name?(' · '+escapeHtml(c.sent_by_name)):'')+'</div>'));
+        +(c.sent_by_name?(' · '+escapeHtml(c.sent_by_name)):'')+'</div>');
+      row.addEventListener('click',function(){ openMsg('comm', c.id); });
+      logBox.appendChild(row);
+    });
+    emails.forEach(function(e){
+      const st=e.status==='sent'?'sent':(e.status==='failed'?'failed':'skipped');
+      const row=el('<div class="bk-log-row bk-log-click">'
+        +'<span class="notif-badge notif-'+st+'">'+escapeHtml(e.status)+'</span> '
+        +'<b>'+escapeHtml(e.notification_type||'')+'</b> · '+escapeHtml(e.recipient_email||'')
+        +' · '+bkFmtDT(e.sent_at||e.created_at)
+        +' · <i>'+(ES?'automático':'automatic')+'</i></div>');
+      row.addEventListener('click',function(){ openMsg('email', e.id); });
+      logBox.appendChild(row);
     });
     box.appendChild(logBox);
   }
@@ -1034,7 +1144,14 @@ function bkAdminDetail(b, onUpdated){
     }).catch(function(){ btn.disabled=false; btn.textContent=lbl; adminToast(ES?'No se pudo actualizar. Inténtalo nuevamente.':'Could not update. Please try again.'); });
   });
   /* Cambiar el estado es una escritura: el admin lo ve todo, pero no lo toca. */
-  if(canWrite()){ ctrl.appendChild(sel); ctrl.appendChild(btn); body.appendChild(ctrl); }
+  if(canWrite()){
+    ctrl.appendChild(sel); ctrl.appendChild(btn);
+    /* Eliminar la reserva desde el detalle (owner). Baja lógica; no toca pago. */
+    const delB=el('<button class="mini-btn bk-del" type="button" style="margin-left:auto">'+(ES?'Eliminar reserva':'Delete booking')+'</button>');
+    delB.addEventListener('click',function(){ bkDeleteBooking(b, function(){ bkCloseModal(); if(onUpdated) onUpdated(b); }); });
+    ctrl.appendChild(delB);
+    body.appendChild(ctrl);
+  }
   else { const ro=readOnlyBanner(); if(ro) body.appendChild(ro); }
   m.classList.add('open');
 }
@@ -1131,14 +1248,33 @@ function bkAgencyForm(onCreated){
 }
 
 /* ---- filas de la tabla (una fila por reserva, sin tarjetas) ---- */
-function bkAdminRow(b, open){
+/* Eliminación de reserva (baja lógica). SOLO owner. El servidor rellena la
+   razón; el owner no escribe nada, solo confirma. No toca Stripe ni pagos. */
+function bkDeleteBooking(b, onDone){
+  if(!canWrite()) return;
+  const code=b.booking_code||'';
+  if(!confirm((ES?'¿Eliminar la reserva ':'Delete booking ')+code
+      +(ES?'?\n\nSe archiva (baja lógica). No se cobra ni se reembolsa nada, y se conservan pago, QR y correos ya enviados.'
+          :'?\n\nIt is archived (soft-delete). Nothing is charged or refunded; payment, QR and sent emails are kept.'))) return;
+  apiPost('/api/admin-booking-delete',{booking_id:b.id}).then(function(r){
+    if(r.status===401){ onUnauthorized(); return; }
+    if(!r.ok){ adminToast(ES?'No se pudo eliminar.':'Could not delete.'); return; }
+    adminToast(ES?'Reserva eliminada':'Booking deleted');
+    if(onDone) onDone();
+  }).catch(function(){ adminToast(ES?'No se pudo eliminar.':'Could not delete.'); });
+}
+/* Insignia TEST para reservas de prueba (se administran desde Reservas). */
+function bkTestBadge(b){ return b && b.is_test ? ' <span class="bdg bdg-warn bk-test">TEST</span>' : ''; }
+
+function bkAdminRow(b, open, opts){
+  opts=opts||{};
   const tr=document.createElement('tr');
   const isQuote=b.request_type==='quote';
-  tr.innerHTML='<td>'+bkFmtDate(b.booking_date)+'</td>'
-    +'<td class="mono">'+escapeHtml(b.booking_code||'')+'</td>'
-    +'<td class="ell">'+escapeHtml(b.tour_name||'')+'</td>'
-    +'<td class="ell">'+escapeHtml(b.customer_name||'')+'</td>'
-    +'<td>'+escapeHtml(b.customer_phone||'—')+'</td>'
+  tr.innerHTML='<td title="'+escapeHtml(bkFmtDate(b.booking_date))+'">'+bkFmtDate(b.booking_date)+'</td>'
+    +'<td class="mono">'+escapeHtml(b.booking_code||'')+bkTestBadge(b)+'</td>'
+    +'<td class="ell" title="'+escapeHtml(b.tour_name||'')+'">'+escapeHtml(b.tour_name||'')+'</td>'
+    +'<td class="ell" title="'+escapeHtml(b.customer_name||'')+'">'+escapeHtml(b.customer_name||'')+'</td>'
+    +'<td class="ell" title="'+escapeHtml(b.customer_phone||'')+'">'+escapeHtml(b.customer_phone||'—')+'</td>'
     +'<td class="num">'+escapeHtml(b.guests)+'</td>'
     +'<td class="num">'+(isQuote?(ES?'Cotización':'Quote'):bkMoney(b.amount_cents,b.currency))+'</td>'
     +'<td>'+bkBadge(b.payment_status, BK_PAY_KIND[b.payment_status])+'</td>'
@@ -1146,10 +1282,16 @@ function bkAdminRow(b, open){
     +'<td>'+(b.sales_channel==='agency'
         ? bkBadge(ES?'agencia':'agency','info')+(b.payment_method?' <small class="bk-meth">'+escapeHtml(b.payment_method)+'</small>':'')
         : bkBadge('web','muted'))+'</td>';
-  const td=document.createElement('td');
+  const td=document.createElement('td'); td.className='bk-actions';
   const btn=el('<button class="mini-btn" type="button">'+(ES?'Ver':'View')+'</button>');
   btn.addEventListener('click',function(e){ e.stopPropagation(); open(b); });
-  td.appendChild(btn); tr.appendChild(td);
+  td.appendChild(btn);
+  if(canWrite()){
+    const del=el('<button class="mini-btn bk-del" type="button" title="'+(ES?'Eliminar':'Delete')+'">🗑</button>');
+    del.addEventListener('click',function(e){ e.stopPropagation(); bkDeleteBooking(b, opts.onChange); });
+    td.appendChild(del);
+  }
+  tr.appendChild(td);
   tr.addEventListener('dblclick',function(){ open(b); });
   return tr;
 }
@@ -1158,11 +1300,11 @@ function bkStaffRow(b, open){
   const tr=document.createElement('tr');
   tr.innerHTML='<td>'+bkFmtDate(b.booking_date)+'</td>'
     +'<td class="mono">'+escapeHtml(b.booking_code||'')+'</td>'
-    +'<td class="ell">'+escapeHtml(b.tour_name||'')+'</td>'
-    +'<td class="ell">'+escapeHtml(b.customer_name||'')+'</td>'
-    +'<td>'+escapeHtml(b.customer_phone||'—')+'</td>'
+    +'<td class="ell" title="'+escapeHtml(b.tour_name||'')+'">'+escapeHtml(b.tour_name||'')+'</td>'
+    +'<td class="ell" title="'+escapeHtml(b.customer_name||'')+'">'+escapeHtml(b.customer_name||'')+'</td>'
+    +'<td class="ell" title="'+escapeHtml(b.customer_phone||'')+'">'+escapeHtml(b.customer_phone||'—')+'</td>'
     +'<td class="num">'+escapeHtml(b.guests)+'</td>'
-    +'<td class="ell">'+escapeHtml(b.notes||'')+'</td>';
+    +'<td class="ell" title="'+escapeHtml(b.notes||'')+'">'+escapeHtml(b.notes||'')+'</td>';
   tr.addEventListener('dblclick',function(){ open(b); });
   return tr;
 }
@@ -1252,8 +1394,8 @@ function bkScreen(o){
      ocupa el 100% del ancho y el texto largo se corta con ellipsis, en vez de
      empujar la tabla y provocar scroll horizontal en desktop. */
   const COLW = isStaff
-    ? ['9%','11%','22%','19%','14%','8%','17%']
-    : ['8%','9%','16%','14%','11%','6%','8%','8%','8%','7%','11%'];
+    ? ['9%','12%','24%','20%','15%','8%','12%']
+    : ['7%','11%','15%','13%','11%','6%','8%','8%','8%','8%','13%'];
   const wrap=el('<div class="bk-table-wrap"></div>');
   const colg='<colgroup>'+COLW.map(function(w){return '<col style="width:'+w+'">';}).join('')+'</colgroup>';
   const table=el('<table class="bk-table">'+colg+'<thead><tr>'+COLS.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody></tbody></table>');
@@ -1340,11 +1482,16 @@ function bkScreen(o){
     if(isStaff) return;                       // staff no accede a información financiera
     /* Fase 9: los importes del período viven en Finanzas. Si el bloque no
        está montado en esta pantalla, no se pide nada al servidor. */
-    if(!finance.parentNode) return;
+    /* isConnected (no parentNode): el() devuelve un nodo cuyo parentNode es un
+       <div> envoltorio temporal, así que finance.parentNode NUNCA era null y la
+       guarda no cortaba. isConnected sí es true solo cuando está en el documento. */
+    if(!finance.isConnected) return;
     const b=bkMonthBounds(state.y,state.m);
     const q={ date_from: fromF.input.value || b[0], date_to: toF.input.value || b[1] };
-    if(chanF.select.value) q.channel=chanF.select.value;
-    if(methF.select.value) q.payment_method=methF.select.value;
+    /* chanF/methF NO existen en el calendario (filtros solo en Reservas). Se
+       comprueba null como en baseParams: doble seguro contra el bug. */
+    if(chanF && chanF.select.value) q.channel=chanF.select.value;
+    if(methF && methF.select.value) q.payment_method=methF.select.value;
     apiGet('/api/admin-finance-summary?'+bkQS(q)).then(function(r){
       if(r.status===401){ onUnauthorized(); return; }
       if(!r.ok||!r.data||!r.data.revenue){ finance.innerHTML=''; return; }
@@ -1386,7 +1533,7 @@ function bkScreen(o){
       const list=(r.data&&r.data.bookings)||[]; const pg=(r.data&&r.data.pagination)||{page:1,totalPages:1,total:0};
       tbody.innerHTML='';
       if(!list.length){ tbody.innerHTML='<tr><td class="bk-empty" colspan="'+COLS.length+'">'+(ES?'Sin reservas para estos filtros.':'No bookings for these filters.')+'</td></tr>'; }
-      else list.forEach(function(b){ tbody.appendChild(isStaff?bkStaffRow(b,openDetail):bkAdminRow(b,openDetail)); });
+      else list.forEach(function(b){ tbody.appendChild(isStaff?bkStaffRow(b,openDetail):bkAdminRow(b,openDetail,{onChange:function(){ loadTable(); loadCal(); }})); });
       state.page=pg.page||1;
       pageInfo.textContent=(ES?'Página ':'Page ')+(pg.page||1)+' / '+(pg.totalPages||1)+' · '+(pg.total||0)+(ES?' registros':' records');
       prevP.disabled=(pg.page||1)<=1; nextP.disabled=(pg.page||1)>=(pg.totalPages||1);
@@ -1434,6 +1581,7 @@ function bkScreen(o){
      prefiltrada al mes actual y mostraba 0 si los datos estaban en otro mes. */
   if(isCal){
     const b=bkMonthBounds(state.y,state.m); fromF.input.value=b[0]; toF.input.value=b[1];
+    renderCal();          // dibuja la rejilla de inmediato (no depende del fetch)
     loadCal(); loadTable();
   }else{
     fromF.input.value=''; toF.input.value='';
@@ -1688,14 +1836,17 @@ function panelPackagesUnified(role){
    diaria: registro de correos, plantillas de costos, reglas de descuento,
    recordatorios y datos de prueba. Nada se ha borrado: se ha movido. */
 function panelSettings(role){
+  /* Configuración simple. FUERA de la UI diaria (código dormido, NO borrado):
+       · Notificaciones (panelNotifications): confuso y sin flujo claro; las
+         comunicaciones se manejan desde el detalle de la reserva.
+       · Datos de prueba (panelTestData): las reservas de prueba se identifican
+         con la insignia TEST y se eliminan desde Reservas (owner). */
   const tabs=[
-    {id:'notif',      label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }},
-    {id:'plantillas', label:(ES?'Plantillas de costos':'Cost templates'), build:function(){ return panelFinance(role,['templates']); }},
+    {id:'record',     label:(ES?'Recordatorios':'Reminders'), build:function(){ return panelRemindersSettings(role); }},
     {id:'descuentos', label:(ES?'Reglas de descuento':'Discount rules'), build:function(){ return panelFinance(role,['discounts']); }},
-    {id:'record',     label:(ES?'Recordatorios':'Reminders'), build:function(){ return panelRemindersSettings(role); }}
+    {id:'plantillas', label:(ES?'Ajustes avanzados: plantillas de costos':'Advanced: cost templates'), build:function(){ return panelFinance(role,['templates']); }}
   ];
-  if(role==='owner') tabs.push({id:'testdata', label:(ES?'Datos de prueba':'Test data'), build:function(){ return panelTestData(role); }});
-  return tabbedPanel(tabs,'notif');
+  return tabbedPanel(tabs,'record');
 }
 
 /* Recordatorios: explica la cadencia y deja lanzar el barrido a mano.

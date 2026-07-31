@@ -201,5 +201,77 @@ ok('46 la subida firmada usa PUT con x-upsert + content-type (como el SDK)',
   /setRequestHeader\('x-upsert','false'\)/.test(adm) &&
   /setRequestHeader\('content-type'/.test(adm));
 
+/* =======================================================================
+   C) RONDA DE CORRECCIONES FINALES
+   ======================================================================= */
+
+/* Calendario — la causa raíz era loadFinance tocando chanF null. */
+ok('47 loadFinance no rompe el calendario: guarda isConnected + null en chanF/methF',
+  /if\(!finance\.isConnected\) return;/.test(adm) &&
+  /if\(chanF && chanF\.select\.value\)/.test(adm) && /if\(methF && methF\.select\.value\)/.test(adm));
+ok('48 el calendario dibuja la rejilla de inmediato (no depende del fetch)',
+  /if\(isCal\)\{[\s\S]{0,160}renderCal\(\);\s*\/\/[^\n]*\n\s*loadCal\(\); loadTable\(\);/.test(adm));
+
+/* Tabla — encabezados legibles. */
+ok('49 encabezados sin truncar: padding y tipografía compactos, sin ellipsis en th',
+  /table\.bk-table thead th\{[^}]*font-size:10\.5px;[^}]*padding:11px 9px;[^}]*overflow:visible/.test(html));
+ok('50 columnas clave (código/total/estados/canal/acciones) no se recortan',
+  /table\.bk-table td\.mono,table\.bk-table td\.num\{overflow:visible;\}/.test(html) &&
+  /td\.bk-actions\{overflow:visible/.test(html));
+ok('51 texto secundario con tooltip (title) en tour/cliente/teléfono',
+  /<td class="ell" title="'\+escapeHtml\(b\.tour_name/.test(adm) && /title="'\+escapeHtml\(b\.customer_name/.test(adm));
+
+/* Eliminar reserva owner-only. */
+const del = read('server/admin-handlers/booking-delete.js');
+ok('52 booking-delete: SOLO owner + sameOrigin + baja lógica (deleted_at) + auditoría',
+  /requireWriter\(req, res\)/.test(del) && /sameOrigin\(req\)/.test(del) &&
+  /deleted_at: new Date\(\)\.toISOString\(\)/.test(del) && /recordAudit\(session/.test(del));
+ok('53 booking-delete: el servidor rellena la razón (owner no la escribe) y no toca Stripe',
+  /DEFAULT_REASON/.test(del) && !/stripe/i.test(del.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')));
+ok('54 UI: eliminar en la fila y en el detalle, solo si canWrite; con confirmación',
+  /function bkDeleteBooking\(b, onDone\)/.test(adm) && /if\(!canWrite\(\)\) return;/.test(adm) &&
+  /confirm\(/.test(adm.slice(adm.indexOf('function bkDeleteBooking'), adm.indexOf('function bkDeleteBooking') + 700)) &&
+  /Eliminar reserva|Delete booking/.test(adm));
+ok('55 insignia TEST en la tabla; is_test llega del servidor',
+  /function bkTestBadge\(b\)/.test(adm) && /is_test/.test(read('server/admin-handlers/bookings.js')));
+const vjD = JSON.parse(read('vercel.json'));
+ok('56 vercel.json expone booking-delete', vjD.rewrites.some(function (r) { return r.source === '/api/admin-booking-delete'; }));
+
+/* Configuración simplificada (D3/D4). */
+const settings = adm.slice(adm.indexOf('function panelSettings('), adm.indexOf('function panelSettings(') + 900);
+ok('57 Configuración sin Notificaciones ni Datos de prueba',
+  settings.indexOf("id:'notif'") === -1 && settings.indexOf("id:'testdata'") === -1 &&
+  settings.indexOf("id:'record'") !== -1 && settings.indexOf("id:'descuentos'") !== -1);
+
+/* Detalle más ancho (D6). */
+ok('58 el detalle usa ~92vw con tope y scroll interno',
+  /\.bk-modal-card\{position:relative;width:92vw;max-width:1180px;max-height:90vh;overflow:auto/.test(html));
+
+/* Formulario completo del pasajero (D7). */
+ok('59 "Ver formulario completo" con todas las respuestas reales',
+  /function bkFullPaxForm\(d,b\)/.test(adm) && /Ver formulario completo|View full form/.test(adm) &&
+  /date_of_birth/.test(adm) && /dietary/i.test(adm) && /accessibility/i.test(adm));
+
+/* Emails clickeables + cuerpo (D8). */
+const detH = read('server/admin-handlers/booking-communication-detail.js');
+ok('60 endpoint de detalle: owner/admin/staff, devuelve cuerpo, staff sin correos owner_',
+  /requireAdmin\(req, res, \['owner', 'admin', 'staff'\]\)/.test(detH) &&
+  /body_html/.test(detH) && /indexOf\('owner_'\) === 0\) return sendError\(res, 403/.test(detH));
+ok('61 send/email-service guardan el cuerpo (best-effort si 0021 no está)',
+  /body_html: tpl\.html, body_text: tpl\.text/.test(read('server/admin-handlers/booking-communication-send.js')) &&
+  /subject: tpl\.subject, body_html: tpl\.html/.test(read('server/lib/booking-email-service.js')));
+ok('62 UI: historial clickeable (manual + automáticos) que abre el cuerpo',
+  /bk-log-click/.test(adm) && /admin-booking-communication-detail/.test(adm) && /bk-msg-body/.test(adm) &&
+  /openMsg\('comm'/.test(adm) && /openMsg\('email'/.test(adm));
+ok('63 booking-comms devuelve también los correos automáticos (emails)',
+  /emails: emails/.test(read('server/admin-handlers/booking-comms.js')));
+
+/* Migración 0021 (creada, no aplicada). */
+const m21 = read('supabase/migrations/0021_communication_bodies.sql');
+ok('64 0021 añade body_html/body_text a comunicaciones y correos; aditiva',
+  /alter table public\.booking_communications[\s\S]*add column if not exists body_html/.test(m21) &&
+  /alter table public\.email_notifications[\s\S]*add column if not exists body_html/.test(m21) &&
+  !/drop table/i.test(m21) && !/drop column/i.test(m21));
+
 console.log('\n=== RESULTADO FASE 9 CORRECCIONES: ' + pass + ' PASS · ' + fail + ' FAIL ===');
 if (fail) process.exitCode = 1;

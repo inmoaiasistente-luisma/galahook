@@ -464,7 +464,7 @@ ok('19 buildAuditRow: sin sesión o sin acción → null',
   ok('79 el QR y las notificaciones viven en el propio detalle',
     /bkQrPanel\(b\)/.test(detail) && /bkNotifPanel\(b\)/.test(detail));
   ok('80 cambiar el estado solo se ofrece a quien puede escribir',
-    /if\(canWrite\(\)\)\{ ctrl\.appendChild\(sel\)/.test(detail));
+    /if\(canWrite\(\)\)\{\s*\n?\s*ctrl\.appendChild\(sel\)/.test(detail));
   /* El único campo de UUID a mano que queda vive en panelMiluTourism, que
      está CONGELADO y fuera del menú desde la Fase 8. Se comprueba que ninguna
      pantalla ALCANZABLE lo pida, y que ese panel siga siendo inalcanzable. */
@@ -482,13 +482,16 @@ ok('19 buildAuditRow: sin sesión o sin acción → null',
     /function panelPackagesUnified\(role\)/.test(adm) &&
     /panelPackages\(\)/.test(adm) && /panelPackagePricing\(role\)/.test(adm) && /panelPackageNotes\(role\)/.test(adm));
 
-  /* Configuración. */
-  ok('84 Configuración reúne notificaciones, plantillas, descuentos y recordatorios',
+  /* Configuración (corrección D3/D4): SIN Notificaciones ni Datos de prueba;
+     solo Recordatorios, Descuentos y plantillas de costos avanzadas. */
+  const settingsBlock = adm.slice(adm.indexOf('function panelSettings'), adm.indexOf('function panelSettings') + 900);
+  ok('84 Configuración = Recordatorios + Descuentos + plantillas (sin Notificaciones ni Test data)',
     /function panelSettings\(role\)/.test(adm) &&
-    ["id:'notif'", "id:'plantillas'", "id:'descuentos'", "id:'record'"]
-      .every(function (s) { return adm.indexOf(s) !== -1; }));
-  ok('85 Datos de prueba sigue siendo exclusivo del owner',
-    /if\(role==='owner'\) tabs\.push\(\{id:'testdata'/.test(adm));
+    ["id:'record'", "id:'descuentos'", "id:'plantillas'"].every(function (s) { return settingsBlock.indexOf(s) !== -1; }) &&
+    settingsBlock.indexOf("id:'notif'") === -1 && settingsBlock.indexOf("id:'testdata'") === -1);
+  ok('85 Notificaciones y Datos de prueba quedan dormidos (funciones existen, no se invocan en Configuración)',
+    /function panelNotifications\(role\)/.test(adm) && /function panelTestData\(role\)/.test(adm) &&
+    settingsBlock.indexOf('panelTestData(role)') === -1 && settingsBlock.indexOf('panelNotifications(role)') === -1);
   ok('86 Configuración muestra la cadencia real y permite lanzar el barrido',
     /function panelRemindersSettings\(role\)/.test(adm) &&
     /Faltan 7 días para tu aventura en Galápagos\./.test(adm) &&
