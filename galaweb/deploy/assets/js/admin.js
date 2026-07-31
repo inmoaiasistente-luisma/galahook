@@ -1400,8 +1400,8 @@ function bkScreen(o){
   const COLW = isStaff
     ? ['11%','14%','28%','25%','9%','13%']
     : (rowOwner
-        ? ['13%','21%','23%','11%','6%','11%','8%','8%','5%']
-        : ['13%','22%','24%','11%','6%','12%','8%','8%']);
+        ? ['12%','18%','20%','9%','5%','9%','13%','10%','4%']
+        : ['12%','19%','20%','9%','5%','10%','13%','12%']);
   const wrap=el('<div class="bk-table-wrap"></div>');
   const colg='<colgroup>'+COLW.map(function(w){return '<col style="width:'+w+'">';}).join('')+'</colgroup>';
   const table=el('<table class="bk-table">'+colg+'<thead><tr>'+COLS.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody></tbody></table>');

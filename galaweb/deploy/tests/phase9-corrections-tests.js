@@ -45,9 +45,10 @@ ok('5 la búsqueda funciona por código, cliente o tour',
   /searchInput\.addEventListener\('keydown'/.test(adm));
 
 /* Tabla sin scroll horizontal en desktop. */
-ok('6 la tabla usa table-layout:fixed y ellipsis; el min-width fijo se fue del desktop',
+ok('6 table-layout:fixed; SOLO las columnas flexibles (.ell) recortan con ellipsis',
   /table\.bk-table\{width:100%;border-collapse:collapse;font-size:13\.5px;table-layout:fixed;\}/.test(html) &&
-  /table\.bk-table tbody td\{[^}]*text-overflow:ellipsis/.test(html));
+  /table\.bk-table tbody td\{[^}]*overflow:visible;\}/.test(html) &&
+  /table\.bk-table td\.ell\{overflow:hidden;text-overflow:ellipsis;\}/.test(html));
 
 ok('7 el contenedor no desplaza en horizontal en desktop (solo vertical)',
   /\.bk-table-wrap\{[^}]*overflow-x:hidden;overflow-y:auto/.test(html));
@@ -215,9 +216,9 @@ ok('48 el calendario dibuja la rejilla de inmediato (no depende del fetch)',
 /* Tabla — encabezados legibles. */
 ok('49 encabezados sin truncar: filas aireadas (54px), th sin ellipsis',
   /table\.bk-table thead th\{[^}]*font-size:10\.5px;[^}]*padding:14px 12px;[^}]*overflow:visible/.test(html) &&
-  /table\.bk-table tbody td\{padding:0 12px;height:54px/.test(html));
-ok('50 columnas clave (código/total/estados) no se recortan',
-  /table\.bk-table td\.mono,table\.bk-table td\.num\{overflow:visible;\}/.test(html) &&
+  /table\.bk-table tbody td\{padding:0 14px;height:54px/.test(html));
+ok('50 columnas clave (código/fecha/total/estados) se ven completas: td visible por defecto',
+  /table\.bk-table tbody td\{[^}]*overflow:visible;\}/.test(html) &&
   /td\.bk-del-cell\{overflow:visible/.test(html));
 
 /* Tabla limpia (petición final): 8 columnas, sin teléfono/canal/acciones/Ver,

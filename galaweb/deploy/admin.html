@@ -66,7 +66,7 @@
   /* encabezado de grupo del sidebar (Fase 9: navegación agrupada) */
   .nav-group{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.42);padding:16px 14px 6px;}
   .nav-group:first-child{padding-top:2px;}
-  .admin-main{padding:32px clamp(18px,3.5vw,44px);max-width:1220px;width:100%;}
+  .admin-main{padding:32px clamp(18px,3.5vw,44px);max-width:1560px;width:100%;}
   .panel{display:none;}
   .panel.active{display:block;}
   .panel-anim{animation:fade .4s var(--ease) both;}
@@ -208,9 +208,11 @@
   table.bk-table thead th{position:sticky;top:0;z-index:2;background:var(--a-bg-2);color:var(--a-text-soft);
     font-weight:700;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;text-align:left;padding:14px 12px;white-space:nowrap;
     overflow:visible;border-bottom:1px solid var(--a-border);}
-  table.bk-table tbody td{padding:0 12px;height:54px;color:var(--a-text);border-bottom:1px solid var(--a-border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  /* Columnas clave nunca se recortan: código, total y badges completos. */
-  table.bk-table td.mono,table.bk-table td.num{overflow:visible;}
+  table.bk-table tbody td{padding:0 14px;height:54px;color:var(--a-text);border-bottom:1px solid var(--a-border);white-space:nowrap;overflow:visible;}
+  /* Nada se recorta salvo las columnas flexibles (cliente/tour/notas), que
+     usan ellipsis SOLO cuando el texto es muy largo. Código, fecha, pax,
+     total y los badges (CONFIRMED, PAID, REFUNDED…) se ven siempre completos. */
+  table.bk-table td.ell{overflow:hidden;text-overflow:ellipsis;}
   table.bk-table tbody tr.bk-rowclick{cursor:pointer;}
   .bk-test{font-size:9px;padding:2px 6px;margin-left:6px;vertical-align:middle;}
   /* Icono de eliminar (owner): discreto, al extremo derecho; se resalta al pasar. */
@@ -234,7 +236,7 @@
   table.bk-table tbody tr:hover{background:var(--a-bg-2);cursor:pointer;}
   table.bk-table td.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:var(--a-gold-deep);font-weight:700;}
   table.bk-table td.num{text-align:right;}
-  table.bk-table td.ell{max-width:190px;overflow:hidden;text-overflow:ellipsis;}
+  table.bk-table td.ell{overflow:hidden;text-overflow:ellipsis;}
   table.bk-table td.bk-empty{text-align:center;color:var(--a-text-soft);height:70px;white-space:normal;}
   table.bk-table td.bk-empty.err{color:var(--a-bad-tx);}
   .bk-pager{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 2px 0;color:var(--a-text-soft);font-size:13px;}
@@ -361,6 +363,6 @@
 <body>
 <div class="admin-shell" id="shell"></div>
 <script src="assets/js/content.js?v=hp6"></script>
-<script src="assets/js/admin.js?v=f9c"></script>
+<script src="assets/js/admin.js?v=f9d"></script>
 </body>
 </html>
