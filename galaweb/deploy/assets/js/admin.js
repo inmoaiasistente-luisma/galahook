@@ -85,6 +85,25 @@ function roleLabel(role){
   return '';
 }
 
+/* ============ Fase 9 — matriz de permisos en la interfaz ============
+   La compuerta REAL vive en el servidor (requireWriter / requireSaleWriter).
+   Aquí solo se ocultan los controles que el rol no puede usar, para no
+   ofrecer botones que devolverían 403.
+
+     owner → ve todo y modifica todo.
+     admin → ve exactamente lo mismo, pero SOLO LECTURA.
+     staff → operativo sin dinero; su única escritura es registrar ventas. */
+let ROLE='';
+function canWrite(){ return ROLE==='owner'; }
+function canRecordSale(){ return ROLE==='owner' || ROLE==='staff'; }
+/* Aviso visible para que el admin entienda por qué no hay botones. */
+function readOnlyBanner(){
+  if(canWrite()) return null;
+  return el('<div class="ro-note">'+(ES
+    ?'Solo lectura · tu rol puede consultar toda la información, pero no modificarla.'
+    :'Read-only · your role can view everything, but cannot modify it.')+'</div>');
+}
+
 /* ============ helpers to build bound fields ============ */
 function el(html){ const d=document.createElement('div'); d.innerHTML=html.trim(); return d.firstChild; }
 function setDirty(){ dirty=true; const s=document.getElementById('saveState'); if(s){ s.textContent='Unsaved changes'; s.classList.add('show'); } }
@@ -685,6 +704,185 @@ function bkFlightsPlaceholder(){
     +(ES?'Integración de vuelos por proveedor API (Duffel) — no disponible aún.':'Flight integration via API provider (Duffel) — not available yet.')+'</div></div>');
 }
 
+/* ---- Comunicaciones, documentos y recordatorios (Fase 9) ----
+   Todo lo que se le envía al pasajero, desde la propia reserva: reenviar QR
+   o confirmación, mandar tickets, vouchers, itinerarios, instrucciones o un
+   aviso de cambio; adjuntar documentos por enlace; y ver/pausar la cadencia
+   de recordatorios. Cada envío deja constancia de a quién, cuándo, qué,
+   con qué archivo y quién lo hizo. */
+const BK_MSG_TYPES=[
+  ['qr_resend', ES?'Reenviar QR':'Resend QR'],
+  ['confirmation_resend', ES?'Reenviar confirmación':'Resend confirmation'],
+  ['air_ticket', ES?'Tickets aéreos':'Air tickets'],
+  ['hotel_voucher', ES?'Voucher de hotel':'Hotel voucher'],
+  ['itinerary', ES?'Itinerario':'Itinerary'],
+  ['instructions', ES?'Instrucciones':'Instructions'],
+  ['change_notice', ES?'Aviso de cambio':'Change notice'],
+  ['other', ES?'Otro mensaje':'Other message']
+];
+const BK_DOC_TYPES=[
+  ['air_ticket', ES?'Ticket aéreo':'Air ticket'],
+  ['hotel_voucher', ES?'Voucher de hotel':'Hotel voucher'],
+  ['itinerary', ES?'Itinerario':'Itinerary'],
+  ['instructions', ES?'Instrucciones':'Instructions'],
+  ['insurance', ES?'Seguro':'Insurance'],
+  ['receipt', ES?'Recibo':'Receipt'],
+  ['other', ES?'Otro':'Other']
+];
+function bkLabelOf(list,v){ const x=list.filter(function(o){return o[0]===v;})[0]; return x?x[1]:v; }
+
+function bkCommsSection(b){
+  const wrap=el('<div class="bk-sub"><h4>'+(ES?'Comunicaciones y documentos':'Communications & documents')+'</h4></div>');
+  const box=el('<div></div>'); wrap.appendChild(box);
+  box.innerHTML='<div class="bk-sub-hint">'+(ES?'Cargando…':'Loading…')+'</div>';
+
+  function render(d){
+    box.innerHTML='';
+    if(d.storage_ready===false){
+      box.appendChild(el('<div class="ro-note">'+(ES
+        ?'La migración 0019 todavía no está aplicada: aún no se pueden guardar documentos ni la bitácora de envíos.'
+        :'Migration 0019 is not applied yet: documents and the send log cannot be stored yet.')+'</div>'));
+    }
+
+    /* --- recordatorios --- */
+    const rem=d.reminders||{};
+    const remBox=el('<div class="bk-block"></div>');
+    const sent=(rem.sent||[]).filter(function(x){ return x.status==='sent'; }).length;
+    remBox.appendChild(el('<div class="bk-block-head"><b>'+(ES?'Recordatorios pre-viaje':'Pre-trip reminders')+'</b>'
+      +'<span>'+(rem.paused?('<span class="notif-badge notif-skipped">'+(ES?'pausados':'paused')+'</span>')
+                          :('<span class="notif-badge notif-sent">'+(ES?'activos':'active')+'</span>'))
+      +' · '+sent+'/5 '+(ES?'enviados':'sent')+'</span></div>'));
+    remBox.appendChild(el('<div class="bk-sub-hint">'+(ES
+      ?'7, 5, 3 y 1 día antes, y el mismo día del viaje.'
+      :'7, 5, 3 and 1 day before, plus the day of the trip.')+'</div>'));
+    if(canWrite()){
+      const tg=el('<button class="mini-btn" type="button">'+(rem.paused?(ES?'Reanudar':'Resume'):(ES?'Pausar':'Pause'))+'</button>');
+      tg.addEventListener('click',function(){
+        tg.disabled=true;
+        apiPost('/api/admin-reminders-toggle',{booking_id:b.id,paused:!rem.paused}).then(function(r){
+          if(r.status===401){ onUnauthorized(); return; }
+          if(!r.ok){ tg.disabled=false; adminToast(ES?'No se pudo cambiar.':'Could not update.'); return; }
+          adminToast(rem.paused?(ES?'Recordatorios reanudados':'Reminders resumed'):(ES?'Recordatorios pausados':'Reminders paused'));
+          load();
+        }).catch(function(){ tg.disabled=false; adminToast(ES?'No se pudo cambiar.':'Could not update.'); });
+      });
+      remBox.appendChild(tg);
+    }
+    box.appendChild(remBox);
+
+    /* --- documentos --- */
+    const docBox=el('<div class="bk-block"></div>');
+    docBox.appendChild(el('<div class="bk-block-head"><b>'+(ES?'Documentos':'Documents')+'</b></div>'));
+    const docs=d.documents||[];
+    if(!docs.length) docBox.appendChild(el('<div class="bk-sub-hint">'+(ES?'Sin documentos todavía.':'No documents yet.')+'</div>'));
+    docs.forEach(function(doc){
+      const row=el('<div class="bk-doc-row"></div>');
+      row.appendChild(el('<span class="bdg bdg-muted">'+escapeHtml(bkLabelOf(BK_DOC_TYPES,doc.doc_type))+'</span>'));
+      row.appendChild(el('<a href="'+escapeHtml(doc.url)+'" target="_blank" rel="noopener">'+escapeHtml(doc.label)+'</a>'));
+      if(canWrite()){
+        const rm=el('<button class="mini-btn" type="button">'+(ES?'Quitar':'Remove')+'</button>');
+        rm.addEventListener('click',function(){
+          rm.disabled=true;
+          apiPost('/api/admin-booking-document-save',{booking_id:b.id,action:'remove',document_id:doc.id}).then(function(r){
+            if(r.status===401){ onUnauthorized(); return; }
+            if(!r.ok){ rm.disabled=false; adminToast(ES?'No se pudo quitar.':'Could not remove.'); return; }
+            load();
+          }).catch(function(){ rm.disabled=false; });
+        });
+        row.appendChild(rm);
+      }
+      docBox.appendChild(row);
+    });
+
+    if(canWrite()){
+      const add=el('<details class="bk-add"><summary>'+(ES?'Adjuntar documento':'Attach document')+'</summary></details>');
+      const f=el('<div class="ed-row"></div>');
+      const tSel=document.createElement('select');
+      BK_DOC_TYPES.forEach(function(o){ const op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; tSel.appendChild(op); });
+      const lab=document.createElement('input'); lab.type='text'; lab.maxLength=160; lab.placeholder=ES?'Etiqueta (p. ej. Ticket AV1630)':'Label (e.g. Ticket AV1630)';
+      const url=document.createElement('input'); url.type='url'; url.maxLength=2000; url.placeholder='https://…';
+      [tSel,lab,url].forEach(function(x){ const w=el('<div class="ed-field"></div>'); w.appendChild(x); f.appendChild(w); });
+      const save=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Guardar documento':'Save document')+'</button>');
+      save.addEventListener('click',function(){
+        if(!lab.value.trim()||!/^https:\/\//i.test(url.value.trim())){
+          adminToast(ES?'Etiqueta y enlace https son obligatorios.':'Label and an https link are required.'); return;
+        }
+        save.disabled=true;
+        apiPost('/api/admin-booking-document-save',{booking_id:b.id,action:'add',doc_type:tSel.value,label:lab.value.trim(),url:url.value.trim()})
+          .then(function(r){
+            save.disabled=false;
+            if(r.status===401){ onUnauthorized(); return; }
+            if(!r.ok){ adminToast(ES?'No se pudo guardar el documento.':'Could not save the document.'); return; }
+            lab.value=''; url.value=''; load();
+          }).catch(function(){ save.disabled=false; });
+      });
+      add.appendChild(f); add.appendChild(save); docBox.appendChild(add);
+    }
+    box.appendChild(docBox);
+
+    /* --- enviar --- */
+    if(canWrite()){
+      const sendBox=el('<div class="bk-block"></div>');
+      sendBox.appendChild(el('<div class="bk-block-head"><b>'+(ES?'Enviar al pasajero':'Send to passenger')+'</b></div>'));
+      const row=el('<div class="ed-row"></div>');
+      const mSel=document.createElement('select');
+      BK_MSG_TYPES.forEach(function(o){ const op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; mSel.appendChild(op); });
+      const dSel=document.createElement('select');
+      const none=document.createElement('option'); none.value=''; none.textContent=ES?'Sin documento':'No document'; dSel.appendChild(none);
+      docs.forEach(function(doc){ const op=document.createElement('option'); op.value=doc.id; op.textContent=doc.label; dSel.appendChild(op); });
+      const note=document.createElement('textarea'); note.rows=2; note.maxLength=2000;
+      note.placeholder=ES?'Mensaje opcional para el pasajero':'Optional message for the passenger';
+      [mSel,dSel].forEach(function(x){ const w=el('<div class="ed-field"></div>'); w.appendChild(x); row.appendChild(w); });
+      sendBox.appendChild(row);
+      const nw=el('<div class="ed-field"></div>'); nw.appendChild(note); sendBox.appendChild(nw);
+      const sendB=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Enviar':'Send')+'</button>');
+      sendB.addEventListener('click',function(){
+        if(!b.customer_email){ adminToast(ES?'Esta reserva no tiene correo del cliente.':'This booking has no customer email.'); return; }
+        sendB.disabled=true; const lbl=sendB.textContent; sendB.textContent=ES?'Enviando…':'Sending…';
+        const payload={booking_id:b.id,message_type:mSel.value};
+        if(note.value.trim()) payload.note=note.value.trim();
+        if(dSel.value) payload.document_id=dSel.value;
+        apiPost('/api/admin-booking-communication-send',payload).then(function(r){
+          sendB.disabled=false; sendB.textContent=lbl;
+          if(r.status===401){ onUnauthorized(); return; }
+          if(!r.ok){ adminToast(ES?'No se pudo enviar el mensaje.':'The message could not be sent.'); return; }
+          adminToast((r.data&&r.data.logged===false)
+            ? (ES?'Enviado, pero no se pudo registrar en la bitácora.':'Sent, but it could not be logged.')
+            : (ES?'Mensaje enviado':'Message sent'));
+          note.value=''; load();
+        }).catch(function(){ sendB.disabled=false; sendB.textContent=lbl; adminToast(ES?'No se pudo enviar.':'Could not send.'); });
+      });
+      sendBox.appendChild(sendB);
+      box.appendChild(sendBox);
+    }
+
+    /* --- bitácora --- */
+    const logBox=el('<div class="bk-block"></div>');
+    logBox.appendChild(el('<div class="bk-block-head"><b>'+(ES?'Historial de envíos':'Send history')+'</b></div>'));
+    const log=d.communications||[];
+    if(!log.length) logBox.appendChild(el('<div class="bk-sub-hint">'+(ES?'Todavía no se ha enviado nada a mano.':'Nothing sent manually yet.')+'</div>'));
+    log.forEach(function(c){
+      logBox.appendChild(el('<div class="bk-log-row">'
+        +'<span class="notif-badge notif-'+(c.status==='sent'?'sent':'failed')+'">'+escapeHtml(c.status)+'</span> '
+        +'<b>'+escapeHtml(bkLabelOf(BK_MSG_TYPES,c.message_type))+'</b> · '+escapeHtml(c.recipient||'')
+        +(c.document_label?(' · '+escapeHtml(c.document_label)):'')
+        +' · '+bkFmtDT(c.created_at)
+        +(c.sent_by_name?(' · '+escapeHtml(c.sent_by_name)):'')+'</div>'));
+    });
+    box.appendChild(logBox);
+  }
+
+  function load(){
+    apiGet('/api/admin-booking-comms?'+bkQS({booking_id:b.id})).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data){ box.innerHTML='<div class="bk-sub-hint">'+(ES?'No se pudo cargar esta sección.':'This section could not be loaded.')+'</div>'; return; }
+      render(r.data);
+    }).catch(function(){ box.innerHTML='<div class="bk-sub-hint">'+(ES?'No se pudo cargar esta sección.':'This section could not be loaded.')+'</div>'; });
+  }
+  load();
+  return wrap;
+}
+
 function bkAdminDetail(b, onUpdated){
   const m=bkModal(), body=m.querySelector('.bk-modal-body');
   const isQuote=b.request_type==='quote';
@@ -717,6 +915,7 @@ function bkAdminDetail(b, onUpdated){
   // UNIFICADO (Fase 9): pasajeros, logística, costos/utilidad y "Flights" en el mismo detalle.
   if(!isQuote){
     body.appendChild(bkPaxSection(b));
+    body.appendChild(bkCommsSection(b));
     body.appendChild(bkFinanceSection(b));
     body.appendChild(bkFlightsPlaceholder());
   }
@@ -740,7 +939,9 @@ function bkAdminDetail(b, onUpdated){
       bkCloseModal(); if(onUpdated) onUpdated(r.data.booking);
     }).catch(function(){ btn.disabled=false; btn.textContent=lbl; adminToast(ES?'No se pudo actualizar. Inténtalo nuevamente.':'Could not update. Please try again.'); });
   });
-  ctrl.appendChild(sel); ctrl.appendChild(btn); body.appendChild(ctrl);
+  /* Cambiar el estado es una escritura: el admin lo ve todo, pero no lo toca. */
+  if(canWrite()){ ctrl.appendChild(sel); ctrl.appendChild(btn); body.appendChild(ctrl); }
+  else { const ro=readOnlyBanner(); if(ro) body.appendChild(ro); }
   m.classList.add('open');
 }
 
@@ -873,8 +1074,19 @@ function bkStaffRow(b, open){
 }
 
 /* ---- pantalla completa: resumen + calendario + filtros + tabla ---- */
+/* ============ RESERVAS / CALENDARIO (Fase 9: pantallas separadas) =========
+   Un mismo motor de datos, dos pantallas distintas:
+
+     mode 'table' → Reservas: el centro operativo. Búsqueda simple, filtros
+                    compactos y tabla completa. Sin calendario.
+     mode 'cal'   → Calendario: solo fechas, salidas y ocupación. Sin el
+                    bloque grande de filtros.
+
+   Las dos abren EL MISMO detalle unificado de reserva. */
 function bkScreen(o){
   const isStaff=!!o.isStaff;
+  const mode = o.mode || 'table';
+  const isCal = mode==='cal';
   const p=el('<div class="bk-screen"></div>');
   const now=new Date();
   const state={ y:now.getFullYear(), m:now.getMonth(), selected:null, page:1, limit:25, monthRows:[], busyCal:false, busyTbl:false };
@@ -898,7 +1110,10 @@ function bkScreen(o){
   for(let i=0;i<7;i++) calDow.appendChild(el('<span>'+DOW[(weekStart+i)%7]+'</span>'));
   const calGrid=el('<div class="bk-cal-grid"></div>');
   const cal=el('<div class="bk-cal"></div>'); cal.appendChild(calHead); cal.appendChild(calDow); cal.appendChild(calGrid);
-  p.appendChild(summary); if(!isStaff) p.appendChild(finance); p.appendChild(cal);
+  /* El resumen del mes y el calendario son de la pantalla Calendario. En
+     Reservas estorban: ahí manda la tabla. Los importes del período viven
+     ahora en Finanzas, no aquí. */
+  if(isCal){ p.appendChild(summary); p.appendChild(cal); }
 
   /* --- filtros --- */
   const fcard=el('<div class="bk-filters"></div>');
@@ -909,7 +1124,9 @@ function bkScreen(o){
   let typeF=null, payF=null, bookF=null, sortF=null, chanF=null, methF=null;
   const row1=el('<div class="bk-frow"></div>'); row1.appendChild(searchWrap); row1.appendChild(fromF.wrap); row1.appendChild(toF.wrap);
   fcard.appendChild(row1);
-  if(!isStaff){
+  /* Filtros compactos: en el calendario NO se muestran (la fecha se elige en
+     la propia cuadrícula); en Reservas se pliegan detrás de "Más filtros". */
+  if(!isStaff && !isCal){
     typeF=bkSelectField(ES?'Tipo':'Type',[['',ES?'Todos':'All'],['booking',ES?'Reserva':'Booking'],['quote',ES?'Cotización':'Quote']]);
     payF =bkSelectField(ES?'Estado de pago':'Payment status',[['',ES?'Todos':'All'],['not_required','not_required'],['pending','pending'],['processing','processing'],['paid','paid'],['failed','failed'],['refunded','refunded']]);
     bookF=bkSelectField(ES?'Estado de reserva':'Booking status',[['',ES?'Todos':'All'],['new','new'],['pending_payment','pending_payment'],['confirmed','confirmed'],['cancelled','cancelled'],['completed','completed'],['failed','failed']]);
@@ -928,13 +1145,9 @@ function bkScreen(o){
   const monthB=el('<button class="mini-btn" type="button">'+(ES?'Este mes':'This month')+'</button>');
   const allB  =el('<button class="mini-btn" type="button">'+(ES?'Ver todo':'View all')+'</button>');
   btns.appendChild(applyB); btns.appendChild(dayB); btns.appendChild(monthB); btns.appendChild(allB);
-  /* Venta directa: disponible para los tres roles. */
-  const agencyB=el('<button class="btn btn-gold btn-sm" type="button">+ '+(ES?'Añadir venta directa':'Add agency booking')+'</button>');
-  agencyB.style.marginLeft='auto';
-  agencyB.addEventListener('click',function(){ bkAgencyForm(function(){ loadCal(); loadTable(); loadFinance(); }); });
-  btns.appendChild(agencyB);
   fcard.appendChild(btns);
-  p.appendChild(fcard);
+  /* Registrar una venta ya no vive aquí: tiene su propia pantalla (Ventas). */
+  if(!isCal) p.appendChild(fcard);
 
   /* --- tabla --- */
   const tblTitle=el('<div class="bk-tbl-title"></div>');
@@ -955,22 +1168,23 @@ function bkScreen(o){
   p.appendChild(pager);
 
   /* --- estado → parámetros --- */
+  /* Los filtros avanzados solo existen en la pantalla Reservas: se comprueba
+     el propio control, no el rol, para que el calendario no se rompa. */
   function baseParams(){
     const q={};
     const s=searchInput.value.trim().slice(0,100); if(s) q.search=s;
-    if(!isStaff){
-      if(typeF.select.value) q.request_type=typeF.select.value;
-      if(payF.select.value)  q.payment_status=payF.select.value;
-      if(bookF.select.value) q.booking_status=bookF.select.value;
-      if(chanF.select.value) q.sales_channel=chanF.select.value;
-      if(methF.select.value) q.payment_method=methF.select.value;
-    }
+    if(typeF && typeF.select.value) q.request_type=typeF.select.value;
+    if(payF  && payF.select.value)  q.payment_status=payF.select.value;
+    if(bookF && bookF.select.value) q.booking_status=bookF.select.value;
+    if(chanF && chanF.select.value) q.sales_channel=chanF.select.value;
+    if(methF && methF.select.value) q.payment_method=methF.select.value;
+    if(o.params) Object.keys(o.params).forEach(function(k){ q[k]=o.params[k]; });
     return q;
   }
   function tableParams(){
     const q=baseParams();
     q.page=state.page; q.limit=state.limit;
-    q.sort = isStaff ? 'booking_date_asc' : (sortF.select.value||'newest');
+    q.sort = sortF ? (sortF.select.value||'newest') : 'booking_date_asc';
     if(state.selected){ q.date_from=state.selected; q.date_to=state.selected; }
     else { if(fromF.input.value) q.date_from=fromF.input.value; if(toF.input.value) q.date_to=toF.input.value; }
     return q;
@@ -1023,6 +1237,9 @@ function bkScreen(o){
      sold_at = fecha de caja. El navegador nunca suma reservas. */
   function loadFinance(){
     if(isStaff) return;                       // staff no accede a información financiera
+    /* Fase 9: los importes del período viven en Finanzas. Si el bloque no
+       está montado en esta pantalla, no se pide nada al servidor. */
+    if(!finance.parentNode) return;
     const b=bkMonthBounds(state.y,state.m);
     const q={ date_from: fromF.input.value || b[0], date_to: toF.input.value || b[1] };
     if(chanF.select.value) q.channel=chanF.select.value;
@@ -1114,8 +1331,59 @@ function bkScreen(o){
   return p;
 }
 
-function panelBookings(){ return bkScreen({isStaff:false}); }
-function panelStaffSchedule(){ return bkScreen({isStaff:true}); }
+/* Reservas: tabla completa tipo hoja de cálculo. El centro operativo.
+   Segunda pestaña: la COLA de formularios de pasajeros. Los datos de
+   pasajeros y logística de UNA reserva se ven dentro de su detalle, pero la
+   cola (quién falta por completar, qué hay que revisar) necesita una vista
+   transversal — y el Dashboard la enlaza con la alerta de formularios. */
+function panelBookings(role){
+  return tabbedPanel([
+    {id:'lista', label:(ES?'Todas las reservas':'All bookings'), build:function(){ return bkScreen({isStaff:false, mode:'table'}); }},
+    {id:'pax',   label:(ES?'Formularios de pasajeros':'Passenger forms'), build:function(){ return panelPassengers(role); }}
+  ],'lista');
+}
+/* Calendario: fechas, salidas y ocupación. Al pulsar un día se listan sus
+   reservas debajo y cada una abre el MISMO detalle unificado. */
+function panelCalendar(role){ return bkScreen({isStaff:role==='staff', mode:'cal'}); }
+function panelStaffSchedule(){ return bkScreen({isStaff:true, mode:'table'}); }
+
+/* ============ VENTAS (Fase 9: pantalla propia) ============
+   Registrar y revisar ventas: directas, de agencia, por teléfono,
+   presenciales, de partners, tours del día, pesca, transporte, comisiones
+   y otros servicios. El staff PUEDE registrar; los importes ajenos y los
+   costos siguen fuera de su alcance (el servidor no se los envía). */
+function panelSales(role){
+  const p=el('<div class="bk-screen"></div>');
+
+  const head=el('<div class="ed-card sales-head"></div>');
+  head.appendChild(el('<h3>'+(ES?'Ventas':'Sales')+'</h3>'));
+  head.appendChild(el('<div class="hint">'+(ES
+    ?'Registra aquí cualquier venta que no venga del sitio web: agencia, teléfono, presencial, partner, tours del día, pesca, transporte, comisiones u otros servicios. Los costos reales de cada venta se agregan después, dentro del detalle de la reserva.'
+    :'Record any sale that does not come from the website: agency, phone, in person, partner, day tours, fishing, transport, commissions or other services. Real costs are added later, inside the booking detail.')+'</div>'));
+
+  if(canRecordSale()){
+    const btn=el('<button class="btn btn-gold btn-sm" type="button">+ '+(ES?'Registrar venta':'Record sale')+'</button>');
+    btn.addEventListener('click',function(){
+      bkAgencyForm(function(){
+        adminToast(ES?'Venta registrada.':'Sale recorded.');
+        if(table && table.parentNode) { p.replaceChild(rebuildTable(), table); }
+      });
+    });
+    head.appendChild(btn);
+  }else{
+    const ro=readOnlyBanner(); if(ro) head.appendChild(ro);
+  }
+  p.appendChild(head);
+
+  /* La lista de ventas reutiliza el motor de la tabla de reservas. */
+  let table=null;
+  function rebuildTable(){
+    const t=bkScreen({isStaff:role==='staff', mode:'table', params:{request_type:'booking'}});
+    table=t; return t;
+  }
+  p.appendChild(rebuildTable());
+  return p;
+}
 
 /* ============ DASHBOARD (owner/admin) — Fase 9 ============
    Pantalla inicial con SOLO datos reales del sistema (admin-bookings +
@@ -1226,6 +1494,9 @@ function panelDashboard(role){
 function fin$(c){ return bkMoney(c,'usd'); }
 /* ============ FINANZAS — hub de 5 pestañas (Fase 9-3) ============
    Reorganiza las funciones existentes en pestañas; no elimina nada. */
+/* DORMIDA desde la navegación final: registrar una venta vive ahora en la
+   pantalla Ventas (panelSales). Se conserva íntegra por si se quiere volver
+   a montar como pestaña suelta. */
 function panelRecordSale(role){
   const p=el('<div class="bk-screen"></div>');
   const card=el('<div class="ed-card"><h3>'+(ES?'Registrar venta manual':'Record manual sale')+'</h3>'
@@ -1235,15 +1506,138 @@ function panelRecordSale(role){
   card.appendChild(btn); p.appendChild(card);
   return p;
 }
+/* ============ FINANZAS (Fase 9 final) ============
+   Solo números, reportes y alertas. Lo que se fue de aquí:
+     · "Ventas y reservas" — era un duplicado de Reservas/Ventas, que ahora
+       tienen pantalla propia.
+     · "Registrar venta" — vive en Ventas.
+     · "Plantillas de costos" y "Reglas de descuento" — son configuración,
+       no operación diaria: están en Configuración.
+   Los costos REALES se registran dentro de cada reserva. La utilidad
+   oficial solo cuenta cuando cost_status = 'confirmed'. */
+/* ============ Contenedor de pestañas reutilizable (Fase 9) ============
+   Mismo patrón visual que Finanzas: una barra dorada y un cuerpo. Sirve
+   para agrupar módulos que antes ocupaban una entrada cada uno en el menú. */
+function tabbedPanel(tabs, firstId){
+  const p=el('<div class="bk-screen"></div>');
+  const bar=el('<div class="fin-tabs"></div>'); p.appendChild(bar);
+  const body=el('<div></div>'); p.appendChild(body);
+  function open(id){
+    [].forEach.call(bar.children,function(btn){ btn.classList.toggle('on', btn.getAttribute('data-id')===id); });
+    body.innerHTML='';
+    const t=tabs.filter(function(x){ return x.id===id; })[0];
+    if(t) body.appendChild(t.build());
+    body.scrollTop=0;
+  }
+  tabs.forEach(function(t){
+    const b=el('<button type="button" class="fin-tab" data-id="'+t.id+'">'+escapeHtml(t.label)+'</button>');
+    b.addEventListener('click',function(){ open(t.id); });
+    bar.appendChild(b);
+  });
+  open(firstId || (tabs[0] && tabs[0].id));
+  return p;
+}
+
+/* ============ CONTENIDO DEL SITIO (Fase 9: un solo módulo) ============
+   Antes eran seis entradas de menú más "Precios de paquetes" y "Notas de
+   paquetes" por separado. Ahora es UN módulo con pestañas, y Paquetes
+   reúne en una sola pantalla el contenido, el precio en vivo y las notas:
+   los tres editaban lo mismo desde sitios distintos. */
+function panelContent(role){
+  return tabbedPanel([
+    {id:'portada',  label:(ES?'Portada':'Home hero'),        build:panelHero},
+    {id:'paquetes', label:(ES?'Paquetes':'Packages'),        build:function(){ return panelPackagesUnified(role); }},
+    {id:'tours',    label:'Tours',                            build:panelTours},
+    {id:'pesca',    label:'Sport Fishing',                    build:panelFishing},
+    {id:'nosotros', label:(ES?'Nosotros y conservación':'About & Conservation'), build:panelStory},
+    {id:'sitio',    label:(ES?'Sitio y contacto':'Site & Contact'), build:panelSite}
+  ],'portada');
+}
+
+/* Paquetes unificado: contenido público + precio en vivo + notas del tour.
+   Cada bloque conserva su editor real; lo que se elimina es tener que
+   buscarlos en tres pantallas distintas para el mismo paquete. */
+function panelPackagesUnified(role){
+  const p=el('<div></div>');
+  p.appendChild(el('<div class="hint">'+(ES
+    ?'Todo lo del paquete en una pantalla: contenido de la web, precio publicado y notas internas. El precio es el que cobra el checkout; las notas viajan en los correos del cliente.'
+    :'Everything about the package in one screen: website content, published price and internal notes. The price is what checkout charges; the notes travel in customer emails.')+'</div>'));
+  p.appendChild(card(ES?'Contenido del paquete':'Package content',''));
+  p.appendChild(panelPackages());
+  p.appendChild(card(ES?'Precio publicado':'Published price',''));
+  p.appendChild(panelPackagePricing(role));
+  p.appendChild(card(ES?'Notas del paquete':'Package notes',''));
+  p.appendChild(panelPackageNotes(role));
+  return p;
+}
+
+/* ============ CONFIGURACIÓN (Fase 9) ============
+   Lo técnico y lo que se toca de vez en cuando, fuera de la operación
+   diaria: registro de correos, plantillas de costos, reglas de descuento,
+   recordatorios y datos de prueba. Nada se ha borrado: se ha movido. */
+function panelSettings(role){
+  const tabs=[
+    {id:'notif',      label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }},
+    {id:'plantillas', label:(ES?'Plantillas de costos':'Cost templates'), build:function(){ return panelFinance(role,['templates']); }},
+    {id:'descuentos', label:(ES?'Reglas de descuento':'Discount rules'), build:function(){ return panelFinance(role,['discounts']); }},
+    {id:'record',     label:(ES?'Recordatorios':'Reminders'), build:function(){ return panelRemindersSettings(role); }}
+  ];
+  if(role==='owner') tabs.push({id:'testdata', label:(ES?'Datos de prueba':'Test data'), build:function(){ return panelTestData(role); }});
+  return tabbedPanel(tabs,'notif');
+}
+
+/* Recordatorios: explica la cadencia y deja lanzar el barrido a mano.
+   Pausar o reanudar una reserva concreta se hace en su propio detalle. */
+function panelRemindersSettings(role){
+  const p=el('<div></div>');
+  const c=el('<div class="ed-card"></div>');
+  c.appendChild(el('<h3>'+(ES?'Recordatorios automáticos pre-viaje':'Automatic pre-trip reminders')+'</h3>'));
+  c.appendChild(el('<div class="hint">'+(ES
+    ?'Empiezan 7 días antes de la fecha de inicio y se repiten cada 2 días: 7, 5, 3, 1 y el mismo día del viaje. Cada mensaje dice cuántos días faltan e incluye el QR y lo que ya esté cargado del viaje. Cada etapa se envía una sola vez por reserva.'
+    :'They start 7 days before the trip and repeat every 2 days: 7, 5, 3, 1 and day 0. Each message states how many days are left and includes the QR and whatever trip data already exists. Each stage is sent only once per booking.')+'</div>'));
+  const list=el('<div class="rem-stages"></div>');
+  [[7,'Faltan 7 días para tu aventura en Galápagos.'],
+   [5,'Faltan 5 días para tu aventura en Galápagos.'],
+   [3,'Faltan 3 días para tu aventura en Galápagos.'],
+   [1,'Falta 1 día para tu aventura en Galápagos.'],
+   [0,'Tu aventura en Galápagos empieza hoy.']]
+    .forEach(function(s){
+      list.appendChild(el('<div class="rem-stage"><b>'+(s[0]===0?(ES?'Día 0':'Day 0'):('-'+s[0]+'d'))+'</b><span>'+escapeHtml(s[1])+'</span></div>'));
+    });
+  c.appendChild(list);
+
+  if(canWrite()){
+    const runB=el('<button class="btn btn-gold btn-sm" type="button">'+(ES?'Ejecutar barrido ahora':'Run sweep now')+'</button>');
+    const out=el('<div class="bk-sub-hint"></div>');
+    runB.addEventListener('click',function(){
+      runB.disabled=true; out.textContent=ES?'Ejecutando…':'Running…';
+      apiPost('/api/admin-reminders-run',{}).then(function(r){
+        runB.disabled=false;
+        if(r.status===401){ onUnauthorized(); return; }
+        if(!r.ok){ out.textContent=ES?'No se pudo ejecutar el barrido.':'The sweep could not run.'; return; }
+        const d=r.data||{};
+        out.textContent=(ES?'Revisadas ':'Scanned ')+(d.scanned||0)+(ES?' · corresponden ':' · due ')+(d.due||0)
+          +(ES?' · enviados ':' · sent ')+(d.sent||0)+(d.duplicate?(ES?' · ya enviados antes ':' · already sent ')+d.duplicate:'')
+          +(d.failed?(ES?' · fallidos ':' · failed ')+d.failed:'');
+      }).catch(function(){ runB.disabled=false; out.textContent=ES?'No se pudo ejecutar el barrido.':'The sweep could not run.'; });
+    });
+    c.appendChild(runB); c.appendChild(out);
+    c.appendChild(el('<div class="bk-sub-hint">'+(ES
+      ?'En Producción el barrido lo dispara el cron todos los días. Este botón sirve para probarlo o para ponerse al día.'
+      :'In Production the sweep runs daily via cron. This button is for testing or catching up.')+'</div>'));
+  }else{
+    const ro=readOnlyBanner(); if(ro) c.appendChild(ro);
+  }
+  p.appendChild(c);
+  return p;
+}
+
 function panelFinanceHub(role){
   const p=el('<div class="bk-screen"></div>');
   const bar=el('<div class="fin-tabs"></div>'); p.appendChild(bar);
   const body=el('<div></div>'); p.appendChild(body);
   const TABS=[
     {id:'resumen', label:(ES?'Resumen':'Summary'), build:function(){ return panelFinance(role,['summary']); }},
-    {id:'ventas', label:(ES?'Ventas y reservas':'Sales & bookings'), build:function(){ return panelBookings(); }},
-    {id:'registrar', label:(ES?'Registrar venta':'Record sale'), build:function(){ return panelRecordSale(role); }},
-    {id:'plantillas', label:(ES?'Plantillas de costos':'Cost templates'), build:function(){ return panelFinance(role,['templates','discounts']); }},
     {id:'reportes', label:(ES?'Reportes':'Reports'), build:function(){ return panelFinance(role,['reports']); }}
   ];
   function open(id){
@@ -1255,7 +1649,7 @@ function panelFinanceHub(role){
   return p;
 }
 function panelFinance(role, only){
-  const canEdit = role==='owner' || role==='admin';
+  const canEdit = canWrite();          // Fase 9: escritura = SOLO owner
   // `only` (opcional) limita qué secciones renderiza, para montarlas en pestañas
   // (Fase 9-3). Sin `only` → todas (compatibilidad).
   const show=function(s){ return !only || only.indexOf(s)!==-1; };
@@ -2491,55 +2885,52 @@ function panelMiluTourism(role){
 
 function panelsFor(role){
   if(role==='staff'){
+    /* El staff ve su agenda, el calendario, los pasajeros y puede registrar
+       ventas. Nunca ve finanzas, costos ni contenido del sitio. */
     return [
       {id:'schedule', label:(ES?'Agenda de reservas':'Booking schedule'), build:panelStaffSchedule},
+      {id:'calendar', label:(ES?'Calendario':'Calendar'), build:function(){ return panelCalendar('staff'); }},
+      {id:'sales', label:(ES?'Ventas':'Sales'), build:function(){ return panelSales('staff'); }},
       {id:'passengers', label:(ES?'Pasajeros':'Passengers'), build:function(){ return panelPassengers('staff'); }}
     ];
   }
-  // FASE 9: navegación AGRUPADA por secciones (encabezados en el sidebar). Se conservan
-  // TODOS los módulos reales; solo se reordenan y agrupan para lectura rápida.
-  const G_OP = (ES?'Operación':'Operations');
-  const G_COM = (ES?'Comercial':'Commercial');
-  const G_SITE = (ES?'Contenido del sitio':'Site content');
-  const G_SYS = (ES?'Sistema':'System');
+  /* ---------------- FASE 9 — NAVEGACIÓN FINAL ----------------
+     Siete entradas, sin encabezados de grupo: la lista es lo bastante corta
+     para leerse de un vistazo.
+
+         Dashboard · Reservas · Calendario · Ventas · Finanzas ·
+         Contenido del sitio · Configuración
+
+     QUÉ SE OCULTÓ del menú (y por qué), SIN borrar una sola línea de código,
+     tabla, endpoint, migración ni prueba:
+       · Milu Turismo y Web Research → congelados desde la Fase 8.
+       · Hoteles preferidos → dejó de usarse en la operación diaria.
+       · Precios de paquetes y Notas de paquetes → estaban duplicando lo que
+         ya se edita en Contenido del sitio → Paquetes, que ahora los reúne.
+       · Plantillas de costos → es configuración, no una pantalla operativa;
+         vive en Configuración junto a las reglas de descuento.
+       · Notificaciones y Datos de prueba → pasaron a Configuración.
+     Para reactivar cualquiera de ellos basta con volver a añadir su entrada
+     aquí: las funciones (panelHotelPreferences, panelMiluTourism, panelSite,
+     panelPackages…) siguen intactas. */
   const panels=[
-    // — Operación —
-    {id:'dashboard', group:G_OP, label:'Dashboard', build:function(){ return panelDashboard(role); }},
-    {id:'bookings', group:G_OP, label:(ES?'Reservas':'Bookings'), build:panelBookings},
-    {id:'passengers', group:G_OP, label:(ES?'Pasajeros y logística':'Passengers & logistics'), build:function(){ return panelPassengers(role); }},
-    {id:'notifications', group:G_OP, label:(ES?'Notificaciones':'Notifications'), build:function(){ return panelNotifications(role); }},
-    // — Comercial —
-    {id:'finance', group:G_COM, label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinanceHub(role); }},
-    {id:'pkgpricing', group:G_COM, label:(ES?'Precios de paquetes':'Package pricing'), build:function(){ return panelPackagePricing(role); }},
-    {id:'notes', group:G_COM, label:(ES?'Notas de paquetes':'Package notes'), build:function(){ return panelPackageNotes(role); }},
-    {id:'hotels', group:G_COM, label:(ES?'Hoteles preferidos':'Preferred hotels'), build:function(){ return panelHotelPreferences(role); }}
-    // FASE 8 CONGELADA: Milu Web Research queda OCULTO del menú (Web Search/Fetch no garantiza
-    // tarifas/disponibilidad exactas en páginas dinámicas). El panel, endpoints, tablas, migraciones
-    // y pruebas se CONSERVAN (protegidos, sin exponer en UI). La futura integración de vuelos será
-    // por Duffel u otro proveedor API, dentro de un módulo "Flights" en el detalle de cada booking.
-    // Para reactivar: añadir aquí de nuevo (además requiere la compuerta doble ENV+DB en true).
-    // {id:'milu', group:G_OP, label:(ES?'Milu Turismo':'Milu Tourism'), build:function(){ return panelMiluTourism(role); }},
+    {id:'dashboard', label:'Dashboard', build:function(){ return panelDashboard(role); }},
+    {id:'bookings',  label:(ES?'Reservas':'Bookings'), build:function(){ return panelBookings(role); }},
+    {id:'calendar',  label:(ES?'Calendario':'Calendar'), build:function(){ return panelCalendar(role); }},
+    {id:'sales',     label:(ES?'Ventas':'Sales'), build:function(){ return panelSales(role); }},
+    {id:'finance',   label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinanceHub(role); }},
+    {id:'content',   label:(ES?'Contenido del sitio':'Site content'), build:function(){ return panelContent(role); }},
+    {id:'settings',  label:(ES?'Configuración':'Settings'), build:function(){ return panelSettings(role); }}
   ];
-  // — Contenido del sitio —
-  panels.push(
-    {id:'site',  group:G_SITE, label:(ES?'Sitio y contacto':'Site & Contact'), build:panelSite},
-    {id:'hero',  group:G_SITE, label:(ES?'Portada (Hero)':'Home Hero'),      build:panelHero},
-    {id:'packages',group:G_SITE, label:(ES?'Paquetes':'Packages'),     build:panelPackages},
-    {id:'tours', group:G_SITE, label:'Tours',          build:panelTours},
-    {id:'fishing',group:G_SITE, label:'Sport Fishing', build:panelFishing},
-    {id:'story', group:G_SITE, label:(ES?'Nosotros y conservación':'About & Conservation'), build:panelStory}
-  );
-  // — Sistema — (Datos de prueba: SOLO owner; no se genera en el DOM para admin ni staff)
-  if(role==='owner'){
-    panels.push({id:'testdata', group:G_SYS, label:(ES?'Datos de prueba':'Test data'), build:function(){ return panelTestData(role); }});
-  }
   return panels;
 }
 
 /* ============ ADMIN SHELL ============ */
 function showAdmin(user){
   user=user||{};
+  ROLE = user.role||'';                 // Fase 9: matriz de permisos de la interfaz
   const isStaff = user.role==='staff';
+  const canEditContent = canWrite();    // guardar/restablecer contenido: SOLO owner
   const PANELS = panelsFor(user.role);
   const who = escapeHtml(user.full_name||'') + (user.role?(' · '+roleLabel(user.role)):'');
   shell.innerHTML=
@@ -2551,12 +2942,13 @@ function showAdmin(user){
           +'<button type="button" data-lang="en" class="'+(ES?'':'on')+'">EN</button>'
           +'<button type="button" data-lang="es" class="'+(ES?'on':'')+'">ES</button>'
         +'</div>'
-       // Los controles del editor de contenido NO se generan para staff.
-       +(isStaff?'':'<span class="save-state" id="saveState"></span>')
+       // Los controles que ESCRIBEN contenido solo se generan para el owner:
+       // el admin es de lectura y el staff no toca el sitio.
+       +(canEditContent?'<span class="save-state" id="saveState"></span>':'')
        +'<a class="mini-btn" href="index.html" target="_blank">'+I.eye+' View site</a>'
-       +(isStaff?'':'<button class="mini-btn" id="resetBtn">Reset all</button>')
+       +(canEditContent?'<button class="mini-btn" id="resetBtn">Reset all</button>':'')
        +'<button class="mini-btn" id="logoutBtn">'+I.out+' Log out</button>'
-       +(isStaff?'':'<button class="btn btn-gold btn-sm" id="saveBtn">'+I.save+' Save changes</button>')
+       +(canEditContent?'<button class="btn btn-gold btn-sm" id="saveBtn">'+I.save+' Save changes</button>':'')
      +'</div>'
    +'</div>'
    +'<div class="admin-body">'
@@ -2585,7 +2977,7 @@ function showAdmin(user){
   });
   open(PANELS[0].id);
 
-  if(!isStaff){
+  if(canEditContent){
     document.getElementById('saveBtn').addEventListener('click',()=>{
       try{ localStorage.setItem(CKEY, JSON.stringify(W)); }
       catch(e){ alert('Could not save — uploaded photos may be too large for browser storage. Try using image paths/URLs instead of uploads, or fewer uploads.'); return; }
@@ -2594,7 +2986,7 @@ function showAdmin(user){
     });
     document.getElementById('resetBtn').addEventListener('click',()=>{
       if(confirm('Reset ALL content back to the original defaults? This cannot be undone.')){
-        localStorage.removeItem(CKEY); W=loadWorking(); open('site');
+        localStorage.removeItem(CKEY); W=loadWorking(); open('content');
         const s=document.getElementById('saveState'); s.textContent='Reset to defaults'; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'),2600);
       }
     });

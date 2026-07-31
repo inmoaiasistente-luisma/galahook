@@ -122,10 +122,18 @@ ok('47 agency-create: sale_source en allowlist + validado + insertado (canal con
 
 /* ---------------- UI: hub de 5 pestañas + form venta manual ---------------- */
 const adm = read('assets/js/admin.js');
-ok('48 admin.js: panelFinanceHub con 5 pestañas + panelFinance(role, only)',
-  /function panelFinanceHub\(role\)/.test(adm) && /id:'resumen'/.test(adm) && /id:'ventas'/.test(adm) &&
-  /id:'registrar'/.test(adm) && /id:'plantillas'/.test(adm) && /id:'reportes'/.test(adm) &&
-  /function panelFinance\(role, only\)/.test(adm) && /panelFinanceHub\(role\)/.test(adm.slice(adm.indexOf("id:'finance'"), adm.indexOf("id:'finance'") + 200)));
+/* Fase 9 final: Finanzas quedó en números y reportes. "Ventas y reservas",
+   "Registrar venta" y "Plantillas de costos" se fueron a Ventas y a
+   Configuración; seguir exigiendo 5 pestañas aquí sería exigir el duplicado
+   que el owner pidió eliminar. */
+ok('48 admin.js: Finanzas = Resumen + Reportes (sin duplicar Ventas ni plantillas)',
+  /function panelFinanceHub\(role\)/.test(adm) && /id:'resumen'/.test(adm) && /id:'reportes'/.test(adm) &&
+  /function panelFinance\(role, only\)/.test(adm) &&
+  /panelFinanceHub\(role\)/.test(adm.slice(adm.indexOf("id:'finance'"), adm.indexOf("id:'finance'") + 200)));
+/* Lo retirado de Finanzas debe seguir EXISTIENDO, montado en Configuración. */
+ok('48b plantillas y descuentos siguen accesibles desde Configuración',
+  /function panelSettings\(role\)/.test(adm) &&
+  /panelFinance\(role,\['templates'\]\)/.test(adm) && /panelFinance\(role,\['discounts'\]\)/.test(adm));
 ok('49 admin.js: form venta manual envía sale_source', /payload\.sale_source=saleSrc\.value/.test(adm) && /function panelRecordSale/.test(adm));
 ok('50 admin.html: estilos .fin-tabs/.fin-tab (tema claro)', /\.fin-tab\.on\{background:var\(--a-gold\)/.test(read('admin.html')));
 

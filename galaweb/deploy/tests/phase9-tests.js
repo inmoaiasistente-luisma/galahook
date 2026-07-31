@@ -410,6 +410,116 @@ ok('19 buildAuditRow: sin sesión o sin acción → null',
     ['/api/admin-booking-comms', '/api/admin-booking-document-save', '/api/admin-booking-communication-send']
       .every(function (p) { return vj2.rewrites.some(function (r) { return r.source === p; }); }));
 
-  console.log('\n=== RESULTADO FASE 9 (permisos + auditoría + recordatorios + comunicaciones): ' + pass + ' PASS · ' + fail + ' FAIL ===');
+  /* =====================================================================
+     E) NAVEGACIÓN FINAL Y PANTALLAS
+     ===================================================================== */
+
+  const adm = read('assets/js/admin.js');
+  const html = read('admin.html');
+
+  /* Las siete entradas, en orden. */
+  const navBlock = adm.slice(adm.indexOf('const panels=[', adm.indexOf('function panelsFor')));
+  const navIds = (navBlock.slice(0, navBlock.indexOf('];')).match(/id:'([a-z]+)'/g) || [])
+    .map(function (s) { return s.slice(4, -1); });
+  ok('70 la navegación tiene exactamente 7 entradas, en el orden pedido',
+    navIds.join(',') === 'dashboard,bookings,calendar,sales,finance,content,settings');
+
+  /* Lo oculto sigue EXISTIENDO en el código: ocultar no es borrar. */
+  ['panelMiluTourism', 'panelHotelPreferences', 'panelPackagePricing', 'panelPackageNotes',
+    'panelPackages', 'panelSite', 'panelTours', 'panelFishing', 'panelStory', 'panelTestData',
+    'panelNotifications', 'panelRecordSale']
+    .forEach(function (fn) {
+      ok('71 sigue existiendo la función ' + fn + ' (oculta, no borrada)',
+        new RegExp('function ' + fn + '\\s*\\(').test(adm));
+    });
+
+  /* …pero ninguno de los módulos congelados aparece en el menú. */
+  const navOnly = navBlock.slice(0, navBlock.indexOf('];'));
+  ok('72 Milu y Hoteles preferidos no están en el menú',
+    navOnly.indexOf('panelMiluTourism') === -1 && navOnly.indexOf('panelHotelPreferences') === -1);
+  ok('73 Precios y Notas de paquetes ya no son entradas sueltas del menú',
+    navOnly.indexOf("id:'pkgpricing'") === -1 && navOnly.indexOf("id:'notes'") === -1);
+
+  /* Reservas y Calendario: pantallas separadas, mismo detalle. */
+  ok('74 bkScreen distingue tabla y calendario',
+    /const mode = o\.mode \|\| 'table'/.test(adm) && /const isCal = mode==='cal'/.test(adm) &&
+    /if\(isCal\)\{ p\.appendChild\(summary\); p\.appendChild\(cal\); \}/.test(adm));
+  ok('75 Reservas monta la tabla; el Calendario no monta el bloque de filtros',
+    /function panelBookings\(role\)/.test(adm) && /mode:'table'/.test(adm) &&
+    /function panelCalendar\(role\)/.test(adm) && /mode:'cal'/.test(adm) &&
+    /if\(!isCal\) p\.appendChild\(fcard\);/.test(adm));
+  ok('76 ambas pantallas abren el MISMO detalle unificado',
+    /function openDetail\(b\)\{ if\(isStaff\) bkStaffDetail\(b\); else bkAdminDetail\(b/.test(adm));
+
+  /* Ventas: pantalla propia. */
+  ok('77 Ventas es una pantalla propia con registro de venta',
+    /function panelSales\(role\)/.test(adm) && /bkAgencyForm\(/.test(adm) &&
+    /if\(canRecordSale\(\)\)\{/.test(adm));
+
+  /* Detalle unificado: todo dentro de la reserva. */
+  const detail = adm.slice(adm.indexOf('function bkAdminDetail'), adm.indexOf('function bkAgencyForm'));
+  ok('78 el detalle reúne pasajeros, comunicaciones, finanzas y vuelos',
+    /bkPaxSection\(b\)/.test(detail) && /bkCommsSection\(b\)/.test(detail) &&
+    /bkFinanceSection\(b\)/.test(detail) && /bkFlightsPlaceholder\(\)/.test(detail));
+  ok('79 el QR y las notificaciones viven en el propio detalle',
+    /bkQrPanel\(b\)/.test(detail) && /bkNotifPanel\(b\)/.test(detail));
+  ok('80 cambiar el estado solo se ofrece a quien puede escribir',
+    /if\(canWrite\(\)\)\{ ctrl\.appendChild\(sel\)/.test(detail));
+  /* El único campo de UUID a mano que queda vive en panelMiluTourism, que
+     está CONGELADO y fuera del menú desde la Fase 8. Se comprueba que ninguna
+     pantalla ALCANZABLE lo pida, y que ese panel siga siendo inalcanzable. */
+  const miluStart = adm.indexOf('function panelMiluTourism');
+  const reachable = adm.slice(0, miluStart) + adm.slice(adm.indexOf('function panelsFor'));
+  ok('81 ninguna pantalla alcanzable pide un UUID a mano',
+    !/placeholder="uuid"/i.test(reachable) && navOnly.indexOf('panelMiluTourism') === -1);
+
+  /* Contenido del sitio: un módulo, y Paquetes unificado. */
+  ok('82 Contenido del sitio agrupa portada, paquetes, tours, pesca, nosotros y sitio',
+    /function panelContent\(role\)/.test(adm) &&
+    ["id:'portada'", "id:'paquetes'", "id:'tours'", "id:'pesca'", "id:'nosotros'", "id:'sitio'"]
+      .every(function (s) { return adm.indexOf(s) !== -1; }));
+  ok('83 Paquetes une contenido + precio publicado + notas en una pantalla',
+    /function panelPackagesUnified\(role\)/.test(adm) &&
+    /panelPackages\(\)/.test(adm) && /panelPackagePricing\(role\)/.test(adm) && /panelPackageNotes\(role\)/.test(adm));
+
+  /* Configuración. */
+  ok('84 Configuración reúne notificaciones, plantillas, descuentos y recordatorios',
+    /function panelSettings\(role\)/.test(adm) &&
+    ["id:'notif'", "id:'plantillas'", "id:'descuentos'", "id:'record'"]
+      .every(function (s) { return adm.indexOf(s) !== -1; }));
+  ok('85 Datos de prueba sigue siendo exclusivo del owner',
+    /if\(role==='owner'\) tabs\.push\(\{id:'testdata'/.test(adm));
+  ok('86 Configuración muestra la cadencia real y permite lanzar el barrido',
+    /function panelRemindersSettings\(role\)/.test(adm) &&
+    /Faltan 7 días para tu aventura en Galápagos\./.test(adm) &&
+    /Tu aventura en Galápagos empieza hoy\./.test(adm) &&
+    /admin-reminders-run/.test(adm));
+
+  /* Permisos en la interfaz. */
+  ok('87 la interfaz conoce la matriz: canWrite = owner, canRecordSale = owner+staff',
+    /function canWrite\(\)\{ return ROLE==='owner'; \}/.test(adm) &&
+    /function canRecordSale\(\)\{ return ROLE==='owner' \|\| ROLE==='staff'; \}/.test(adm) &&
+    /ROLE = user\.role\|\|'';/.test(adm));
+  ok('88 al admin se le explica por qué no hay botones (aviso de solo lectura)',
+    /function readOnlyBanner\(\)/.test(adm) && /ro-note/.test(adm) && /\.ro-note\{/.test(html));
+  ok('89 guardar/restablecer contenido es solo del owner',
+    /const canEditContent = canWrite\(\);/.test(adm) &&
+    /if\(canEditContent\)\{/.test(adm) && !/if\(!isStaff\)\{\s*document\.getElementById\('saveBtn'\)/.test(adm));
+
+  /* El staff mantiene su ámbito. */
+  const staffBranch = adm.slice(adm.indexOf("if(role==='staff'){"), adm.indexOf("if(role==='staff'){") + 700);
+  ok('90 el staff no ve Finanzas, Contenido ni Configuración',
+    staffBranch.indexOf('panelFinance') === -1 && staffBranch.indexOf('panelContent') === -1 &&
+    staffBranch.indexOf('panelSettings') === -1);
+  ok('91 el staff sí ve agenda, calendario, ventas y pasajeros',
+    ["id:'schedule'", "id:'calendar'", "id:'sales'", "id:'passengers'"]
+      .every(function (s) { return staffBranch.indexOf(s) !== -1; }));
+
+  /* Estilos del tema (nada de rojo como color principal). */
+  ok('92 los estilos nuevos usan los tokens de marca, no colores sueltos',
+    /\.rem-stage b\{color:var\(--a-sidebar\);background:var\(--a-gold\)/.test(html) &&
+    /\.bk-block\{[^}]*var\(--a-card-2\)/.test(html));
+
+  console.log('\n=== RESULTADO FASE 9: ' + pass + ' PASS · ' + fail + ' FAIL ===');
   if (fail) process.exitCode = 1;
 })();
