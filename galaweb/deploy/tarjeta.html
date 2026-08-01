@@ -148,8 +148,8 @@
   /* --- personas: cada tarjeta usa ?u=<slug>; sin parámetro = Luisma --- */
   var EMAIL = 'galahookadventure@outlook.com';
   var PEOPLE = {
-    luisma:   { name:'Luisma Zuniga',    title:'Sales Manager', tel:'+12015521570', disp:'+1 201-552-1570', wa:'12015521570' },
-    ana:      { name:'Ana Karina Mora',  title:'Manager',       tel:'+17867758840', disp:'+1 786-775-8840', wa:'17867758840' },
+    luisma:   { name:'Luisma Zuniga',    title:'Sales Manager', tel:'+12015521570', disp:'+1 201-552-1570', wa:'12015521570', lang:'en' },
+    ana:      { name:'Ana Karina Mora',  title:'Manager',       tel:'+17867758840', disp:'+1 786-775-8840', wa:'17867758840', lang:'en' },
     joseling: { name:'Joseling Berbery', title:'Sales Manager', tel:'+59170958199', disp:'+591 70958199',   wa:'59170958199' }
   };
   var SLUG = ((new URLSearchParams(location.search).get('u'))||'luisma').toLowerCase();
@@ -177,8 +177,11 @@
       if (v!=null) n.textContent = v;
     }
   }
-  // Idioma inicial según el teléfono de quien la abre.
-  try { if ((navigator.language||'').toLowerCase().indexOf('en')===0) setLang('en'); } catch(e){}
+  // Idioma inicial: forzado por persona (P.lang) o según el idioma del teléfono.
+  try {
+    var initLang = P.lang || (((navigator.language||'').toLowerCase().indexOf('en')===0) ? 'en' : 'es');
+    setLang(initLang);
+  } catch(e){}
 
   function vcardN(name){ var p=name.trim().split(/\s+/); var fam=p.pop(); return fam+';'+p.join(' ')+';;;'; }
   function vcard(){
