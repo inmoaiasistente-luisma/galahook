@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
+    { "source": "/tarjeta", "destination": "/tarjeta.html" },
     { "source": "/api/admin-login", "destination": "/api/admin-router?action=login" },
     { "source": "/api/admin-logout", "destination": "/api/admin-router?action=logout" },
     { "source": "/api/admin-session", "destination": "/api/admin-router?action=session" },
