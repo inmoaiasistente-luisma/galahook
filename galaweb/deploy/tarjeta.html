@@ -93,8 +93,8 @@
       </p>
 
       <div class="person">
-        <div class="pname">Luisma Zuniga</div>
-        <div class="ptitle">Sales Manager</div>
+        <div class="pname" id="pName">Luisma Zuniga</div>
+        <div class="ptitle" id="pTitle">Sales Manager</div>
       </div>
 
       <a class="btn save" id="saveBtn" href="#" role="button">
@@ -122,9 +122,9 @@
         <span class="chev">›</span>
       </a>
 
-      <a class="btn" href="https://wa.me/12015521570?text=%C2%A1Hola%20Gal%C3%A1pagos%20Hook%20Adventure!" target="_blank" rel="noopener">
+      <a class="btn" id="waBtn" href="https://wa.me/12015521570?text=%C2%A1Hola%20Gal%C3%A1pagos%20Hook%20Adventure!" target="_blank" rel="noopener">
         <span class="ico"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3a9 9 0 00-7.7 13.6L3 21l4.5-1.2A9 9 0 1012 3z" stroke="#25d366" stroke-width="1.8"/><path d="M9 8.5c.3 2 1.5 3.5 3 4.5 1 .7 2 .5 2.4-.2.2-.3.1-.6-.2-.8l-1.3-.7c-.3-.2-.5-.1-.7.1l-.3.4c-.9-.5-1.6-1.2-2-2l.4-.3c.2-.2.3-.4.1-.7l-.7-1.3c-.2-.3-.6-.4-.9-.2-.5.3-.9.8-.6 1.9z" fill="#25d366"/></svg></span>
-        <span class="lbl">WhatsApp <span style="color:var(--muted);font-weight:600">+1 201-552-1570</span></span>
+        <span class="lbl">WhatsApp <span id="waNum" style="color:var(--muted);font-weight:600">+1 201-552-1570</span></span>
         <span class="chev">›</span>
       </a>
 
@@ -145,6 +145,23 @@
   <div class="toast" id="toast"></div>
 
 <script>
+  /* --- personas: cada tarjeta usa ?u=<slug>; sin parámetro = Luisma --- */
+  var EMAIL = 'galahookadventure@outlook.com';
+  var PEOPLE = {
+    luisma:   { name:'Luisma Zuniga',    title:'Sales Manager', tel:'+12015521570', disp:'+1 201-552-1570', wa:'12015521570' },
+    ana:      { name:'Ana Karina Mora',  title:'Manager',       tel:'+17867758840', disp:'+1 786-775-8840', wa:'17867758840' },
+    joseling: { name:'Joseling Berbery', title:'Sales Manager', tel:'+59170958199', disp:'+591 70958199',   wa:'59170958199' }
+  };
+  var SLUG = ((new URLSearchParams(location.search).get('u'))||'luisma').toLowerCase();
+  var P = PEOPLE[SLUG] || PEOPLE.luisma;
+  (function applyPerson(){
+    document.getElementById('pName').textContent = P.name;
+    document.getElementById('pTitle').textContent = P.title;
+    var n=document.getElementById('waNum'); if(n) n.textContent = P.disp;
+    var b=document.getElementById('waBtn'); if(b) b.href = 'https://wa.me/'+P.wa+'?text=%C2%A1Hola%20Gal%C3%A1pagos%20Hook%20Adventure!';
+    document.title = P.name + ' — Galápagos Hook Adventure';
+  })();
+
   var T = {
     saved: { es:"Contacto descargado. Ábrelo para guardarlo.", en:"Contact downloaded. Open it to save." }
   };
@@ -163,15 +180,16 @@
   // Idioma inicial según el teléfono de quien la abre.
   try { if ((navigator.language||'').toLowerCase().indexOf('en')===0) setLang('en'); } catch(e){}
 
+  function vcardN(name){ var p=name.trim().split(/\s+/); var fam=p.pop(); return fam+';'+p.join(' ')+';;;'; }
   function vcard(){
     return [
       "BEGIN:VCARD","VERSION:3.0",
-      "N:Zuniga;Luisma;;;",
-      "FN:Luisma Zuniga",
+      "N:"+vcardN(P.name),
+      "FN:"+P.name,
       "ORG:Galápagos Hook Adventure",
-      "TITLE:Sales Manager",
-      "TEL;TYPE=CELL:+12015521570",
-      "EMAIL;TYPE=INTERNET:galahookadventure@outlook.com",
+      "TITLE:"+P.title,
+      "TEL;TYPE=CELL:"+P.tel,
+      "EMAIL;TYPE=INTERNET:"+EMAIL,
       "URL:https://www.galapagoshookadventure.com",
       "X-SOCIALPROFILE;TYPE=instagram:https://instagram.com/galapagoshookadventure",
       "X-SOCIALPROFILE;TYPE=tiktok:https://tiktok.com/@galapagoshookadve",
@@ -189,7 +207,7 @@
     var blob = new Blob([vcard()], {type:'text/vcard;charset=utf-8'});
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
-    a.href = url; a.download = 'Luisma-Zuniga-GalaHook.vcf';
+    a.href = url; a.download = P.name.replace(/\s+/g,'-') + '-GalaHook.vcf';
     document.body.appendChild(a); a.click();
     setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
     showToast(T.saved[LANG]);
