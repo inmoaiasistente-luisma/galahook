@@ -201,6 +201,9 @@
      vertical para la cabecera fija). En móvil/tablet pequeño sí se permite. */
   .bk-table-wrap{border:1px solid var(--a-border);border-radius:14px;overflow-x:hidden;overflow-y:auto;max-height:64vh;background:var(--a-card-2);box-shadow:var(--a-shadow-sm);}
   table.bk-table{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:fixed;}
+  /* Tabla de Visitas (solo owner): columnas al contenido; la ruta con ellipsis. */
+  table.bk-table.vis-table{table-layout:auto;}
+  .vis-table td.mono{max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   /* Padding y tipografía compactos para que los encabezados (GUESTS, CHANNEL…)
      NO se trunquen a GUE…/CHAN… en desktop. */
   /* Tabla limpia y aireada (mismo estilo de referencia, NUESTROS colores):
@@ -363,6 +366,6 @@
 <body>
 <div class="admin-shell" id="shell"></div>
 <script src="assets/js/content.js?v=hp6"></script>
-<script src="assets/js/admin.js?v=f9d"></script>
+<script src="assets/js/admin.js?v=vis1"></script>
 </body>
 </html>

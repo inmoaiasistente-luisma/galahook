@@ -410,7 +410,7 @@ function tableBlock(name) { const m = new RegExp('create table public\\.' + name
   ok('39 QR sigue funcionando', qrSrc.length > 0 && /signQr|verifyQr|QR|qr/.test(qrSrc));
   ok('40 finanzas sigue funcionando', typeof require(BASE + '/server/admin-handlers/finance-summary.js') === 'function');
   const apiFns = fs.readdirSync(BASE + '/api').filter(function (n) { return /\.js$/.test(n); });
-  ok('41 funciones Vercel = 8', apiFns.length === 8);
+  ok('41 funciones Vercel = 9 (≤12 Hobby; +api/track para visitas)', apiFns.length === 9);
 
   /* ===== 42 cobertura versionada ===== */
   const files8c = [

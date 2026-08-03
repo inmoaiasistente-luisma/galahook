@@ -3152,6 +3152,70 @@ function panelMiluTourism(role){
   return p;
 }
 
+/* ============ VISITAS (solo owner) ============
+   Analítica del sitio público leída de /api/admin-page-views. Sin datos
+   personales: país aproximado + id anónimo para personas únicas. */
+function panelVisits(role){
+  const p=el('<div class="bk-screen"></div>');
+  p.appendChild(el('<p class="sub" style="margin-top:-2px">'+(ES
+    ?'Visitas al sitio público. Sin datos personales: solo país aproximado y un identificador anónimo para contar personas únicas.'
+    :'Public site visits. No personal data: only approximate country and an anonymous id to count unique people.')+'</p>'));
+  const tiles=el('<div class="fin-tiles"></div>'); p.appendChild(tiles);
+  tiles.appendChild(el('<div class="fin-tile"><span>'+(ES?'Cargando…':'Loading…')+'</span><b>—</b></div>'));
+  const card=el('<div class="dash-card" style="margin-top:16px"><h3>'+(ES?'Visitas recientes':'Recent visits')
+    +'</h3><div id="visTableWrap"><div class="dash-empty">'+(ES?'Cargando…':'Loading…')+'</div></div></div>');
+  p.appendChild(card);
+
+  function num(n){ return Number(n||0).toLocaleString(ES?'es-EC':'en-US'); }
+  function tile(label,val,strong){ return '<div class="fin-tile'+(strong?' strong':'')+'"><span>'+label+'</span><b>'+val+'</b></div>'; }
+  function fmtWhen(iso){
+    try{ return new Date(iso).toLocaleString(ES?'es-EC':'en-US',
+      {timeZone:'Pacific/Galapagos', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}); }
+    catch(e){ return String(iso||''); }
+  }
+  function devLabel(d){ return d==='mobile'?(ES?'Móvil':'Mobile'):d==='tablet'?'Tablet':d==='desktop'?(ES?'Escritorio':'Desktop'):'—'; }
+  function flag(cc){
+    if(typeof cc!=='string'||!/^[A-Z]{2}$/.test(cc)) return '';
+    try{ return cc.replace(/./g,function(c){ return String.fromCodePoint(127397+c.charCodeAt(0)); })+' '; }catch(e){ return ''; }
+  }
+
+  apiGet('/api/admin-page-views?limit=200').then(function(r){
+    if(r.status===401){ onUnauthorized(); return; }
+    const wrap=document.getElementById('visTableWrap');
+    if(!r.ok||!r.data){ tiles.innerHTML=tile(ES?'Error al cargar':'Load error','—'); if(wrap) wrap.innerHTML=''; return; }
+    const d=r.data, s=d.stats||{};
+    if(d.ready===false){
+      tiles.innerHTML=tile(ES?'Visitas totales':'Total visits','0',true)+tile(ES?'Personas únicas':'Unique people','0',true);
+      if(wrap) wrap.innerHTML='<div class="ro-note">'+(ES
+        ?'El contador aún no está activado. Aplica la migración 0022 en Supabase y las visitas empezarán a registrarse.'
+        :'The counter is not active yet. Apply migration 0022 in Supabase and visits will start recording.')+'</div>';
+      return;
+    }
+    tiles.innerHTML=
+      tile(ES?'Visitas totales':'Total visits', num(s.total_visits), true)
+      +tile(ES?'Personas únicas':'Unique people', num(s.unique_visitors), true)
+      +tile(ES?'Hoy':'Today', num(s.today_visits))
+      +tile(ES?'Únicas hoy':'Unique today', num(s.today_unique))
+      +tile(ES?'Últimos 7 días':'Last 7 days', num(s.week_visits))
+      +tile(ES?'Únicas (7 días)':'Unique (7 days)', num(s.week_unique));
+    const rows=d.recent||[];
+    if(!rows.length){ wrap.innerHTML='<div class="dash-empty">'+(ES?'Aún no hay visitas registradas.':'No visits recorded yet.')+'</div>'; return; }
+    let html='<div class="bk-table-wrap"><table class="bk-table vis-table"><thead><tr>'
+      +'<th>'+(ES?'Hora de ingreso':'Entry time')+'</th><th>'+(ES?'Página':'Page')+'</th>'
+      +'<th>'+(ES?'País':'Country')+'</th><th>'+(ES?'Dispositivo':'Device')+'</th></tr></thead><tbody>';
+    rows.forEach(function(v){
+      html+='<tr><td>'+escapeHtml(fmtWhen(v.created_at))+'</td>'
+        +'<td class="mono" title="'+escapeHtml(v.path||'')+'">'+escapeHtml(v.path||'')+'</td>'
+        +'<td>'+flag(v.country)+escapeHtml(v.country||'—')+'</td>'
+        +'<td>'+escapeHtml(devLabel(v.device))+'</td></tr>';
+    });
+    html+='</tbody></table></div>';
+    wrap.innerHTML=html;
+  }).catch(function(){ tiles.innerHTML=tile(ES?'Error al cargar':'Load error','—'); });
+
+  return p;
+}
+
 function panelsFor(role){
   if(role==='staff'){
     /* El staff ve su agenda, el calendario, los pasajeros y puede registrar
@@ -3191,6 +3255,10 @@ function panelsFor(role){
     {id:'content',   label:(ES?'Contenido del sitio':'Site content'), build:function(){ return panelContent(role); }},
     {id:'settings',  label:(ES?'Configuración':'Settings'), build:function(){ return panelSettings(role); }}
   ];
+  /* Visitas: analítica del sitio público. SOLO owner (admin no la ve). */
+  if(role==='owner'){
+    panels.push({id:'visits', label:(ES?'Visitas':'Visits'), build:function(){ return panelVisits(role); }});
+  }
   return panels;
 }
 
