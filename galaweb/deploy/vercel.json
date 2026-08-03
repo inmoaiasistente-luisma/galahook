@@ -3,6 +3,7 @@
   "rewrites": [
     { "source": "/tarjeta", "destination": "/tarjeta.html" },
     { "source": "/api/admin-login", "destination": "/api/admin-router?action=login" },
+    { "source": "/api/admin-page-views", "destination": "/api/admin-router?action=page-views" },
     { "source": "/api/admin-logout", "destination": "/api/admin-router?action=logout" },
     { "source": "/api/admin-session", "destination": "/api/admin-router?action=session" },
     { "source": "/api/admin-bookings", "destination": "/api/admin-router?action=bookings" },

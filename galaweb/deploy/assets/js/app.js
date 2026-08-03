@@ -1033,3 +1033,30 @@ function init(){
 if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded',init);
 
 })();
+
+/* ---------------- CONTADOR DE VISITAS (beacon anónimo) ----------------
+   Registra la visita a esta página pública en /api/track. Sin datos personales:
+   solo un id anónimo de primera parte (localStorage) para contar personas
+   únicas aproximadas. El panel "Visitas" (solo owner) lee estos datos.
+   Fail-silent: cualquier error se ignora y nunca afecta la página. */
+(function(){
+  try{
+    var p = location.pathname || '/';
+    if(p.indexOf('/admin')===0) return;                 // el panel nunca se cuenta
+    var vid = '';
+    try{
+      vid = localStorage.getItem('gha_vid') || '';
+      if(!/^[A-Za-z0-9_-]{1,64}$/.test(vid)){
+        vid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+              : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+        localStorage.setItem('gha_vid', vid);
+      }
+    }catch(e){ vid = ''; }                               // incógnito: cuenta la visita igual
+    var body = JSON.stringify({ path:p, vid:vid, ref:(document.referrer||'') });
+    if(navigator.sendBeacon){
+      navigator.sendBeacon('/api/track', new Blob([body], {type:'application/json'}));
+    }else{
+      fetch('/api/track', {method:'POST', headers:{'Content-Type':'application/json'}, body:body, keepalive:true, credentials:'same-origin'}).catch(function(){});
+    }
+  }catch(e){}
+})();
