@@ -3274,7 +3274,7 @@ function showAdmin(user){
    '<div class="admin-top">'
      +'<div class="brand-mini"><img src="assets/img/logo.png"><b>Hook Admin</b></div>'
      +'<div class="actions">'
-       +'<span style="color:rgba(255,255,255,.72);font-size:12.5px;font-weight:600">'+who+'</span>'
+       +'<span class="top-who" style="color:rgba(255,255,255,.72);font-size:12.5px;font-weight:600">'+who+'</span>'
        +'<div class="lang-mini" id="langToggle" title="'+(ES?'Idioma':'Language')+'">'
           +'<button type="button" data-lang="en" class="'+(ES?'':'on')+'">EN</button>'
           +'<button type="button" data-lang="es" class="'+(ES?'on':'')+'">ES</button>'
@@ -3282,7 +3282,7 @@ function showAdmin(user){
        // Los controles que ESCRIBEN contenido solo se generan para el owner:
        // el admin es de lectura y el staff no toca el sitio.
        +(canEditContent?'<span class="save-state" id="saveState"></span>':'')
-       +'<a class="mini-btn" href="index.html" target="_blank">'+I.eye+' View site</a>'
+       +'<a class="mini-btn top-view" href="index.html" target="_blank">'+I.eye+' View site</a>'
        +(canEditContent?'<button class="mini-btn" id="resetBtn">Reset all</button>':'')
        +'<button class="mini-btn" id="logoutBtn">'+I.out+' Log out</button>'
        +(canEditContent?'<button class="btn btn-gold btn-sm" id="saveBtn">'+I.save+' Save changes</button>':'')
@@ -3295,14 +3295,23 @@ function showAdmin(user){
 
   const nav=document.getElementById('adminNav');
   const main=document.getElementById('adminMain');
+  const adminBody=function(){ return document.querySelector('.admin-body'); };
+  /* Móvil: volver de un panel a la lista de secciones. En escritorio no aplica. */
+  function backToList(){ const b=adminBody(); if(b) b.classList.remove('panel-open'); window.scrollTo(0,0); }
   function open(id){
     nav.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
     main.innerHTML='';
     const def=PANELS.find(x=>x.id===id);
-    const head=el('<div><h2>'+def.label+'</h2></div>'); main.appendChild(head);
+    const head=el('<div class="main-head"></div>');
+    const back=el('<button type="button" class="adm-back">'+(ES?'← Menú':'← Menu')+'</button>');
+    back.addEventListener('click',backToList);
+    head.appendChild(back);
+    head.appendChild(el('<h2>'+def.label+'</h2>'));
+    main.appendChild(head);
     const panel=el('<div class="panel active"></div>');
     panel.appendChild(def.build());
     main.appendChild(panel);
+    const b=adminBody(); if(b) b.classList.add('panel-open');   // móvil: panel a pantalla completa (oculta la lista)
     main.scrollTo&&main.scrollTo(0,0); window.scrollTo(0,0);
   }
   // Encabezado de grupo cuando cambia la sección (Fase 9: sidebar agrupado).
@@ -3312,7 +3321,11 @@ function showAdmin(user){
     const b=el('<button data-id="'+def.id+'" style="display:flex;align-items:center">'+def.label+'</button>');
     b.addEventListener('click',()=>open(def.id)); nav.appendChild(b);
   });
-  open(PANELS[0].id);
+  /* Escritorio: abre el primer panel (sidebar + contenido, como siempre).
+     Móvil/PWA: arranca en la LISTA de secciones; el panel se abre al tocar una. */
+  const mobileNav = !!(window.matchMedia && window.matchMedia('(max-width:760px)').matches);
+  if(mobileNav){ const b=adminBody(); if(b) b.classList.remove('panel-open'); }
+  else { open(PANELS[0].id); }
 
   if(canEditContent){
     document.getElementById('saveBtn').addEventListener('click',()=>{
