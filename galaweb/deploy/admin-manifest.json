@@ -1,0 +1,15 @@
+{
+  "name": "Hook Admin — Galápagos Hook Adventure",
+  "short_name": "Hook Admin",
+  "description": "Panel administrativo de Galápagos Hook Adventure.",
+  "start_url": "/admin.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d2b2a",
+  "theme_color": "#08201f",
+  "icons": [
+    { "src": "/assets/img/app-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/img/app-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

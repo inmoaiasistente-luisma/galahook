@@ -3,9 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <!-- El acceso admin se protege con el login seguro (sesión server-side); no se usa el gate ghk_lock. -->
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Admin — Galápagos Hook Adventure</title>
 <link rel="icon" href="assets/img/logo.png">
+<!-- PWA: icono de app (logo de marca), pantalla completa y barra de estado verde -->
+<link rel="manifest" href="/admin-manifest.json">
+<meta name="theme-color" content="#08201f">
+<link rel="apple-touch-icon" href="/assets/img/app-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hook Admin">
 <link rel="stylesheet" href="assets/css/site.css">
 <style>
   /* =========================================================
@@ -73,6 +81,9 @@
   @keyframes fade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
   .panel h2{font-size:29px;margin-bottom:6px;color:var(--a-text);}
   .admin-main h2{color:var(--a-text);}
+  /* Botón "← Menú" del panel: oculto en escritorio, visible solo en móvil (abajo). */
+  .adm-back{display:none;align-items:center;gap:6px;background:var(--a-mut-bg);color:var(--a-text);border:1px solid var(--a-border);border-radius:8px;padding:8px 13px;font-weight:700;font-size:13.5px;cursor:pointer;}
+  .adm-back:active{background:rgba(17,48,47,.12);}
   .panel .sub{color:var(--a-text-soft);margin-bottom:26px;font-size:15px;}
   /* cards & fields (claro) */
   .ed-card{background:var(--a-card);border:1px solid var(--a-border);border-radius:14px;padding:22px 24px;margin-bottom:18px;box-shadow:var(--a-shadow-sm);}
@@ -344,9 +355,38 @@
     .dash-cols{grid-template-columns:1fr;}
   }
   @media(max-width:760px){
-    .admin-body{grid-template-columns:1fr;}
-    .admin-nav{position:static;min-height:auto;flex-direction:row;flex-wrap:wrap;}
-    .admin-nav button{width:auto;}
+    /* ===== Admin móvil / PWA (Diseño 3): lista de secciones → panel a
+       pantalla completa con "← Menú". Un panel a la vez, nada apretado.
+       El escritorio (>760px) NO cambia. ===== */
+    .admin-top{padding:8px 12px;gap:8px;flex-wrap:nowrap;}
+    .admin-top .brand-mini{flex-shrink:1;min-width:0;}         /* la marca cede espacio primero */
+    .admin-top .brand-mini img{width:28px;height:28px;flex-shrink:0;}
+    .admin-top .brand-mini b{white-space:nowrap;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;}
+    .admin-top .actions{gap:5px;flex-wrap:nowrap;flex-shrink:0;}  /* las acciones NUNCA se cortan */
+    .top-who,.top-view{display:none;}          /* nombre y "View site": fuera en móvil */
+    #resetBtn{display:none;}                    /* reset destructivo: solo en escritorio */
+    .admin-top .mini-btn{padding:8px 10px;font-size:12px;}
+    /* Save y Log out: solo icono en móvil (se oculta el texto, el SVG 15px queda). */
+    #saveBtn,#logoutBtn{font-size:0;gap:0;padding:9px 10px;}
+    .lang-mini button{padding:5px 7px;font-size:11px;}
+    .admin-body{grid-template-columns:1fr;display:block;}
+    /* Lista raíz: filas altas (52px+), separadores tenues, chevron a la derecha. */
+    .admin-nav{position:static;min-height:calc(100vh - 54px);flex-direction:column;flex-wrap:nowrap;padding:6px 0 26px;gap:0;}
+    .admin-nav .nav-group{padding:16px 18px 6px;}
+    .admin-nav button{width:100%;border-radius:0;padding:16px 18px;font-size:15.5px;border-bottom:1px solid var(--line-on-dark);min-height:52px;}
+    .admin-nav button::after{content:'\203a';margin-left:auto;opacity:.45;font-size:20px;font-weight:400;}
+    .admin-nav button:active{background:rgba(255,255,255,.10);}
+    /* Panel a pantalla completa: al abrir una sección se oculta la lista. */
+    .admin-body:not(.panel-open) .admin-main{display:none;}
+    .admin-body.panel-open .admin-nav{display:none;}
+    .admin-main{padding:14px 14px 42px;overflow-x:hidden;min-width:0;}
+    /* Cuadros KPI: 2 columnas que SIEMPRE caben (minmax 0 evita desbordes en
+       teléfonos angostos); las tablas anchas desplazan dentro de su propia caja. */
+    .fin-tiles{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .bk-screen,.panel,.dash-card,.ed-card,.bk-filters,.fin-tile{min-width:0;max-width:100%;}
+    .main-head{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+    .adm-back{display:inline-flex;}
+    .panel h2,.admin-main h2{font-size:22px;}
     .ed-row{grid-template-columns:1fr;}
     .bk-frow,.bk-frow:first-child{grid-template-columns:1fr;}
     .bk-cal{padding:12px;}
@@ -366,6 +406,6 @@
 <body>
 <div class="admin-shell" id="shell"></div>
 <script src="assets/js/content.js?v=hp6"></script>
-<script src="assets/js/admin.js?v=vis1"></script>
+<script src="assets/js/admin.js?v=pwa1"></script>
 </body>
 </html>
