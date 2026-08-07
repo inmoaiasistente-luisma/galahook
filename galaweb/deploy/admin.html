@@ -379,7 +379,11 @@
     /* Panel a pantalla completa: al abrir una sección se oculta la lista. */
     .admin-body:not(.panel-open) .admin-main{display:none;}
     .admin-body.panel-open .admin-nav{display:none;}
-    .admin-main{padding:14px 14px 42px;}
+    .admin-main{padding:14px 14px 42px;overflow-x:hidden;min-width:0;}
+    /* Cuadros KPI: 2 columnas que SIEMPRE caben (minmax 0 evita desbordes en
+       teléfonos angostos); las tablas anchas desplazan dentro de su propia caja. */
+    .fin-tiles{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .bk-screen,.panel,.dash-card,.ed-card,.bk-filters,.fin-tile{min-width:0;max-width:100%;}
     .main-head{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
     .adm-back{display:inline-flex;}
     .panel h2,.admin-main h2{font-size:22px;}
