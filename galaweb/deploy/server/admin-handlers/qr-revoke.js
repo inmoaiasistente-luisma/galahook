@@ -3,7 +3,7 @@
 /* =========================================================
    POST /api/admin-booking-qr-revoke   body: { booking_id }
    ---------------------------------------------------------
-   Solo owner y admin (staff → 403). Marca active=false y
+   SOLO owner (requireWriter; admin y staff → 403). Marca active=false y
    revoked_at=now(). No toca booking_status ni payment_status.
    ========================================================= */
 

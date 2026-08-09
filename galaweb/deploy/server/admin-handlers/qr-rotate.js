@@ -3,7 +3,7 @@
 /* =========================================================
    POST /api/admin-booking-qr-rotate   body: { booking_id }
    ---------------------------------------------------------
-   Solo owner y admin (staff → 403). Incrementa token_version:
+   SOLO owner (requireWriter; admin y staff → 403). Incrementa token_version:
    el QR anterior deja de validar INMEDIATAMENTE. Devuelve la nueva
    URL y el PNG en base64 para descargarlo y enviarlo manualmente.
    No reenvía correos automáticamente.

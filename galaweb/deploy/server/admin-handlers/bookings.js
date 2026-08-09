@@ -50,7 +50,9 @@ function getQuery(req) {
 }
 /* Sanitiza el término de búsqueda: quita caracteres que romperían el filtro PostgREST. */
 function sanitizeSearch(s) {
-  return String(s || '').replace(/[,()%*\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SEARCH);
+  // Allowlist (más robusta que un denylist de metacaracteres): solo alfanuméricos,
+  // acentos y @._- ; el resto se descarta. Imposibilita el breakout de un filtro .or().
+  return String(s || '').replace(/[^0-9A-Za-zÀ-ÿ @._-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SEARCH);
 }
 function applySort(query, sort) {
   if (sort === 'oldest') return query.order('created_at', { ascending: true });
