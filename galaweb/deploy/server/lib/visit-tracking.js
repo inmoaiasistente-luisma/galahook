@@ -12,6 +12,7 @@
    ========================================================= */
 
 const crypto = require('crypto');
+const { clientIp } = require('./http');   // IP confiable (no el primer hop falsificable)
 
 /* Rastreadores automáticos conocidos: se marcan is_bot para excluirlos de los
    conteos "reales", sin dejar de registrarlos. Lista deliberadamente amplia. */
@@ -41,6 +42,7 @@ function sanitizePath(p) {
   if (cut !== -1) s = s.slice(0, cut);
   if (s.charAt(0) !== '/') return null;      // debe ser una ruta absoluta del sitio
   if (/[\x00-\x1f\x7f]/.test(s)) return null; // sin caracteres de control
+  s = s.replace(/[<>"'`\\]/g, '');           // defensa en profundidad: sin metacaracteres HTML
   if (s.length > 200) s = s.slice(0, 200);
   return s;
 }
@@ -65,14 +67,6 @@ function countryFromHeaders(headers) {
   if (typeof raw !== 'string') return null;
   const c = raw.trim().toUpperCase();
   return /^[A-Z]{2}$/.test(c) ? c : null;
-}
-
-/* IP del cliente (primera de x-forwarded-for). Solo para el limitador. */
-function clientIp(headers) {
-  const xff = headers && headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff) return xff.split(',')[0].trim();
-  const real = headers && headers['x-real-ip'];
-  return (typeof real === 'string' && real) ? real.trim() : '';
 }
 
 /* Clave de limitador de tasa: hash de la IP (nunca la IP en claro). */
