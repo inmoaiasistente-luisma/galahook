@@ -55,11 +55,16 @@ module.exports = async function handler(req, res) {
       if (r.error) { logServer('comm-detail', r.error.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Server error'); }
       if (!r.data) return sendError(res, 404, 'NOT_FOUND', 'Message not found');
       const d = r.data;
+      // Minimización para staff: el cuerpo de las comunicaciones manuales puede
+      // contener importes (cotizaciones, recibos). El staff ve los metadatos,
+      // no el cuerpo — coherente con "staff = sin dinero".
       out = {
         kind: 'comm', message_type: d.message_type, recipient: d.recipient, subject: d.subject || null,
         status: d.status, error_message: d.error_message || null, sent_by_name: d.sent_by_name || null,
         created_at: d.created_at, document_label: d.document_label || null,
-        body_html: d.body_html || null, body_text: d.body_text || d.body_preview || null
+        body_html: isStaff ? null : (d.body_html || null),
+        body_text: isStaff ? null : (d.body_text || d.body_preview || null),
+        body_restricted: isStaff || undefined
       };
     } else {
       const sel = 'id,notification_type,recipient_email,status,last_error,sent_at,created_at,subject,body_html,body_text';
