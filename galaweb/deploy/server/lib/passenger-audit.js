@@ -11,6 +11,7 @@
    ========================================================= */
 
 const { getSupabase } = require('./supabase');
+const { clientIp } = require('./http');   // IP confiable (no el primer hop falsificable)
 
 /* Enmascara la IP conservando solo el prefijo de red (privacidad). */
 function maskIp(ip) {
@@ -29,11 +30,9 @@ function sanitizeUserAgent(ua) {
   return String(ua == null ? '' : ua).replace(/[^\x20-\x7E]/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
-/* Extrae la IP del cliente de las cabeceras de Vercel (ya enmascarada). */
+/* IP del cliente (fuente confiable), ya enmascarada para la auditoría. */
 function clientIpMasked(req) {
-  const h = (req && req.headers) || {};
-  const raw = h['x-forwarded-for'] || h['x-real-ip'] || '';
-  return maskIp(raw);
+  return maskIp(clientIp((req && req.headers) || {}));
 }
 
 /**

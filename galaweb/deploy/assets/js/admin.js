@@ -1040,10 +1040,26 @@ function bkCommsSection(b){
           +(m.document_label?bkKV(ES?'Adjunto':'Attachment', m.document_label):'')
           +(m.error_message?bkKV('Error', m.error_message):'')
           +'</div>';
-        if(m.body_html){ h+='<div class="bk-msg-body">'+m.body_html+'</div>'; }
+        // El cuerpo HTML del correo NO se inyecta en el DOM del panel: se
+        // renderiza dentro de un iframe AISLADO (sandbox sin allow-scripts), así
+        // ningún script del contenido puede ejecutarse en la sesión del owner.
+        if(m.body_html){ h+='<div class="bk-msg-body" data-msg-html="1"></div>'; }
         else if(m.body_text){ h+='<pre class="bk-msg-body">'+escapeHtml(m.body_text)+'</pre>'; }
+        else if(m.body_restricted){ h+='<div class="bk-sub-hint">'+(ES?'Contenido restringido para tu rol.':'Content restricted for your role.')+'</div>'; }
         else { h+='<div class="bk-sub-hint">'+(ES?'El cuerpo de este mensaje no se guardó (requiere migración 0021 aplicada).':'This message body was not stored (requires migration 0021).')+'</div>'; }
         viewer.innerHTML=h;
+        if(m.body_html){
+          const host=viewer.querySelector('[data-msg-html]');
+          if(host){
+            const f=document.createElement('iframe');
+            f.setAttribute('sandbox','allow-same-origin');   // sin allow-scripts → los scripts del cuerpo NO se ejecutan
+            f.setAttribute('referrerpolicy','no-referrer');
+            f.style.cssText='width:100%;border:0;background:#fff;border-radius:8px;min-height:120px';
+            f.srcdoc=m.body_html;
+            f.addEventListener('load',function(){ try{ f.style.height=(f.contentDocument.body.scrollHeight+24)+'px'; }catch(e){} });
+            host.appendChild(f);
+          }
+        }
         const cb=viewer.querySelector('[data-close]'); if(cb) cb.addEventListener('click',function(){ viewer.style.display='none'; });
       }).catch(function(){ viewer.innerHTML='<div class="bk-sub-hint">'+(ES?'No se pudo abrir.':'Could not open.')+'</div>'; });
     }

@@ -131,8 +131,24 @@ function getTenantId() {
   return t;
 }
 
+/* ---------------- IP del cliente (CONFIABLE) ----------------
+   El PRIMER token de X-Forwarded-For lo pone el cliente y es falsificable; usarlo
+   como clave de rate-limit permite rotar IPs falsas y saltarse el límite. En Vercel
+   la plataforma fija `x-vercel-forwarded-for` / `x-real-ip` con la IP real y añade la
+   IP observada como ÚLTIMO hop de XFF. Se prefiere esa fuente; nunca el primer token. */
+function clientIp(headers) {
+  headers = headers || {};
+  const vercel = headers['x-vercel-forwarded-for'];
+  if (typeof vercel === 'string' && vercel.trim()) return vercel.split(',').pop().trim();
+  const real = headers['x-real-ip'];
+  if (typeof real === 'string' && real.trim()) return real.trim();
+  const xff = headers['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.trim()) { const p = xff.split(','); return p[p.length - 1].trim() || 'unknown'; }
+  return 'unknown';
+}
+
 module.exports = {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
   isUuid, isEmail, normalizeEmail, maskEmail, sanitizeErrorText, isNonEmptyString, isPositiveInt,
-  isRealYmd, todayInGalapagos, isNotPastGalapagos, getTenantId
+  isRealYmd, todayInGalapagos, isNotPastGalapagos, getTenantId, clientIp
 };

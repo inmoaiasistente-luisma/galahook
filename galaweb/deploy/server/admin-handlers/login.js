@@ -7,30 +7,47 @@
    autoriza contra public.admin_profiles (tenant + rol + active).
    Emite nuestra propia cookie de sesión firmada; NO guarda los
    tokens de Supabase.
+
+   Anti fuerza bruta: throttle DURABLE respaldado por rate_limit_hits
+   (compartido entre instancias serverless), por (IP real + email).
+   La IP se toma de una fuente CONFIABLE (no el primer hop de XFF,
+   que es falsificable). Mensaje idéntico para credenciales inválidas y
+   para credenciales válidas sin acceso (no se revela si la cuenta existe).
    ========================================================= */
 
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { getSupabase } = require('../lib/supabase');
-const { sendJson, sendError, logServer, readJsonBody, isEmail, normalizeEmail, getTenantId } = require('../lib/http');
+const { sendJson, sendError, logServer, readJsonBody, isEmail, normalizeEmail, getTenantId, clientIp } = require('../lib/http');
 const { createSessionToken, buildSessionCookie, isSecureEnv, sameOrigin, loadProfile, isProfileUsable, DEFAULT_MAX_AGE } = require('../lib/admin-auth');
 
-/* Throttle básico en memoria (por instancia; sin infraestructura extra).
-   Supabase Auth aplica además sus propios límites. */
-const attempts = new Map(); // ip -> { count, ts }
-const WINDOW_MS = 10 * 60 * 1000;
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-function clientIp(req) { return String((req.headers['x-forwarded-for'] || '')).split(',')[0].trim() || 'unknown'; }
-function currentDelay(ip) {
-  const a = attempts.get(ip);
-  if (!a || (Date.now() - a.ts) > WINDOW_MS) return 300;
-  return Math.min(300 + a.count * 400, 3000);
+
+/* Throttle durable de login (BD, cross-instancia). Cuenta FALLOS por
+   (IP real + email) en una ventana; al superar el máximo → 429. Fail-open:
+   si la BD falla, no bloquea al usuario legítimo (la seguridad real la dan
+   la contraseña y los límites de Supabase Auth). */
+const LOGIN_WINDOW_SEC = 15 * 60;
+const LOGIN_MAX_FAILS = 10;
+function loginBucket(ip, email) {
+  return 'login:' + crypto.createHash('sha256').update(String(ip) + '|' + String(email)).digest('hex').slice(0, 40);
 }
-function noteFailure(ip) {
-  const a = attempts.get(ip);
-  if (!a || (Date.now() - a.ts) > WINDOW_MS) attempts.set(ip, { count: 1, ts: Date.now() });
-  else { a.count += 1; a.ts = Date.now(); }
+async function tooManyFailures(bucket) {
+  try {
+    const sinceIso = new Date(Date.now() - LOGIN_WINDOW_SEC * 1000).toISOString();
+    const cnt = await getSupabase().from('rate_limit_hits')
+      .select('id', { count: 'exact', head: true })
+      .eq('bucket_key', bucket).gte('created_at', sinceIso);
+    if (cnt.error) return false;                       // fail-open
+    return (cnt.count || 0) >= LOGIN_MAX_FAILS;
+  } catch (e) { return false; }                         // fail-open
 }
-function noteSuccess(ip) { attempts.delete(ip); }
+async function noteLoginFailure(tenant, bucket) {
+  try { await getSupabase().from('rate_limit_hits').insert({ tenant_id: tenant, bucket_key: bucket }); } catch (e) { /* best-effort */ }
+}
+async function clearLoginFailures(bucket) {
+  try { await getSupabase().from('rate_limit_hits').delete().eq('bucket_key', bucket); } catch (e) { /* best-effort */ }
+}
 
 /* Cliente Auth NUEVO por petición: un cliente compartido guardaría la sesión
    en memoria y podría filtrarse entre peticiones concurrentes. */
@@ -59,15 +76,18 @@ module.exports = async function handler(req, res) {
   if (typeof password !== 'string' || password.length < 1 || password.length > 200) return sendError(res, 400, 'INVALID_BODY', 'Invalid body');
   const email = normalizeEmail(body.email);
 
-  const ip = clientIp(req);
-  await sleep(currentDelay(ip)); // demora mínima anti fuerza bruta
-
   let tenant, secret;
   try {
     tenant = getTenantId();
     secret = process.env.SESSION_SECRET;
     if (!secret) throw new Error('SESSION_SECRET no está configurada');
   } catch (e) { logServer('admin-login', e.message); return sendError(res, 500, 'SERVER_ERROR', 'Server error'); }
+
+  // Anti fuerza bruta (IP CONFIABLE + email), durable.
+  const ip = clientIp(req.headers);
+  const bucket = loginBucket(ip, email);
+  if (await tooManyFailures(bucket)) return sendError(res, 429, 'TOO_MANY_ATTEMPTS', 'Too many attempts. Please try again later.');
+  await sleep(300); // demora constante mínima
 
   let auth;
   try { auth = newAuthClient(); }
@@ -79,7 +99,7 @@ module.exports = async function handler(req, res) {
   catch (e) { logServer('admin-login', 'signIn threw'); return sendError(res, 500, 'SERVER_ERROR', 'Server error'); }
 
   if (signIn.error || !signIn.data || !signIn.data.user) {
-    noteFailure(ip);
+    await noteLoginFailure(tenant, bucket);
     // Mensaje idéntico para correo inexistente y contraseña incorrecta.
     return sendError(res, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
   }
@@ -95,14 +115,17 @@ module.exports = async function handler(req, res) {
   catch (e) { logServer('admin-login', e.message); return sendError(res, 500, 'SERVER_ERROR', 'Server error'); }
 
   if (!isProfileUsable(profile, tenant)) {
-    return sendError(res, 403, 'NO_ACCESS', 'You do not have access to this panel');
+    // MISMO error que credenciales inválidas: no revelamos que la cuenta existe
+    // ni que carece de acceso. El motivo real queda solo en el log del servidor.
+    logServer('admin-login', 'auth ok but no usable profile for user ' + userId);
+    return sendError(res, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
   }
 
   // 3) last_login_at (best-effort: no debe impedir el acceso)
   try { await getSupabase().from('admin_profiles').update({ last_login_at: new Date().toISOString() }).eq('user_id', userId); }
   catch (e) { logServer('admin-login', 'last_login_at update failed'); }
 
-  noteSuccess(ip);
+  await clearLoginFailures(bucket); // login correcto → limpia el contador
 
   // 4) Cookie de sesión propia (sin tokens de Supabase)
   const token = createSessionToken(secret, {

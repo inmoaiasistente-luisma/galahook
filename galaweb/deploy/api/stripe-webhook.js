@@ -172,6 +172,13 @@ async function processPaymentIntent(supabase, event, pi) {
       if (String(pi.currency).toLowerCase() !== String(booking.currency).toLowerCase()) throw new Error('currency mismatch');
       if (Number(pi.amount) !== Number(booking.amount_cents)) throw new Error('amount mismatch');
       if (pi.amount_received != null && Number(pi.amount_received) !== Number(booking.amount_cents)) throw new Error('amount_received mismatch');
+      // Guarda de estado TERMINAL: Stripe no garantiza el orden ni la unicidad de
+      // entrega. Un 'succeeded' reordenado/reentregado NO debe re-confirmar una
+      // reserva ya reembolsada o cancelada. Se registra y se omite (no es 500).
+      if (booking.payment_status === 'refunded' || booking.booking_status === 'cancelled') {
+        logSafe('succeeded ignorado (estado terminal)', String(booking.payment_status) + '/' + String(booking.booking_status));
+        return;
+      }
       // paid_at desde la hora del evento de Stripe (no del navegador).
       const ts = (event.created || pi.created || 0) * 1000;
       const paidAt = new Date(ts).toISOString();

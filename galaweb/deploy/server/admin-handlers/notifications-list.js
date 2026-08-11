@@ -26,7 +26,9 @@ function getQuery(req) {
   catch (e) { return {}; }
 }
 function sanitizeSearch(s) {
-  return String(s || '').replace(/[,()%*\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SEARCH);
+  // Allowlist (más robusta que un denylist de metacaracteres): solo alfanuméricos,
+  // acentos y @._- ; el resto se descarta. Imposibilita el breakout de un filtro .or().
+  return String(s || '').replace(/[^0-9A-Za-zÀ-ÿ @._-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SEARCH);
 }
 
 module.exports = async function handler(req, res) {

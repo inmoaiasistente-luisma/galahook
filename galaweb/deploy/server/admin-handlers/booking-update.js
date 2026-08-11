@@ -4,7 +4,7 @@
    POST /api/admin-booking-update
    ---------------------------------------------------------
    Actualiza SOLO booking_status de una reserva del tenant.
-   Autorizado exclusivamente para owner y admin — staff recibe 403.
+   Autorizado exclusivamente para OWNER (requireWriter) — admin y staff reciben 403.
    NUNCA cambia payment_status (eso solo lo mueve Stripe/webhook),
    ni importe, moneda, PI id, paid_at, email o tour_id.
    Cancelar NO reembolsa en Stripe.
@@ -22,7 +22,7 @@ const FIELDS = 'id,booking_code,request_type,tour_id,tour_name,unit,booking_date
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
-  // Solo owner y admin. staff → 403 FORBIDDEN (aunque llame al endpoint directamente).
+  // SOLO owner (requireWriter). admin y staff → 403 FORBIDDEN (aunque llamen al endpoint directamente).
   const session = await requireWriter(req, res);   // Fase 9: escritura = SOLO owner
   if (!session) return;                               // 401/403 ya enviado
   if (!sameOrigin(req)) return sendError(res, 403, 'FORBIDDEN', 'Forbidden');
