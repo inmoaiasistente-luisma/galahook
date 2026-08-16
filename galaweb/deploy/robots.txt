@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin.html
+Disallow: /passengers.html
+Disallow: /checkin.html
+Disallow: /lock.html
+Disallow: /api/
+
+Sitemap: https://galapagoshookadventure.com/sitemap.xml
