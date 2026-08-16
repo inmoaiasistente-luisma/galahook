@@ -749,7 +749,6 @@ function openDetail(type, id){
       +highHTML+itinHTML+choiceHTML+inclHTML+polHTML
     +'</div><aside class="dt-side"><div class="dt-card">'
       +'<div class="dt-price'+(quote?' quote':'')+'">'+priceHTML+'</div>'
-      +((type==='package'&&S.pkgPromo)?'<div class="dt-promo">'+svg('tag')+'<span>'+t(S.pkgPromo.line)+'</span></div>':'')
       +factsHTML
       +bookBtn(t(src.name)+(type==='package'?' · '+t(src.days):''), src.price, type==='package'?'person':(quote?'boat':'person'), 'btn btn-gold btn-block', bookLabel, (type==='package'?(src.minGuests||2):1), src.id)
       +'<a class="btn btn-ghost btn-block" href="'+waHref+'" target="_blank" rel="noopener" style="margin-top:10px">'+svg('wa')+(es?'Preguntar por WhatsApp':'Ask on WhatsApp')+'</a>'

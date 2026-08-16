@@ -147,12 +147,12 @@ window.GHA_DEFAULT = {
     es: "Los vuelos internacionales hasta Ecuador no están incluidos. Nosotros cubrimos tu vuelo redondo desde Quito (UIO) o Guayaquil (GYE) a Galápagos y todo el transporte dentro de la isla."
   },
 
-  /* Copy neutral de grupo: el descuento automático del 20 % se retiró.
-     Los descuentos ahora se configuran desde el panel (owner). Si el owner
-     crea una regla de grupo, el checkout la aplica y la muestra sola. */
+  /* Ya NO hay descuento automático ni nota de grupo en la tarjeta del paquete.
+     Los descuentos se configuran desde el panel (owner) y el checkout los aplica
+     y muestra solo. 'summary' es solo la etiqueta del descuento real en el
+     resumen de reserva. La nota de buceo/pesca vive fuera de los paquetes
+     (packages.html). */
   pkgPromo: {
-    badge: { en: "Group rates available", es: "Tarifas de grupo" },
-    line: { en: "Traveling as a group? Ask us about group rates.", es: "¿Viajan en grupo? Consúltanos por tarifas de grupo." },
     summary: { en: "Discount", es: "Descuento" }
   },
 
