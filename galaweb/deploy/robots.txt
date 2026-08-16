@@ -6,4 +6,4 @@ Disallow: /checkin.html
 Disallow: /lock.html
 Disallow: /api/
 
-Sitemap: https://galapagoshookadventure.com/sitemap.xml
+Sitemap: https://www.galapagoshookadventure.com/sitemap.xml
