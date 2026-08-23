@@ -59,6 +59,15 @@ ok('4 canRecordSale: owner y staff sí; admin no',
    sin escribir: si alguien les añade una escritura, la prueba 6b falla. */
 const READ_ONLY_POSTS = ['passenger-document-reveal.js', 'milu-itinerary-preview.js'];
 
+/* EXCEPCIÓN AUTORIZADA POR EL OWNER — bandeja de mensajes de contacto.
+   El owner pidió expresamente que owner Y admin gestionen los "pedidos
+   internos" ("cualquiera de los dos podrá responder"). contact_messages es
+   una entidad NUEVA de baja sensibilidad (consultas de clientes, sin dinero):
+   cambiar el ESTADO de un mensaje (nuevo→leído→respondido→archivado) no toca
+   reservas ni finanzas. Por eso este único write admite requireOwnerOrAdmin.
+   La regla de Fase 9 (admin solo-lectura) sigue intacta para todo lo demás. */
+const ADMIN_INBOX_WRITES = ['contact-message-update.js'];
+
 const MUTATING = [], LEAKS = [], SNEAKY_WRITES = [];
 HANDLERS.forEach(function (f) {
   const src = fs.readFileSync(path.join(HDIR, f), 'utf8');
@@ -73,7 +82,8 @@ HANDLERS.forEach(function (f) {
   const writerGate = /requireWriter\(req, res\)/.test(src);
   const saleGate = /requireSaleWriter\(req, res\)/.test(src);
   const ownerOnly = /requireAdmin\(req, res, \['owner'\]\)/.test(src);
-  if (!writerGate && !saleGate && !ownerOnly) LEAKS.push(f);
+  const inboxGate = ADMIN_INBOX_WRITES.indexOf(f) !== -1 && /requireOwnerOrAdmin\(req, res\)/.test(src);
+  if (!writerGate && !saleGate && !ownerOnly && !inboxGate) LEAKS.push(f);
 });
 
 ok('5 el barrido encuentra los handlers de mutación (>= 25)', MUTATING.length >= 25);
@@ -417,12 +427,13 @@ ok('19 buildAuditRow: sin sesión o sin acción → null',
   const adm = read('assets/js/admin.js');
   const html = read('admin.html');
 
-  /* Las siete entradas, en orden. */
+  /* Las ocho entradas, en orden (Mensajes se añadió tras Reservas: bandeja de
+     contacto para owner y admin). */
   const navBlock = adm.slice(adm.indexOf('const panels=[', adm.indexOf('function panelsFor')));
   const navIds = (navBlock.slice(0, navBlock.indexOf('];')).match(/id:'([a-z]+)'/g) || [])
     .map(function (s) { return s.slice(4, -1); });
-  ok('70 la navegación tiene exactamente 7 entradas, en el orden pedido',
-    navIds.join(',') === 'dashboard,bookings,calendar,sales,finance,content,settings');
+  ok('70 la navegación tiene exactamente 8 entradas, en el orden pedido',
+    navIds.join(',') === 'dashboard,bookings,messages,calendar,sales,finance,content,settings');
 
   /* Lo oculto sigue EXISTIENDO en el código: ocultar no es borrar. */
   ['panelMiluTourism', 'panelHotelPreferences', 'panelPackagePricing', 'panelPackageNotes',

@@ -33,9 +33,10 @@
       <div class="reveal">
         <form data-contact style="background:rgba(255,255,255,.05);border:1px solid var(--line-on-dark);border-radius:12px;padding:30px">
           <div class="form-row">
-            <div class="field"><label data-en="Full name" data-es="Nombre completo">Full name</label><input name="name" required></div>
-            <div class="field"><label data-en="Email" data-es="Correo">Email</label><input name="email" type="email"></div>
+            <div class="field"><label data-en="Full name" data-es="Nombre completo">Full name</label><input name="name" autocomplete="name" required></div>
+            <div class="field"><label data-en="Email" data-es="Correo">Email</label><input name="email" type="email" autocomplete="email" placeholder="you@email.com"></div>
           </div>
+          <div class="field"><label data-en="WhatsApp / phone (optional)" data-es="WhatsApp / teléfono (opcional)">WhatsApp / phone (optional)</label><input name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+593…"></div>
           <div class="field"><label data-en="I'm interested in" data-es="Me interesa">I'm interested in</label>
             <select name="interest">
               <option data-en="All-inclusive package" data-es="Paquete todo incluido">All-inclusive package</option>
@@ -46,8 +47,11 @@
             </select>
           </div>
           <div class="field"><label data-en="Your message" data-es="Tu mensaje">Your message</label><textarea name="message" placeholder="Dates, group size, what you'd love to see…"></textarea></div>
-          <button type="submit" class="btn btn-gold btn-block" data-wa-shortcut data-en="Send via WhatsApp" data-es="Enviar por WhatsApp">Send via WhatsApp</button>
-          <p style="font-size:12.5px;color:rgba(255,255,255,.5);text-align:center;margin:14px 0 0" data-en="Opens WhatsApp with your message ready to send." data-es="Abre WhatsApp con tu mensaje listo para enviar."></p>
+          <!-- honeypot: oculto para humanos; si un bot lo rellena, el envío se descarta -->
+          <div class="hp-field" aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden"><label>Company<input name="company" tabindex="-1" autocomplete="off"></label></div>
+          <button type="submit" class="btn btn-gold btn-block" data-en="Send message" data-es="Enviar mensaje">Send message</button>
+          <p style="font-size:12.5px;color:rgba(255,255,255,.5);text-align:center;margin:14px 0 0" data-en="Leave your email or WhatsApp and we'll reply — usually within a day." data-es="Déjanos tu correo o WhatsApp y te respondemos — normalmente en un día."></p>
+          <p style="text-align:center;margin:12px 0 0"><a data-wa-secondary target="_blank" rel="noopener" href="#" style="color:var(--gold);font-size:13.5px;text-decoration:underline" data-en="Prefer WhatsApp? Chat with us →" data-es="¿Prefieres WhatsApp? Escríbenos →">Prefer WhatsApp? Chat with us →</a></p>
         </form>
       </div>
     </div>
@@ -67,10 +71,10 @@
 </section>
 
 <footer class="site-footer" id="site-footer"></footer>
-<script src="assets/js/content.js?v=hp7"></script>
+<script src="assets/js/content.js?v=hp8"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="assets/js/payments.js"></script>
-<script src="assets/js/app.js?v=hp7"></script>
+<script src="assets/js/app.js?v=hp8"></script>
 <script>
   // contact info list + big WA button (after app render)
   window.addEventListener('load',function(){

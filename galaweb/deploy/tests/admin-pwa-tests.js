@@ -53,7 +53,7 @@ ok('19 CSS: filas altas y a ancho completo (móvil)', /\.admin-nav button\{width
 ok('20 CSS: declutter topbar (nombre y View site fuera en móvil)', /\.top-who,\.top-view\{display:none;\}/.test(html));
 ok('21 CSS: reglas solo dentro de @media max-width:760',
   (function () { const i = html.indexOf('@media(max-width:760px)'); return i !== -1 && html.indexOf('.admin-body.panel-open') > i; })());
-ok('22 admin.html cache-buster nuevo (pwa1)', /admin\.js\?v=pwa1/.test(html));
+ok('22 admin.html cache-buster nuevo (pwa2)', /admin\.js\?v=pwa2/.test(html));
 
 /* =======================================================================
    C) LAYOUT MÓVIL (JS admin.js)
