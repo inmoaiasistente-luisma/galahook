@@ -207,7 +207,10 @@ function panelSite(){
   const r2=el('<div class="ed-row"></div>');
   r2.appendChild(strField('Instagram handle',m,'instagram'));
   r2.appendChild(strField('TikTok handle',m,'tiktok'));
-  c1.appendChild(r); c1.appendChild(r2);
+  const r2b=el('<div class="ed-row"></div>');
+  r2b.appendChild(strField('Instagram handle (2nd account)',m,'instagram2'));
+  r2b.appendChild(strField('TikTok handle (2nd account)',m,'tiktok2'));
+  c1.appendChild(r); c1.appendChild(r2); c1.appendChild(r2b);
   c1.appendChild(biField('Address — Galápagos (HQ)',m,'address'));
   c1.appendChild(biField('Address — USA office (Florida)',m,'addressUs'));
   c1.appendChild(biField('Opening hours',m,'hours'));
