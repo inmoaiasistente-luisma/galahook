@@ -27,6 +27,47 @@ const ZERO = {
   week_visits: 0, week_unique: 0, bot_visits: 0
 };
 
+/* Código corto y estable a partir del id anónimo (localStorage). No es PII:
+   solo sirve para AGRUPAR las visitas de un mismo navegador en una fila. No se
+   devuelve el id completo al panel. */
+function visitorCode(vid) {
+  if (typeof vid !== 'string' || !vid) return null;
+  return vid.replace(/[^A-Za-z0-9]/g, '').slice(0, 6).toUpperCase() || null;
+}
+
+/* Agrupa las filas (ordenadas de más nueva a más vieja) por visitante: una fila
+   por navegador con su número de visitas (N×), primera/última vez, país,
+   dispositivo y cuántas páginas distintas vio. Las visitas sin id (incógnito)
+   se suman en una sola fila "sin identificar". */
+function aggregateVisitors(rows) {
+  const map = new Map();
+  let anon = null;
+  rows.forEach(function (r) {
+    const vid = r.visitor_id;
+    if (!vid) {
+      if (!anon) anon = { code: null, anon: true, visits: 0, last: null, first: null, country: null, device: null, _paths: new Set() };
+      anon.visits++; if (!anon.last) anon.last = r.created_at; anon.first = r.created_at;
+      if (!anon.country && r.country) anon.country = r.country;
+      if (!anon.device && r.device) anon.device = r.device;
+      if (r.path) anon._paths.add(r.path);
+      return;
+    }
+    let e = map.get(vid);
+    if (!e) { e = { code: visitorCode(vid), anon: false, visits: 0, last: null, first: null, country: null, device: null, _paths: new Set() }; map.set(vid, e); }
+    e.visits++;
+    if (!e.last) e.last = r.created_at;   // filas desc: la 1ª vez que aparece = su visita más reciente
+    e.first = r.created_at;               // se sobreescribe → termina en la más antigua de la ventana
+    if (!e.country && r.country) e.country = r.country;
+    if (!e.device && r.device) e.device = r.device;
+    if (r.path) e._paths.add(r.path);
+  });
+  const list = Array.from(map.values());
+  if (anon) list.push(anon);
+  return list.map(function (e) {
+    return { code: e.code, anon: e.anon, visits: e.visits, last: e.last, first: e.first, country: e.country, device: e.device, pages: e._paths.size };
+  }).sort(function (a, b) { return b.visits - a.visits || (String(b.last) > String(a.last) ? 1 : -1); });
+}
+
 /* ¿El error de Supabase indica que la migración 0022 falta? */
 function isMissing(err) {
   if (!err) return false;
@@ -66,27 +107,36 @@ module.exports = async function handler(req, res) {
       p_tenant: tenant, p_today_start: todayStartIso, p_week_start: weekStartIso
     });
     if (rpc.error) {
-      if (isMissing(rpc.error)) return sendJson(res, 200, { ready: false, stats: ZERO, recent: [] });
+      if (isMissing(rpc.error)) return sendJson(res, 200, { ready: false, stats: ZERO, recent: [], visitors: [] });
       logServer('page-views', rpc.error.message);
       return sendError(res, 500, 'INTERNAL_ERROR', 'Server error');
     }
     const stats = Object.assign({}, ZERO, rpc.data || {});
 
     const rows = await supabase.from('page_views')
-      .select('created_at, path, country, device')
+      .select('created_at, path, country, device, visitor_id')
       .eq('tenant_id', tenant).eq('is_bot', false)
       .order('created_at', { ascending: false })
       .limit(limit);
     if (rows.error) {
-      if (isMissing(rows.error)) return sendJson(res, 200, { ready: false, stats: ZERO, recent: [] });
+      if (isMissing(rows.error)) return sendJson(res, 200, { ready: false, stats: ZERO, recent: [], visitors: [] });
       logServer('page-views', rows.error.message);
       return sendError(res, 500, 'INTERNAL_ERROR', 'Server error');
     }
 
-    return sendJson(res, 200, { ready: true, stats: stats, recent: rows.data || [] });
+    const data = rows.data || [];
+    const visitors = aggregateVisitors(data);
+    // El registro detallado NO expone el id anónimo (solo los agregados lo usan).
+    const recent = data.map(function (r) { return { created_at: r.created_at, path: r.path, country: r.country, device: r.device }; });
+
+    return sendJson(res, 200, { ready: true, stats: stats, recent: recent, visitors: visitors });
   } catch (err) {
-    if (isMissing(err)) return sendJson(res, 200, { ready: false, stats: ZERO, recent: [] });
+    if (isMissing(err)) return sendJson(res, 200, { ready: false, stats: ZERO, recent: [], visitors: [] });
     logServer('page-views', err && err.message);
     return sendError(res, 500, 'INTERNAL_ERROR', 'Server error');
   }
 };
+
+/* Solo para pruebas: funciones puras de agregación por visitante (Fase C). */
+module.exports.aggregateVisitors = aggregateVisitors;
+module.exports.visitorCode = visitorCode;

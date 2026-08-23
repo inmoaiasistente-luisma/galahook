@@ -101,6 +101,9 @@ ROUTES['milu-research-approve'] = require('../server/admin-handlers/milu-researc
 ROUTES['milu-itinerary-preview'] = require('../server/admin-handlers/milu-itinerary-preview');
 /* Contador de visitas del sitio público (panel solo-owner, migración 0022). */
 ROUTES['page-views'] = require('../server/admin-handlers/page-views');
+/* Bandeja de mensajes de contacto (owner y admin, migración 0023). */
+ROUTES['contact-messages'] = require('../server/admin-handlers/contact-messages-list');
+ROUTES['contact-message-update'] = require('../server/admin-handlers/contact-message-update');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */

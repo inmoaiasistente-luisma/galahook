@@ -3174,11 +3174,21 @@ function panelMiluTourism(role){
 function panelVisits(role){
   const p=el('<div class="bk-screen"></div>');
   p.appendChild(el('<p class="sub" style="margin-top:-2px">'+(ES
-    ?'Visitas al sitio público. Sin datos personales: solo país aproximado y un identificador anónimo para contar personas únicas.'
-    :'Public site visits. No personal data: only approximate country and an anonymous id to count unique people.')+'</p>'));
+    ?'Visitas al sitio público. Sin datos personales: solo país aproximado y un identificador anónimo para agrupar las visitas de un mismo navegador.'
+    :'Public site visits. No personal data: only approximate country and an anonymous id to group visits from the same browser.')+'</p>'));
   const tiles=el('<div class="fin-tiles"></div>'); p.appendChild(tiles);
   tiles.appendChild(el('<div class="fin-tile"><span>'+(ES?'Cargando…':'Loading…')+'</span><b>—</b></div>'));
-  const card=el('<div class="dash-card" style="margin-top:16px"><h3>'+(ES?'Visitas recientes':'Recent visits')
+
+  /* Fase C — Visitantes (personas únicas): 1 fila por cliente con "N×".
+     Responde a la duda "¿son varios clientes o el mismo que vuelve?". */
+  const peopleCard=el('<div class="dash-card" style="margin-top:16px"><h3>'+(ES?'Visitantes (personas únicas)':'Visitors (unique people)')
+    +'</h3><p class="sub" style="margin:-2px 0 10px">'+(ES
+      ?'Cada navegador cuenta una sola vez; "N×" es cuántas veces ha entrado.'
+      :'Each browser counts once; "N×" is how many times they visited.')
+    +'</p><div id="visPeopleWrap"><div class="dash-empty">'+(ES?'Cargando…':'Loading…')+'</div></div></div>');
+  p.appendChild(peopleCard);
+
+  const card=el('<div class="dash-card" style="margin-top:16px"><h3>'+(ES?'Actividad detallada (cada visita)':'Detailed activity (each visit)')
     +'</h3><div id="visTableWrap"><div class="dash-empty">'+(ES?'Cargando…':'Loading…')+'</div></div></div>');
   p.appendChild(card);
 
@@ -3194,27 +3204,56 @@ function panelVisits(role){
     if(typeof cc!=='string'||!/^[A-Z]{2}$/.test(cc)) return '';
     try{ return cc.replace(/./g,function(c){ return String.fromCodePoint(127397+c.charCodeAt(0)); })+' '; }catch(e){ return ''; }
   }
+  function personLabel(v){ return v.anon?(ES?'Sin identificar':'Unidentified'):('#'+(v.code||'—')); }
 
   apiGet('/api/admin-page-views?limit=200').then(function(r){
     if(r.status===401){ onUnauthorized(); return; }
     const wrap=document.getElementById('visTableWrap');
-    if(!r.ok||!r.data){ tiles.innerHTML=tile(ES?'Error al cargar':'Load error','—'); if(wrap) wrap.innerHTML=''; return; }
+    const pwrap=document.getElementById('visPeopleWrap');
+    if(!r.ok||!r.data){ tiles.innerHTML=tile(ES?'Error al cargar':'Load error','—'); if(wrap) wrap.innerHTML=''; if(pwrap) pwrap.innerHTML=''; return; }
     const d=r.data, s=d.stats||{};
     if(d.ready===false){
-      tiles.innerHTML=tile(ES?'Visitas totales':'Total visits','0',true)+tile(ES?'Personas únicas':'Unique people','0',true);
-      if(wrap) wrap.innerHTML='<div class="ro-note">'+(ES
+      tiles.innerHTML=tile(ES?'Personas únicas':'Unique people','0',true)+tile(ES?'Visitas totales':'Total visits','0');
+      const note='<div class="ro-note">'+(ES
         ?'El contador aún no está activado. Aplica la migración 0022 en Supabase y las visitas empezarán a registrarse.'
         :'The counter is not active yet. Apply migration 0022 in Supabase and visits will start recording.')+'</div>';
+      if(pwrap) pwrap.innerHTML=note; if(wrap) wrap.innerHTML='';
       return;
     }
+    // Personas únicas PRIMERO (el owner piensa en personas, no en golpes de página).
     tiles.innerHTML=
-      tile(ES?'Visitas totales':'Total visits', num(s.total_visits), true)
-      +tile(ES?'Personas únicas':'Unique people', num(s.unique_visitors), true)
+      tile(ES?'Personas únicas':'Unique people', num(s.unique_visitors), true)
+      +tile(ES?'Únicas hoy':'Unique today', num(s.today_unique), true)
+      +tile(ES?'Únicas (7 días)':'Unique (7 days)', num(s.week_unique), true)
+      +tile(ES?'Visitas totales':'Total visits', num(s.total_visits))
       +tile(ES?'Hoy':'Today', num(s.today_visits))
-      +tile(ES?'Únicas hoy':'Unique today', num(s.today_unique))
-      +tile(ES?'Últimos 7 días':'Last 7 days', num(s.week_visits))
-      +tile(ES?'Únicas (7 días)':'Unique (7 days)', num(s.week_unique));
+      +tile(ES?'Últimos 7 días':'Last 7 days', num(s.week_visits));
+
+    // Tabla de visitantes (1 fila por cliente con "N×").
+    const people=d.visitors||[];
+    if(pwrap){
+      if(!people.length){ pwrap.innerHTML='<div class="dash-empty">'+(ES?'Aún no hay visitantes registrados.':'No visitors recorded yet.')+'</div>'; }
+      else{
+        let ph='<div class="bk-table-wrap"><table class="bk-table vis-table"><thead><tr>'
+          +'<th>'+(ES?'Visitante':'Visitor')+'</th><th>'+(ES?'Visitas':'Visits')+'</th>'
+          +'<th>'+(ES?'Última vez':'Last seen')+'</th><th>'+(ES?'País':'Country')+'</th>'
+          +'<th>'+(ES?'Dispositivo':'Device')+'</th><th>'+(ES?'Páginas':'Pages')+'</th></tr></thead><tbody>';
+        people.forEach(function(v){
+          ph+='<tr><td class="mono">'+escapeHtml(personLabel(v))+'</td>'
+            +'<td><b>'+num(v.visits)+'×</b></td>'
+            +'<td>'+escapeHtml(fmtWhen(v.last))+'</td>'
+            +'<td>'+flag(v.country)+escapeHtml(v.country||'—')+'</td>'
+            +'<td>'+escapeHtml(devLabel(v.device))+'</td>'
+            +'<td>'+num(v.pages)+'</td></tr>';
+        });
+        ph+='</tbody></table></div>';
+        pwrap.innerHTML=ph;
+      }
+    }
+
+    // Registro detallado (cada visita) — se conserva como bitácora.
     const rows=d.recent||[];
+    if(!wrap) return;
     if(!rows.length){ wrap.innerHTML='<div class="dash-empty">'+(ES?'Aún no hay visitas registradas.':'No visits recorded yet.')+'</div>'; return; }
     let html='<div class="bk-table-wrap"><table class="bk-table vis-table"><thead><tr>'
       +'<th>'+(ES?'Hora de ingreso':'Entry time')+'</th><th>'+(ES?'Página':'Page')+'</th>'
@@ -3229,6 +3268,134 @@ function panelVisits(role){
     wrap.innerHTML=html;
   }).catch(function(){ tiles.innerHTML=tile(ES?'Error al cargar':'Load error','—'); });
 
+  return p;
+}
+
+/* ============ MENSAJES (bandeja de contacto / pedido interno) ============
+   Owner Y admin: ambos ven y responden. Lista los mensajes que la gente
+   envía desde el sitio (formulario de contacto + aviso de visitante
+   recurrente). Responder = mailto (abre el correo propio prellenado) o
+   WhatsApp. El cambio de estado se guarda en el servidor y actualiza la
+   insignia de no leídos del menú. */
+const MSG_STATUSES=['new','read','replied','archived'];
+function msgStatusLabel(s){
+  if(s==='new') return ES?'Nuevo':'New';
+  if(s==='read') return ES?'Leído':'Read';
+  if(s==='replied') return ES?'Respondido':'Replied';
+  if(s==='archived') return ES?'Archivado':'Archived';
+  return s;
+}
+function msgStatusColor(s){
+  if(s==='new') return '#cf9f54';       // dorado
+  if(s==='read') return '#3c7d78';      // verdemar
+  if(s==='replied') return '#2f8f4e';   // verde
+  return '#8a8577';                     // archivado / desconocido: apagado
+}
+function msgSourceLabel(s){ return s==='visit_nudge'?(ES?'Visitante recurrente':'Returning visitor'):(ES?'Formulario':'Contact form'); }
+
+/* Actualiza la insignia de no leídos del menú (owner y admin). No-op si no existe. */
+function refreshMessagesBadge(){
+  const badge=document.getElementById('msgBadge');
+  if(!badge) return;
+  apiGet('/api/admin-contact-messages?status=new&limit=1').then(function(r){
+    if(!r.ok||!r.data) return;
+    const n=(r.data.counts&&r.data.counts.new)||0;
+    if(n>0){ badge.textContent=n>99?'99+':String(n); badge.hidden=false; }
+    else { badge.textContent=''; badge.hidden=true; }
+  }).catch(function(){});
+}
+
+function panelMessages(role){
+  const p=el('<div class="bk-screen"></div>');
+  p.appendChild(el('<p class="sub" style="margin-top:-2px">'+(ES
+    ?'Mensajes enviados desde el sitio (formulario de contacto y avisos de visitantes). Responde por correo o WhatsApp; el estado se guarda para ti y para el equipo.'
+    :'Messages sent from the site (contact form and visitor nudges). Reply by email or WhatsApp; the status is saved for you and the team.')+'</p>'));
+
+  const bar=el('<div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px"></div>');
+  p.appendChild(bar);
+  const listWrap=el('<div id="msgListWrap"><div class="dash-empty">'+(ES?'Cargando…':'Loading…')+'</div></div>');
+  p.appendChild(listWrap);
+
+  let current='';   // '' = todos
+  const filters=[['',(ES?'Todos':'All')],['new',msgStatusLabel('new')],['read',msgStatusLabel('read')],['replied',msgStatusLabel('replied')],['archived',msgStatusLabel('archived')]];
+  filters.forEach(function(f){
+    const b=el('<button type="button" class="mini-btn'+(f[0]===current?' active':'')+'" data-st="'+f[0]+'">'+escapeHtml(f[1])+'</button>');
+    b.addEventListener('click',function(){ current=f[0]; bar.querySelectorAll('button').forEach(function(x){ x.classList.toggle('active',x.dataset.st===current); }); load(); });
+    bar.appendChild(b);
+  });
+
+  function fmtWhen(iso){ try{ return new Date(iso).toLocaleString(ES?'es-EC':'en-US',{timeZone:'Pacific/Galapagos',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }catch(e){ return String(iso||''); } }
+  function pill(s){ return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;color:#fff;background:'+msgStatusColor(s)+'">'+escapeHtml(msgStatusLabel(s))+'</span>'; }
+  function waHref(phone){ return 'https://wa.me/'+String(phone||'').replace(/\D/g,''); }
+  function replyMailto(m){
+    const subj=ES?'Tu mensaje a Galápagos Hook Adventure':'Your message to Galápagos Hook Adventure';
+    const body=(ES?'Hola ':'Hi ')+(m.name||'')+(ES?',\n\nGracias por escribirnos. ':',\n\nThanks for reaching out. ');
+    return 'mailto:'+encodeURIComponent(m.email)+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);
+  }
+
+  function card(m){
+    const c=el('<div class="dash-card" style="margin:0 0 12px"></div>');
+    const head=el('<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap"></div>');
+    head.appendChild(el('<div><b style="font-size:15px">'+escapeHtml(m.name||'—')+'</b>'
+      +' <span style="color:#8a8577;font-size:12px">· '+escapeHtml(msgSourceLabel(m.source))+'</span>'
+      +'<div style="color:#8a8577;font-size:12px;margin-top:2px">'+escapeHtml(fmtWhen(m.created_at))+(m.country?(' · '+escapeHtml(m.country)):'')+'</div></div>'));
+    head.appendChild(el('<div>'+pill(m.status)+'</div>'));
+    c.appendChild(head);
+
+    const contact=el('<div style="margin:8px 0 0;font-size:13.5px"></div>');
+    const cbits=[];
+    if(m.email) cbits.push('<a href="mailto:'+escapeHtml(m.email)+'">'+escapeHtml(m.email)+'</a>');
+    if(m.phone) cbits.push('WhatsApp: <a href="'+waHref(m.phone)+'" target="_blank" rel="noopener">'+escapeHtml(m.phone)+'</a>');
+    contact.innerHTML=cbits.join(' · ')||'—';
+    c.appendChild(contact);
+
+    if(m.interest) c.appendChild(el('<div style="margin-top:4px;font-size:13px;color:#3c534f"><b>'+(ES?'Interés':'Interest')+':</b> '+escapeHtml(m.interest)+'</div>'));
+    if(m.message) c.appendChild(el('<div style="margin-top:8px;padding:10px 12px;background:#faf8f3;border:1px solid #e2ddd0;border-radius:8px;white-space:pre-wrap;font-size:13.5px;color:#11302f">'+escapeHtml(m.message)+'</div>'));
+    if(m.handled_by) c.appendChild(el('<div style="margin-top:6px;font-size:11.5px;color:#8a8577">'+(ES?'Atendido por ':'Handled by ')+escapeHtml(m.handled_by)+'</div>'));
+
+    const act=el('<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center"></div>');
+    if(m.email) act.appendChild(el('<a class="btn btn-gold btn-sm" href="'+replyMailto(m)+'">'+(ES?'Responder por correo':'Reply by email')+'</a>'));
+    if(m.phone) act.appendChild(el('<a class="mini-btn" href="'+waHref(m.phone)+'" target="_blank" rel="noopener">WhatsApp</a>'));
+
+    const stWrap=el('<div style="display:flex;gap:6px;margin-left:auto;flex-wrap:wrap"></div>');
+    MSG_STATUSES.forEach(function(s){
+      if(s===m.status) return;
+      const lbl = s==='new'?(ES?'Reabrir':'Reopen'):s==='archived'?(ES?'Archivar':'Archive'):msgStatusLabel(s);
+      const b=el('<button type="button" class="mini-btn" data-st="'+s+'">'+escapeHtml(lbl)+'</button>');
+      b.addEventListener('click',function(){
+        b.disabled=true;
+        apiPost('/api/admin-contact-message-update',{id:m.id,status:s}).then(function(r){
+          if(r.status===401){ onUnauthorized(); return; }
+          if(!r.ok){ adminToast(ES?'No se pudo actualizar.':'Could not update.'); b.disabled=false; return; }
+          adminToast(ES?'Estado actualizado.':'Status updated.'); refreshMessagesBadge(); load();
+        }).catch(function(){ adminToast(ES?'Error de conexión.':'Connection error.'); b.disabled=false; });
+      });
+      stWrap.appendChild(b);
+    });
+    act.appendChild(stWrap);
+    c.appendChild(act);
+    return c;
+  }
+
+  function load(){
+    listWrap.innerHTML='<div class="dash-empty">'+(ES?'Cargando…':'Loading…')+'</div>';
+    apiGet('/api/admin-contact-messages'+(current?('?status='+current):'')).then(function(r){
+      if(r.status===401){ onUnauthorized(); return; }
+      if(!r.ok||!r.data){ listWrap.innerHTML='<div class="ro-note">'+(ES?'Error al cargar los mensajes.':'Could not load messages.')+'</div>'; return; }
+      const d=r.data;
+      if(d.ready===false){ listWrap.innerHTML='<div class="ro-note">'+(ES
+        ?'La bandeja aún no está activada. Aplica la migración 0023 en Supabase y los mensajes empezarán a llegar aquí.'
+        :'The inbox is not active yet. Apply migration 0023 in Supabase and messages will start arriving here.')+'</div>'; return; }
+      const rows=d.rows||[];
+      if(!rows.length){ listWrap.innerHTML='<div class="dash-empty">'+(current
+        ?(ES?'No hay mensajes con ese estado.':'No messages with that status.')
+        :(ES?'Aún no hay mensajes.':'No messages yet.'))+'</div>'; return; }
+      listWrap.innerHTML='';
+      rows.forEach(function(m){ listWrap.appendChild(card(m)); });
+    }).catch(function(){ listWrap.innerHTML='<div class="ro-note">'+(ES?'Error de conexión.':'Connection error.')+'</div>'; });
+  }
+
+  load();
   return p;
 }
 
@@ -3265,6 +3432,11 @@ function panelsFor(role){
   const panels=[
     {id:'dashboard', label:'Dashboard', build:function(){ return panelDashboard(role); }},
     {id:'bookings',  label:(ES?'Reservas':'Bookings'), build:function(){ return panelBookings(role); }},
+    /* Bandeja de mensajes de contacto (pedido interno). Owner Y admin: ambos
+       pueden responder. La insignia muestra los no leídos. */
+    {id:'messages',  label:(ES?'Mensajes':'Messages'),
+      navLabel:(ES?'Mensajes':'Messages')+'<span id="msgBadge" hidden style="margin-left:8px;padding:1px 7px;border-radius:999px;background:#cf9f54;color:#11302f;font-size:11px;font-weight:800;vertical-align:middle"></span>',
+      build:function(){ return panelMessages(role); }},
     {id:'calendar',  label:(ES?'Calendario':'Calendar'), build:function(){ return panelCalendar(role); }},
     {id:'sales',     label:(ES?'Ventas':'Sales'), build:function(){ return panelSales(role); }},
     {id:'finance',   label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinanceHub(role); }},
@@ -3334,9 +3506,10 @@ function showAdmin(user){
   let lastGroup=null;
   PANELS.forEach(def=>{
     if(def.group && def.group!==lastGroup){ lastGroup=def.group; nav.appendChild(el('<div class="nav-group">'+def.group+'</div>')); }
-    const b=el('<button data-id="'+def.id+'" style="display:flex;align-items:center">'+def.label+'</button>');
+    const b=el('<button data-id="'+def.id+'" style="display:flex;align-items:center">'+(def.navLabel||def.label)+'</button>');
     b.addEventListener('click',()=>open(def.id)); nav.appendChild(b);
   });
+  refreshMessagesBadge();   // insignia de mensajes no leídos (owner y admin; no-op para staff)
   /* Escritorio: abre el primer panel (sidebar + contenido, como siempre).
      Móvil/PWA: arranca en la LISTA de secciones; el panel se abre al tocar una. */
   const mobileNav = !!(window.matchMedia && window.matchMedia('(max-width:760px)').matches);

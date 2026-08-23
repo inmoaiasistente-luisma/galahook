@@ -947,24 +947,53 @@ function renderMap(){
   }));
 }
 
-/* ---------------- CONTACT FORM ---------------- */
+/* ---------------- CONTACT FORM (pedido interno) ----------------
+   El mensaje YA NO abre WhatsApp: se envía como "pedido interno" a
+   /api/contact-message (se guarda + avisa al buzón + auto-confirma al
+   cliente). WhatsApp queda como opción secundaria (enlace data-wa-secondary). */
+function contactWaMessage(data){
+  return (L==='es'?'¡Hola Galápagos Hook! Soy ':'Hi Galápagos Hook! I\'m ')+((data.name||'').trim()||(L==='es'?'(sin nombre)':'(no name)'))
+    +(data.interest?(L==='es'?'. Me interesa: ':'. I\'m interested in: ')+data.interest:'')
+    +(data.message?('. '+data.message.trim()):'');
+}
 function initForms(){
   document.querySelectorAll('form[data-contact]').forEach(form=>{
-    form.addEventListener('submit',e=>{
+    const btn=form.querySelector('button[type=submit]');
+    // Enlace secundario de WhatsApp: usa lo escrito en el formulario (o un saludo por defecto).
+    const wa=form.querySelector('[data-wa-secondary]');
+    if(wa){
+      const setWa=()=>{ const d=Object.fromEntries(new FormData(form).entries()); wa.href=waLink(contactWaMessage(d)); };
+      setWa(); form.addEventListener('input',setWa);
+    }
+    form.addEventListener('submit',async e=>{
       e.preventDefault();
       const data=Object.fromEntries(new FormData(form).entries());
-      const msg=(L==='es'?'¡Hola Galápagos Hook! Soy ':'Hi Galápagos Hook! I\'m ')+(data.name||'')
-        +(data.interest?(L==='es'?'. Me interesa: ':'. I\'m interested in: ')+data.interest:'')
-        +(data.message?('. '+data.message):'')
-        +(data.email?(' ('+data.email+')'):'');
-      // WhatsApp shortcut OR email fallback
-      window.open(waLink(msg),'_blank');
-      toast(L==='es'?'¡Gracias! Abriendo WhatsApp…':'Thanks! Opening WhatsApp…');
-      form.reset();
+      const name=(data.name||'').trim();
+      const email=(data.email||'').trim();
+      const phone=(data.phone||'').trim();
+      if(!name){ toast(L==='es'?'Escribe tu nombre.':'Please add your name.'); const n=form.querySelector('[name=name]'); n&&n.focus(); return; }
+      if(!email && !phone){ toast(L==='es'?'Déjanos tu correo o WhatsApp.':'Please add your email or WhatsApp.'); const em=form.querySelector('[name=email]'); em&&em.focus(); return; }
+      const payload={
+        name:name, email:email, phone:phone,
+        interest:(data.interest||'').trim(), message:(data.message||'').trim(),
+        company:(data.company||''),                 // honeypot
+        source:'contact_form', source_page:location.pathname, lang:L
+      };
+      if(btn){ btn.disabled=true; }
+      try{
+        const r=await fetch('/api/contact-message',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),credentials:'same-origin'});
+        if(r.ok){
+          form.reset(); if(wa) wa.href=waLink(contactWaMessage({}));
+          toast(L==='es'?'¡Gracias! Recibimos tu mensaje y te responderemos pronto.':'Thanks! We got your message and will reply soon.');
+        }else if(r.status===429){
+          toast(L==='es'?'Demasiados mensajes. Inténtalo en unos minutos.':'Too many messages. Please try again in a few minutes.');
+        }else{
+          toast(L==='es'?'No se pudo enviar. Escríbenos por WhatsApp o inténtalo de nuevo.':'Couldn\'t send. Try WhatsApp or try again.');
+        }
+      }catch(err){
+        toast(L==='es'?'Error de conexión. Revisa tu internet e inténtalo de nuevo.':'Connection error. Check your internet and try again.');
+      }finally{ if(btn){ btn.disabled=false; } }
     });
-    // wire dedicated whatsapp button if present
-    const wbtn=form.querySelector('[data-wa-shortcut]');
-    if(wbtn) wbtn.addEventListener('click',()=>{ const n=form.querySelector('[name=name]'); n&&n.focus(); form.requestSubmit(); });
   });
 }
 let toastTimer;
@@ -1058,4 +1087,143 @@ if(document.readyState!=='loading') init(); else document.addEventListener('DOMC
       fetch('/api/track', {method:'POST', headers:{'Content-Type':'application/json'}, body:body, keepalive:true, credentials:'same-origin'}).catch(function(){});
     }
   }catch(e){}
+})();
+
+/* ---------------- AVISO A VISITANTES RECURRENTES ("nudge") ----------------
+   Solo para quien YA visitó el sitio antes (regresa): le ofrecemos ayuda y
+   recogemos sus datos en la MISMA bandeja de mensajes (source='visit_nudge').
+   Aparece UNA vez, es descartable y no vuelve a salir en ~14 días. Solo en
+   páginas públicas de marketing (no admin/pasajeros/checkin/lock/tarjeta).
+   Texto EN con ES entre paréntesis. Fail-silent: nunca rompe la página. */
+(function(){
+  var MIN=60000, DAY=86400000;
+  var COOLDOWN=14*DAY;            // no repetir el aviso durante 14 días
+  var RETURN_AFTER=20*MIN;       // 20 min desde la 1ª visita ⇒ ya "regresa" (no molesta en la 1ª sesión)
+  var K_FIRST='gha_first', K_NUDGE='gha_nudge';
+  function now(){ return Date.now(); }
+  function lang(){ try{ return (window.GHA&&window.GHA.lang)==='es'?'es':'en'; }catch(e){ return 'en'; } }
+
+  // Solo páginas públicas de marketing.
+  var path=(location.pathname||'/').toLowerCase();
+  var BLOCK=['/admin','/passengers','/checkin','/lock','/tarjeta'];
+  for(var i=0;i<BLOCK.length;i++){ if(path.indexOf(BLOCK[i])===0) return; }
+
+  var first=0, lastNudge=0;
+  try{
+    first=parseInt(localStorage.getItem(K_FIRST)||'0',10)||0;
+    if(!first){ localStorage.setItem(K_FIRST, String(now())); return; }  // 1ª visita: registra y no molesta
+    lastNudge=parseInt(localStorage.getItem(K_NUDGE)||'0',10)||0;
+  }catch(e){ return; }   // incógnito / sin storage: no molestar
+  if((now()-first) < RETURN_AFTER) return;                 // aún en la 1ª visita
+  if(lastNudge && (now()-lastNudge) < COOLDOWN) return;    // ya se mostró hace poco
+
+  var shown=false, timer=null;
+  function onScroll(){
+    var h=document.documentElement;
+    var denom=(h.scrollHeight-h.clientHeight)||1;
+    if(((h.scrollTop||document.body.scrollTop)/denom) > 0.45) trigger();
+  }
+  function disarm(){ if(timer){ clearTimeout(timer); timer=null; } window.removeEventListener('scroll', onScroll); }
+  function arm(){ timer=setTimeout(trigger, 22000); window.addEventListener('scroll', onScroll, {passive:true}); }  // 22 s o 45 % de scroll
+  function trigger(){ if(shown) return; shown=true; disarm(); try{ localStorage.setItem(K_NUDGE, String(now())); }catch(e){} render(); }
+
+  function injectStyles(){
+    if(document.getElementById('ghn-css')) return;
+    var s=document.createElement('style'); s.id='ghn-css';
+    s.textContent=
+      '.ghn-back{position:fixed;inset:0;z-index:9998;background:rgba(17,48,47,.55);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:18px;opacity:0;transition:opacity .25s ease}'
+     +'.ghn-back.on{opacity:1}'
+     +'.ghn-card{position:relative;z-index:9999;width:100%;max-width:440px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(17,48,47,.35);border:1px solid #e2ddd0;overflow:hidden;transform:translateY(14px);transition:transform .28s ease}'
+     +'.ghn-back.on .ghn-card{transform:translateY(0)}'
+     +'.ghn-head{background:#11302f;color:#fbf8f1;padding:20px 22px}'
+     +'.ghn-head h3{margin:0;font-size:19px;line-height:1.25;font-weight:700}'
+     +'.ghn-head p{margin:8px 0 0;font-size:13px;line-height:1.5;color:rgba(251,248,241,.82)}'
+     +'.ghn-x{position:absolute;top:12px;right:12px;width:32px;height:32px;border:0;border-radius:50%;background:rgba(251,248,241,.14);color:#fbf8f1;font-size:19px;line-height:1;cursor:pointer}'
+     +'.ghn-x:hover{background:rgba(251,248,241,.26)}'
+     +'.ghn-body{padding:18px 22px 22px}'
+     +'.ghn-f{margin:0 0 11px}'
+     +'.ghn-f label{display:block;font-size:12px;font-weight:700;color:#3c534f;margin:0 0 4px}'
+     +'.ghn-f input,.ghn-f select,.ghn-f textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #cfc8b8;border-radius:9px;font:inherit;font-size:14px;background:#fff;color:#11302f}'
+     +'.ghn-f select{-webkit-appearance:none;appearance:none;background:#fff url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'8\'><path d=\'M1 1l5 5 5-5\' stroke=\'%2311302f\' stroke-width=\'2\' fill=\'none\'/></svg>") no-repeat right 12px center}'
+     +'.ghn-f textarea{min-height:64px;resize:vertical}'
+     +'.ghn-f input:focus,.ghn-f select:focus,.ghn-f textarea:focus{outline:none;border-color:#cf9f54;box-shadow:0 0 0 3px rgba(207,159,84,.18)}'
+     +'.ghn-btn{width:100%;margin-top:6px;padding:13px;border:0;border-radius:10px;background:#cf9f54;color:#11302f;font-weight:800;font-size:15px;cursor:pointer}'
+     +'.ghn-btn:hover{background:#c0902f}'
+     +'.ghn-btn:disabled{opacity:.6;cursor:default}'
+     +'.ghn-err{color:#b23b2e;font-size:12.5px;margin:2px 0 8px;min-height:1px}'
+     +'.ghn-alt{display:block;text-align:center;margin-top:12px;color:#3c534f;font-size:12px}'
+     +'.ghn-hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}'
+     +'.ghn-ok{padding:30px 22px;text-align:center}'
+     +'.ghn-ok b{display:block;font-size:18px;color:#11302f;margin-bottom:6px}'
+     +'.ghn-ok span{color:#3c534f;font-size:14px}';
+    document.head.appendChild(s);
+  }
+
+  function render(){
+    injectStyles();
+    var es=lang()==='es';
+    var back=document.createElement('div'); back.className='ghn-back';
+    back.setAttribute('role','dialog'); back.setAttribute('aria-modal','true'); back.setAttribute('aria-label', es?'Te ayudamos':'We can help');
+    function opt(en, esL){ return '<option value="'+en.replace(/"/g,'')+'">'+en+' ('+esL+')</option>'; }
+    back.innerHTML=
+      '<div class="ghn-card">'
+       +'<button type="button" class="ghn-x" aria-label="'+(es?'Cerrar':'Close')+'">&times;</button>'
+       +'<div class="ghn-head">'
+         +'<h3>We noticed your interest in Galápagos 🐢<br><span style="font-weight:600;font-size:15px;opacity:.9">(Notamos tu interés en Galápagos)</span></h3>'
+         +'<p>Can we help you plan it? Leave your details and a local from our family — not a call centre — will reach out.<br>'
+           +'(¿Te ayudamos a planearlo? Déjanos tus datos y un local de nuestra familia — no un call center — te escribirá.)</p>'
+       +'</div>'
+       +'<form class="ghn-body" novalidate>'
+         +'<div class="ghn-err" id="ghnErr"></div>'
+         +'<div class="ghn-f"><label>Your name (Tu nombre)</label><input name="name" autocomplete="name" required></div>'
+         +'<div class="ghn-f"><label>Email</label><input name="email" type="email" autocomplete="email" placeholder="you@email.com"></div>'
+         +'<div class="ghn-f"><label>WhatsApp / phone (WhatsApp / teléfono)</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+593…"></div>'
+         +'<div class="ghn-f"><label>I\'m interested in (Me interesa)</label><select name="interest">'
+            +opt('All-inclusive package','Paquete todo incluido')
+            +opt('Day tours','Tours de día')
+            +opt('Sport fishing','Pesca deportiva')
+            +opt('Diving','Buceo')
+            +opt('Private / custom trip','Viaje privado')
+            +opt('Not sure yet','Aún no sé')
+          +'</select></div>'
+         +'<div class="ghn-f"><label>Message (Mensaje) — optional</label><textarea name="message" placeholder="Dates, group size… (Fechas, tamaño del grupo…)"></textarea></div>'
+         +'<div class="ghn-hp" aria-hidden="true"><label>Company<input name="company" tabindex="-1" autocomplete="off"></label></div>'
+         +'<button type="submit" class="ghn-btn">We can help · Te ayudamos</button>'
+         +'<a class="ghn-alt" href="#" data-dismiss>No thanks (No, gracias)</a>'
+       +'</form>'
+      +'</div>';
+    document.body.appendChild(back);
+    requestAnimationFrame(function(){ back.classList.add('on'); });
+
+    function close(){ back.classList.remove('on'); setTimeout(function(){ if(back.parentNode) back.parentNode.removeChild(back); }, 260); document.removeEventListener('keydown', onKey); }
+    function onKey(e){ if(e.key==='Escape') close(); }
+    document.addEventListener('keydown', onKey);
+    back.addEventListener('click', function(e){ if(e.target===back) close(); });
+    back.querySelector('.ghn-x').addEventListener('click', close);
+    var dismiss=back.querySelector('[data-dismiss]'); if(dismiss) dismiss.addEventListener('click', function(e){ e.preventDefault(); close(); });
+
+    var form=back.querySelector('form'), errEl=back.querySelector('#ghnErr');
+    var nameEl=form.querySelector('[name=name]'); if(nameEl){ try{ nameEl.focus(); }catch(e){} }
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      errEl.textContent='';
+      var d=Object.fromEntries(new FormData(form).entries());
+      var name=(d.name||'').trim(), email=(d.email||'').trim(), phone=(d.phone||'').trim();
+      if(!name){ errEl.textContent=es?'Escribe tu nombre.':'Please add your name.'; nameEl&&nameEl.focus(); return; }
+      if(!email && !phone){ errEl.textContent=es?'Déjanos tu correo o WhatsApp.':'Please add your email or WhatsApp.'; return; }
+      var btn=form.querySelector('.ghn-btn'); btn.disabled=true;
+      var payload={ name:name, email:email, phone:phone, interest:(d.interest||'').trim(), message:(d.message||'').trim(), company:(d.company||''), source:'visit_nudge', source_page:location.pathname, lang:es?'es':'en' };
+      fetch('/api/contact-message',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload),credentials:'same-origin'}).then(function(r){
+        if(r.ok){
+          var card=back.querySelector('.ghn-card');
+          card.innerHTML='<div class="ghn-ok"><b>'+(es?'¡Gracias! 🌊':'Thank you! 🌊')+'</b><span>'+(es?'Recibimos tus datos y te contactaremos muy pronto.':'We got your details and will reach out very soon.')+'</span></div>';
+          setTimeout(close, 2600);
+        }else if(r.status===429){ errEl.textContent=es?'Demasiados envíos. Inténtalo en unos minutos.':'Too many submissions. Please try again in a few minutes.'; btn.disabled=false; }
+        else{ errEl.textContent=es?'No se pudo enviar. Inténtalo de nuevo.':'Couldn\'t send. Please try again.'; btn.disabled=false; }
+      }).catch(function(){ errEl.textContent=es?'Error de conexión. Revisa tu internet.':'Connection error. Check your internet.'; btn.disabled=false; });
+    });
+  }
+
+  if(document.readyState==='complete' || document.readyState==='interactive') arm();
+  else document.addEventListener('DOMContentLoaded', arm);
 })();
