@@ -3183,8 +3183,8 @@ function panelVisits(role){
      Responde a la duda "¿son varios clientes o el mismo que vuelve?". */
   const peopleCard=el('<div class="dash-card" style="margin-top:16px"><h3>'+(ES?'Visitantes (personas únicas)':'Visitors (unique people)')
     +'</h3><p class="sub" style="margin:-2px 0 10px">'+(ES
-      ?'Cada navegador cuenta una sola vez; "N×" es cuántas veces ha entrado.'
-      :'Each browser counts once; "N×" is how many times they visited.')
+      ?'Cada navegador cuenta una sola vez; "N×" es cuántas veces ha entrado. Toca una columna para ordenar.'
+      :'Each browser counts once; "N×" is how many times they visited. Tap a column to sort.')
     +'</p><div id="visPeopleWrap"><div class="dash-empty">'+(ES?'Cargando…':'Loading…')+'</div></div></div>');
   p.appendChild(peopleCard);
 
@@ -3229,27 +3229,53 @@ function panelVisits(role){
       +tile(ES?'Hoy':'Today', num(s.today_visits))
       +tile(ES?'Últimos 7 días':'Last 7 days', num(s.week_visits));
 
-    // Tabla de visitantes (1 fila por cliente con "N×").
+    // Tabla de visitantes (1 fila por cliente con "N×"). Encabezados ORDENABLES:
+    // tocar una columna ordena por ella; volver a tocar invierte (flecha ▲▼).
     const people=d.visitors||[];
-    if(pwrap){
-      if(!people.length){ pwrap.innerHTML='<div class="dash-empty">'+(ES?'Aún no hay visitantes registrados.':'No visitors recorded yet.')+'</div>'; }
-      else{
-        let ph='<div class="bk-table-wrap"><table class="bk-table vis-table"><thead><tr>'
-          +'<th>'+(ES?'Visitante':'Visitor')+'</th><th>'+(ES?'Visitas':'Visits')+'</th>'
-          +'<th>'+(ES?'Última vez':'Last seen')+'</th><th>'+(ES?'País':'Country')+'</th>'
-          +'<th>'+(ES?'Dispositivo':'Device')+'</th><th>'+(ES?'Páginas':'Pages')+'</th></tr></thead><tbody>';
-        people.forEach(function(v){
-          ph+='<tr><td class="mono">'+escapeHtml(personLabel(v))+'</td>'
-            +'<td><b>'+num(v.visits)+'×</b></td>'
-            +'<td>'+escapeHtml(fmtWhen(v.last))+'</td>'
-            +'<td>'+flag(v.country)+escapeHtml(v.country||'—')+'</td>'
-            +'<td>'+escapeHtml(devLabel(v.device))+'</td>'
-            +'<td>'+num(v.pages)+'</td></tr>';
-        });
-        ph+='</tbody></table></div>';
-        pwrap.innerHTML=ph;
-      }
+    let sortKey='visits', sortDir='desc';   // por defecto: más visitas primero
+    const COLS=[
+      {k:'code',    label:(ES?'Visitante':'Visitor')},
+      {k:'visits',  label:(ES?'Visitas':'Visits')},
+      {k:'last',    label:(ES?'Última vez':'Last seen')},
+      {k:'country', label:(ES?'País':'Country')},
+      {k:'device',  label:(ES?'Dispositivo':'Device')},
+      {k:'pages',   label:(ES?'Páginas':'Pages')}
+    ];
+    function cmpBy(a,b,k){
+      if(k==='visits'||k==='pages') return (a[k]||0)-(b[k]||0);
+      const av=String((k==='last'?a.last:a[k])||''), bv=String((k==='last'?b.last:b[k])||'');
+      return av<bv?-1:av>bv?1:0;
     }
+    function renderPeople(){
+      if(!pwrap) return;
+      if(!people.length){ pwrap.innerHTML='<div class="dash-empty">'+(ES?'Aún no hay visitantes registrados.':'No visitors recorded yet.')+'</div>'; return; }
+      const sorted=people.slice().sort(function(a,b){ const r=cmpBy(a,b,sortKey); return sortDir==='asc'?r:-r; });
+      let ph='<div class="bk-table-wrap"><table class="bk-table vis-table"><thead><tr>';
+      COLS.forEach(function(c){
+        const arrow=c.k===sortKey?(sortDir==='asc'?' ▲':' ▼'):'';
+        ph+='<th class="vis-sort" data-sk="'+c.k+'" title="'+(ES?'Ordenar':'Sort')+'" style="cursor:pointer;user-select:none;white-space:nowrap">'+escapeHtml(c.label)+arrow+'</th>';
+      });
+      ph+='</tr></thead><tbody>';
+      sorted.forEach(function(v){
+        ph+='<tr><td class="mono">'+escapeHtml(personLabel(v))+'</td>'
+          +'<td><b>'+num(v.visits)+'×</b></td>'
+          +'<td>'+escapeHtml(fmtWhen(v.last))+'</td>'
+          +'<td>'+flag(v.country)+escapeHtml(v.country||'—')+'</td>'
+          +'<td>'+escapeHtml(devLabel(v.device))+'</td>'
+          +'<td>'+num(v.pages)+'</td></tr>';
+      });
+      ph+='</tbody></table></div>';
+      pwrap.innerHTML=ph;
+      pwrap.querySelectorAll('th.vis-sort').forEach(function(th){
+        th.addEventListener('click',function(){
+          const k=th.getAttribute('data-sk');
+          if(k===sortKey){ sortDir=(sortDir==='asc'?'desc':'asc'); }
+          else { sortKey=k; sortDir=(k==='code'||k==='country'||k==='device')?'asc':'desc'; }  // texto: A→Z; números/fecha: mayor→menor
+          renderPeople();
+        });
+      });
+    }
+    renderPeople();
 
     // Registro detallado (cada visita) — se conserva como bitácora.
     const rows=d.recent||[];

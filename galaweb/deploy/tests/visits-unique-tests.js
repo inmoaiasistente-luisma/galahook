@@ -67,6 +67,17 @@ ok('19 panel: personas únicas es el PRIMER tile (fuerte)', /tiles\.innerHTML=\s
 ok('20 panel: conserva la bitácora detallada', /Actividad detallada \(cada visita\)/.test(adm) && /visTableWrap/.test(adm));
 ok('21 panel: fila "sin identificar" para anónimos', /Sin identificar/.test(adm) && /Unidentified/.test(adm));
 
+/* =======================================================================
+   D) PANEL — tabla de visitantes ORDENABLE por columna
+   ======================================================================= */
+ok('22 encabezados ordenables (clase vis-sort + data-sk)', /class="vis-sort" data-sk="/.test(adm));
+ok('23 columnas ordenables: code, visits, last, country, device, pages', /\{k:'code'/.test(adm) && /\{k:'visits'/.test(adm) && /\{k:'last'/.test(adm) && /\{k:'country'/.test(adm) && /\{k:'device'/.test(adm) && /\{k:'pages'/.test(adm));
+ok('24 clic en columna reordena (toggle asc/desc)', /th\.addEventListener\('click'/.test(adm) && /sortDir=\(sortDir==='asc'\?'desc':'asc'\)/.test(adm));
+ok('25 orden por defecto: más visitas primero', /let sortKey='visits', sortDir='desc'/.test(adm));
+ok('26 indicador de flecha del orden activo (▲/▼)', /sortDir==='asc'\?' ▲':' ▼'/.test(adm));
+ok('27 texto ordena A→Z; números/fecha mayor→menor', /\(k==='code'\|\|k==='country'\|\|k==='device'\)\?'asc':'desc'/.test(adm));
+ok('28 pista "toca una columna para ordenar"', /Toca una columna para ordenar/.test(adm) && /Tap a column to sort/.test(adm));
+
 /* ------------------------------------------------------------------ */
 console.log('\n' + pass + ' PASS · ' + fail + ' FAIL');
 if (fail) process.exit(1);
