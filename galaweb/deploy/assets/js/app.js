@@ -87,6 +87,7 @@ const NAV=[
   {p:'fishing',   href:'sport-fishing.html', en:'Sport Fishing',es:'Pesca'},
   {p:'about',     href:'about.html',         en:'About',        es:'Nosotros'},
   {p:'conservation',href:'conservation.html',en:'Conservation', es:'Conservación'},
+  {p:'trivia',    href:'trivia/',            en:'GalaHookTrivia',es:'GalaHookTrivia'},
   {p:'contact',   href:'contact.html',       en:'Contact',      es:'Contacto'},
 ];
 function logoSrc(){ return (window.__resources && window.__resources['assets/img/logo.png']) || 'assets/img/logo.png'; }
