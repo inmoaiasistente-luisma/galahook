@@ -1,0 +1,7 @@
+RewriteEngine On
+RewriteBase /trivia/
+
+# Preserve real assets and route every game screen through the React entry point.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ /trivia/index.html [L]
