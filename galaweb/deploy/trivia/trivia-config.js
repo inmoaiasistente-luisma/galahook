@@ -4,15 +4,21 @@
    Este archivo se sirve SIN hash en /trivia/trivia-config.js y se puede
    editar en producción SIN recompilar el juego.
 
-   Para activar el multijugador con salas QR (Fase 3), cuando el servidor
-   de salas esté publicado por HTTPS:
-     1) onlineEnabled: true
-     2) realtimeUrl: "https://TU-SERVIDOR-DE-SALAS"   (p. ej. https://play.galapagoshookadventure.com)
+   Por ahora el juego es solo de 1 jugador. Los modos multijugador quedan
+   CONSTRUIDOS y se reactivan aquí, sin recompilar:
 
-   Mientras onlineEnabled sea false, el juego funciona en modo individual y
-   local ("pass & play"); la opción online queda oculta y no genera errores.
+     • Familia en un dispositivo (pass & play):
+         localEnabled: true
+
+     • Sala privada con QR (multijugador online, Fase 3) — requiere el
+       servidor de salas publicado por HTTPS (apps/realtime + railway.json):
+         onlineEnabled: true
+         realtimeUrl: "https://TU-SERVIDOR-DE-SALAS"
+
+   Mientras ambos flags sean false, solo aparece el modo "1 jugador" y no se
+   genera ningún error.
    ========================================================================= */
 window.__TRIVIA__ = Object.assign(
-  { realtimeUrl: '', onlineEnabled: false },
+  { realtimeUrl: '', onlineEnabled: false, localEnabled: false },
   window.__TRIVIA__ || {}
 );
