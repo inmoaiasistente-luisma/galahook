@@ -297,7 +297,7 @@ window.GHA_DEFAULT = {
       en: "Galápagos is one of the last great frontiers of sport fishing. We run catch-and-release charters with local captains who have fished these seamounts their whole lives.",
       es: "Galápagos es una de las últimas grandes fronteras de la pesca deportiva. Operamos charters de captura y liberación con capitanes locales que han pescado estos montes submarinos toda su vida."
     },
-    photos: ["assets/img/fishing-marlin.jpg","assets/img/fishing-mahi.jpg","assets/img/fishing-release.jpg"],
+    photos: ["assets/img/fishing/01.jpg","assets/img/fishing/02.jpg","assets/img/fishing/03.jpg","assets/img/fishing/04.jpg","assets/img/fishing/05.jpg","assets/img/fishing/06.jpg","assets/img/fishing/07.jpg","assets/img/fishing/08.jpg"],
     species: [
       { en: "Striped Marlin", es: "Marlín Rayado" },
       { en: "Blue Marlin", es: "Marlín Azul" },
@@ -312,9 +312,9 @@ window.GHA_DEFAULT = {
        público, sin Stripe). El precio real de cobro nunca vive aquí:
        el catálogo del servidor (server/lib/tour-catalog.js) es la fuente. */
     trips: [
-      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 0 },
-      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 0 },
-      { id: "expedition", name: { en: "Multi-Day Expedition", es: "Expedición de Varios Días" }, duration: { en: "Custom · per boat", es: "Personalizado · por bote" }, price: 0 }
+      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 0, photos: ["assets/img/fishing/09.jpg","assets/img/fishing/10.jpg","assets/img/fishing/11.jpg","assets/img/fishing/12.jpg"] },
+      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 0, photos: ["assets/img/fishing/13.jpg","assets/img/fishing/14.jpg","assets/img/fishing/15.jpg","assets/img/fishing/16.jpg"] },
+      { id: "expedition", name: { en: "Multi-Day Expedition", es: "Expedición de Varios Días" }, duration: { en: "Custom · per boat", es: "Personalizado · por bote" }, price: 0, photos: ["assets/img/fishing/17.jpg","assets/img/fishing/18.jpg","assets/img/fishing/19.jpg","assets/img/fishing/20.jpg"] }
     ],
     /* peak = best fishing months, good = decent */
     calendar: { peak: [10,11,0,1,2,3], good: [4,9], months: ["J","F","M","A","M","J","J","A","S","O","N","D"] },

@@ -866,7 +866,7 @@ function renderFishing(){
   if(reel) reel.innerHTML=f.photos.map((p,k)=>'<div class="hero-slide'+(k===0?' on':'')+'" style="background-image:url('+p+')"></div>').join('');
   const trips=document.getElementById('fishTrips');
   if(trips) trips.innerHTML=f.trips.map(tr=>{
-    const car=(f.tripCarousel&&f.tripCarousel.length)?f.tripCarousel:[];
+    const car=(tr.photos&&tr.photos.length)?tr.photos:((f.tripCarousel&&f.tripCarousel.length)?f.tripCarousel:[]);
     const carHTML=car.length?('<div class="trip-car" data-trip-car>'+car.map((src,k)=>'<div class="trip-car-slide'+(k===0?' on':'')+'" style="background-image:url('+src+')"></div>').join('')+'<div class="trip-car-dots">'+car.map((_,k)=>'<span class="'+(k===0?'on':'')+'"></span>').join('')+'</div></div>'):'';
     /* Pesca deportiva = SOLO cotización: sin precio, sin "Desde/From",
        sin "/ bote". Se mantiene imagen, título y duración; una etiqueta
