@@ -55,7 +55,10 @@
 <section class="section paper-bg center">
   <div class="wrap reveal">
     <h2 style="font-size:clamp(32px,5vw,56px);max-width:16ch;margin:0 auto 22px" data-en="Ready for the fight?" data-es="¿Listo para la pelea?">Ready for the fight?</h2>
-    <a class="btn btn-gold" href="contact.html" data-en="Request a quote" data-es="Solicitar cotización">Request a quote</a>
+    <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+      <a class="btn btn-gold" href="contact.html" data-en="Request a quote" data-es="Solicitar cotización">Request a quote</a>
+      <a class="btn btn-gold" href="https://fishingbooker.com/embeds/book/2241388" target="_blank" rel="noopener noreferrer" data-en="Book Fishing via FishingBooker" data-es="Reservar pesca por FishingBooker">Book Fishing via FishingBooker</a>
+    </div>
   </div>
 </section>
 
@@ -64,5 +67,7 @@
 <script src="https://js.stripe.com/v3/"></script>
 <script src="assets/js/payments.js"></script>
 <script src="assets/js/app.js?v=hp10"></script>
+<!-- FishingBooker Direct: additional booking channel for fishing (does not touch Stripe/checkout) -->
+<script src="https://fishingbooker.com/embeds/integration/v1"></script>
 </body>
 </html>
