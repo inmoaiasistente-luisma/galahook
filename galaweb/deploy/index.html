@@ -107,7 +107,10 @@
           <span class="chip"><svg viewBox="0 0 24 24"><path d="M3 12c4-6 11-6 15 0-4 6-11 6-15 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M18 12c1.5-1 3-1.5 3-1.5s-.5 3-1.5 4M18 12c1.5 1 3 1.5 3 1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/></svg><b data-en="Mahi-Mahi" data-es="Dorado">Mahi-Mahi</b></span>
           <span class="chip"><svg viewBox="0 0 24 24"><path d="M3 12c4-6 11-6 15 0-4 6-11 6-15 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M18 12c1.5-1 3-1.5 3-1.5s-.5 3-1.5 4M18 12c1.5 1 3 1.5 3 1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="11" r="1" fill="currentColor"/></svg><b data-en="Yellowtail" data-es="Jurel">Yellowtail</b></span>
         </div>
-        <a class="btn btn-gold" href="sport-fishing.html" data-en="Plan a fishing expedition" data-es="Planifica una expedición">Plan a fishing expedition</a>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <a class="btn btn-gold" href="sport-fishing.html" data-en="Plan a fishing expedition" data-es="Planifica una expedición">Plan a fishing expedition</a>
+          <a class="btn btn-gold" href="https://fishingbooker.com/embeds/book/2241388" target="_blank" rel="noopener noreferrer" data-en="Book Fishing via FishingBooker" data-es="Reservar pesca por FishingBooker">Book Fishing via FishingBooker</a>
+        </div>
       </div>
     </div>
   </div>
@@ -167,5 +170,7 @@
 <script src="https://js.stripe.com/v3/"></script>
 <script src="assets/js/payments.js"></script>
 <script src="assets/js/app.js?v=hp10"></script>
+<!-- FishingBooker Direct: additional booking channel for fishing (does not touch Stripe/checkout) -->
+<script src="https://fishingbooker.com/embeds/integration/v1"></script>
 </body>
 </html>
