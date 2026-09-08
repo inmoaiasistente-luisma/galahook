@@ -12,6 +12,7 @@ window.GHA_DEFAULT = {
     tiktok: "galapagoshookadve",
     instagram2: "adventuregalapagos",
     tiktok2: "galadventure",
+    facebook: "https://www.facebook.com/profile.php?id=61594066118424",
     email: "galahookadventure@outlook.com",
     phone: "+1 551-312-9717",
     address: { en: "Puerto Baquerizo Moreno · San Cristóbal, Galápagos, Ecuador", es: "Puerto Baquerizo Moreno · San Cristóbal, Galápagos, Ecuador" },
