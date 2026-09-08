@@ -111,6 +111,7 @@ function buildHeader(){
      +'<div class="hdr-social-group">'
        +'<a class="hdr-social" href="https://instagram.com/'+S.meta.instagram+'" target="_blank" rel="noopener" aria-label="Instagram @'+S.meta.instagram+'" data-handle="@'+S.meta.instagram+'">'+svg('insta')+'<span class="hdr-social-name">@'+S.meta.instagram+'</span></a>'
        +'<a class="hdr-social" href="https://tiktok.com/@'+S.meta.tiktok+'" target="_blank" rel="noopener" aria-label="TikTok @'+S.meta.tiktok+'" data-handle="@'+S.meta.tiktok+'">'+svg('tiktok')+'<span class="hdr-social-name">@'+S.meta.tiktok+'</span></a>'
+       +(S.meta.facebook?'<a class="hdr-social" href="'+S.meta.facebook+'" target="_blank" rel="noopener" aria-label="Facebook" data-handle="Facebook">'+svg('fb')+'<span class="hdr-social-name">Facebook</span></a>':'')
      +'</div>'
      +'<div class="lang-toggle">'
         +'<button data-lang="en" class="'+(L==='en'?'on':'')+'">EN</button>'
@@ -166,6 +167,7 @@ function buildFooter(){
        +(m.instagram2?'<a href="https://instagram.com/'+m.instagram2+'" target="_blank" rel="noopener" aria-label="Instagram @'+m.instagram2+'" title="Instagram @'+m.instagram2+'">'+svg('insta')+'</a>':'')
        +'<a href="https://tiktok.com/@'+m.tiktok+'" target="_blank" rel="noopener" aria-label="TikTok @'+m.tiktok+'" title="TikTok @'+m.tiktok+'">'+svg('tiktok')+'</a>'
        +(m.tiktok2?'<a href="https://tiktok.com/@'+m.tiktok2+'" target="_blank" rel="noopener" aria-label="TikTok @'+m.tiktok2+'" title="TikTok @'+m.tiktok2+'">'+svg('tiktok')+'</a>':'')
+       +(m.facebook?'<a href="'+m.facebook+'" target="_blank" rel="noopener" aria-label="Facebook" title="Facebook">'+svg('fb')+'</a>':'')
        +'<a href="'+waLink('')+'" target="_blank" rel="noopener" aria-label="WhatsApp">'+svg('wa')+'</a>'
      +'</div>'
    +'</div>'
