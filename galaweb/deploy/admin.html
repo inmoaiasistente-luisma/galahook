@@ -349,6 +349,12 @@
   .dash-alert:last-child{margin-bottom:0;}
   .dash-alert.ok{border-color:var(--a-ok-bd);background:var(--a-ok-bg);color:var(--a-ok-tx);}
   .dash-empty{color:var(--a-text-soft);font-size:13px;padding:6px 0;}
+  /* Paginador de Visitas (25 por hoja). Botones táctiles; se mueve en la misma pantalla. */
+  .vis-pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;}
+  .vis-pg-btn{appearance:none;border:1px solid var(--a-border);background:var(--a-card-2);color:var(--a-text);font:inherit;font-size:14px;font-weight:700;padding:10px 16px;border-radius:12px;cursor:pointer;min-height:44px;min-width:108px;box-shadow:var(--a-shadow-sm);transition:background .15s,border-color .15s;}
+  .vis-pg-btn:hover:not(:disabled){background:var(--a-bg-2);border-color:var(--a-gold-deep);}
+  .vis-pg-btn:disabled{opacity:.4;cursor:default;box-shadow:none;}
+  .vis-pg-info{flex:1 1 120px;text-align:center;font-size:12.5px;color:var(--a-text-soft);white-space:nowrap;}
   @media(max-width:980px){
     .bk-frow,.bk-frow:first-child{grid-template-columns:1fr 1fr;}
     .bk-cal-day{min-height:58px;}
@@ -397,6 +403,8 @@
        un ancho mínimo legible y el contenedor desplaza. */
     .bk-table-wrap{max-height:none;overflow-x:auto;}
     table.bk-table{table-layout:auto;min-width:760px;}
+    /* Paginador en móvil: info en su propia línea arriba, los 2 botones abajo (‹ Anterior a la izquierda, Siguiente › a la derecha). */
+    .vis-pg-info{flex-basis:100%;order:-1;}
     .bk-dls{grid-template-columns:1fr;}
     .bk-modal{padding:0;}
     .bk-modal-card{max-width:none;max-height:100vh;height:100vh;border-radius:0;}
@@ -406,6 +414,6 @@
 <body>
 <div class="admin-shell" id="shell"></div>
 <script src="assets/js/content.js?v=hp10"></script>
-<script src="assets/js/admin.js?v=pwa4"></script>
+<script src="assets/js/admin.js?v=vispage25"></script>
 </body>
 </html>

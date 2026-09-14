@@ -3249,17 +3249,28 @@ function panelVisits(role){
       const av=String((k==='last'?a.last:a[k])||''), bv=String((k==='last'?b.last:b[k])||'');
       return av<bv?-1:av>bv?1:0;
     }
+    // Paginado: 25 visitantes por hoja (owner lo pidió; en móvil la lista se
+    // hacía una columna larguísima). El movimiento entre hojas es en la misma
+    // pantalla (no recarga ni cambia de vista).
+    const PEOPLE_PER_PAGE=25;
+    let peoplePage=0;
     function renderPeople(){
       if(!pwrap) return;
       if(!people.length){ pwrap.innerHTML='<div class="dash-empty">'+(ES?'Aún no hay visitantes registrados.':'No visitors recorded yet.')+'</div>'; return; }
       const sorted=people.slice().sort(function(a,b){ const r=cmpBy(a,b,sortKey); return sortDir==='asc'?r:-r; });
+      const total=sorted.length;
+      const pages=Math.max(1,Math.ceil(total/PEOPLE_PER_PAGE));
+      if(peoplePage>pages-1) peoplePage=pages-1;
+      if(peoplePage<0) peoplePage=0;
+      const start=peoplePage*PEOPLE_PER_PAGE;
+      const pageRows=sorted.slice(start,start+PEOPLE_PER_PAGE);
       let ph='<div class="bk-table-wrap"><table class="bk-table vis-table"><thead><tr>';
       COLS.forEach(function(c){
         const arrow=c.k===sortKey?(sortDir==='asc'?' ▲':' ▼'):'';
         ph+='<th class="vis-sort" data-sk="'+c.k+'" title="'+(ES?'Ordenar':'Sort')+'" style="cursor:pointer;user-select:none;white-space:nowrap">'+escapeHtml(c.label)+arrow+'</th>';
       });
       ph+='</tr></thead><tbody>';
-      sorted.forEach(function(v){
+      pageRows.forEach(function(v){
         ph+='<tr><td class="mono">'+escapeHtml(personLabel(v))+'</td>'
           +'<td><b>'+num(v.visits)+'×</b></td>'
           +'<td>'+escapeHtml(fmtWhen(v.last))+'</td>'
@@ -3268,33 +3279,80 @@ function panelVisits(role){
           +'<td>'+num(v.pages)+'</td></tr>';
       });
       ph+='</tbody></table></div>';
+      // Paginador — solo si hay más de una hoja. Botones grandes (táctiles) y
+      // se quedan a la vista para poder pasar hoja tras hoja sin salir.
+      if(pages>1){
+        const from=start+1, to=Math.min(start+PEOPLE_PER_PAGE,total);
+        ph+='<div class="vis-pager">'
+          +'<button type="button" class="vis-pg-btn" data-pg="prev"'+(peoplePage===0?' disabled':'')+'>‹ '+(ES?'Anterior':'Prev')+'</button>'
+          +'<span class="vis-pg-info">'+(ES?'Hoja ':'Page ')+(peoplePage+1)+(ES?' de ':' of ')+pages
+            +' · '+from+'–'+to+' '+(ES?'de':'of')+' '+num(total)+'</span>'
+          +'<button type="button" class="vis-pg-btn" data-pg="next"'+(peoplePage>=pages-1?' disabled':'')+'>'+(ES?'Siguiente':'Next')+' ›</button>'
+          +'</div>';
+      }
       pwrap.innerHTML=ph;
       pwrap.querySelectorAll('th.vis-sort').forEach(function(th){
         th.addEventListener('click',function(){
           const k=th.getAttribute('data-sk');
           if(k===sortKey){ sortDir=(sortDir==='asc'?'desc':'asc'); }
           else { sortKey=k; sortDir=(k==='code'||k==='country'||k==='device')?'asc':'desc'; }  // texto: A→Z; números/fecha: mayor→menor
+          peoplePage=0;   // al reordenar, vuelve a la primera hoja
+          renderPeople();
+        });
+      });
+      pwrap.querySelectorAll('.vis-pg-btn').forEach(function(b){
+        b.addEventListener('click',function(){
+          if(b.disabled) return;
+          peoplePage+=(b.getAttribute('data-pg')==='next'?1:-1);
           renderPeople();
         });
       });
     }
     renderPeople();
 
-    // Registro detallado (cada visita) — se conserva como bitácora.
+    // Registro detallado (cada visita) — se conserva como bitácora. También
+    // paginado a 25 por hoja, navegable en la misma pantalla.
     const rows=d.recent||[];
     if(!wrap) return;
     if(!rows.length){ wrap.innerHTML='<div class="dash-empty">'+(ES?'Aún no hay visitas registradas.':'No visits recorded yet.')+'</div>'; return; }
-    let html='<div class="bk-table-wrap"><table class="bk-table vis-table"><thead><tr>'
-      +'<th>'+(ES?'Hora de ingreso':'Entry time')+'</th><th>'+(ES?'Página':'Page')+'</th>'
-      +'<th>'+(ES?'País':'Country')+'</th><th>'+(ES?'Dispositivo':'Device')+'</th></tr></thead><tbody>';
-    rows.forEach(function(v){
-      html+='<tr><td>'+escapeHtml(fmtWhen(v.created_at))+'</td>'
-        +'<td class="mono" title="'+escapeHtml(v.path||'')+'">'+escapeHtml(v.path||'')+'</td>'
-        +'<td>'+flag(v.country)+escapeHtml(v.country||'—')+'</td>'
-        +'<td>'+escapeHtml(devLabel(v.device))+'</td></tr>';
-    });
-    html+='</tbody></table></div>';
-    wrap.innerHTML=html;
+    const RECENT_PER_PAGE=25;
+    let recentPage=0;
+    function renderRecent(){
+      const total=rows.length;
+      const pages=Math.max(1,Math.ceil(total/RECENT_PER_PAGE));
+      if(recentPage>pages-1) recentPage=pages-1;
+      if(recentPage<0) recentPage=0;
+      const start=recentPage*RECENT_PER_PAGE;
+      const pageRows=rows.slice(start,start+RECENT_PER_PAGE);
+      let html='<div class="bk-table-wrap"><table class="bk-table vis-table"><thead><tr>'
+        +'<th>'+(ES?'Hora de ingreso':'Entry time')+'</th><th>'+(ES?'Página':'Page')+'</th>'
+        +'<th>'+(ES?'País':'Country')+'</th><th>'+(ES?'Dispositivo':'Device')+'</th></tr></thead><tbody>';
+      pageRows.forEach(function(v){
+        html+='<tr><td>'+escapeHtml(fmtWhen(v.created_at))+'</td>'
+          +'<td class="mono" title="'+escapeHtml(v.path||'')+'">'+escapeHtml(v.path||'')+'</td>'
+          +'<td>'+flag(v.country)+escapeHtml(v.country||'—')+'</td>'
+          +'<td>'+escapeHtml(devLabel(v.device))+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+      if(pages>1){
+        const from=start+1, to=Math.min(start+RECENT_PER_PAGE,total);
+        html+='<div class="vis-pager">'
+          +'<button type="button" class="vis-pg-btn" data-pg="prev"'+(recentPage===0?' disabled':'')+'>‹ '+(ES?'Anterior':'Prev')+'</button>'
+          +'<span class="vis-pg-info">'+(ES?'Hoja ':'Page ')+(recentPage+1)+(ES?' de ':' of ')+pages
+            +' · '+from+'–'+to+' '+(ES?'de':'of')+' '+num(total)+'</span>'
+          +'<button type="button" class="vis-pg-btn" data-pg="next"'+(recentPage>=pages-1?' disabled':'')+'>'+(ES?'Siguiente':'Next')+' ›</button>'
+          +'</div>';
+      }
+      wrap.innerHTML=html;
+      wrap.querySelectorAll('.vis-pg-btn').forEach(function(b){
+        b.addEventListener('click',function(){
+          if(b.disabled) return;
+          recentPage+=(b.getAttribute('data-pg')==='next'?1:-1);
+          renderRecent();
+        });
+      });
+    }
+    renderRecent();
   }).catch(function(){ tiles.innerHTML=tile(ES?'Error al cargar':'Load error','—'); });
 
   return p;
