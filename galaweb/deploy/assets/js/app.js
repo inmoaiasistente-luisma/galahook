@@ -164,9 +164,7 @@ function buildFooter(){
      +'</div>'
      +'<div class="socials">'
        +'<a href="https://instagram.com/'+m.instagram+'" target="_blank" rel="noopener" aria-label="Instagram @'+m.instagram+'" title="Instagram @'+m.instagram+'">'+svg('insta')+'</a>'
-       +(m.instagram2?'<a href="https://instagram.com/'+m.instagram2+'" target="_blank" rel="noopener" aria-label="Instagram @'+m.instagram2+'" title="Instagram @'+m.instagram2+'">'+svg('insta')+'</a>':'')
        +'<a href="https://tiktok.com/@'+m.tiktok+'" target="_blank" rel="noopener" aria-label="TikTok @'+m.tiktok+'" title="TikTok @'+m.tiktok+'">'+svg('tiktok')+'</a>'
-       +(m.tiktok2?'<a href="https://tiktok.com/@'+m.tiktok2+'" target="_blank" rel="noopener" aria-label="TikTok @'+m.tiktok2+'" title="TikTok @'+m.tiktok2+'">'+svg('tiktok')+'</a>':'')
        +(m.facebook?'<a href="'+m.facebook+'" target="_blank" rel="noopener" aria-label="Facebook" title="Facebook">'+svg('fb')+'</a>':'')
        +'<a href="'+waLink('')+'" target="_blank" rel="noopener" aria-label="WhatsApp">'+svg('wa')+'</a>'
      +'</div>'
