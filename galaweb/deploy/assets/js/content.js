@@ -311,8 +311,8 @@ window.GHA_DEFAULT = {
        público, sin Stripe). El precio real de cobro nunca vive aquí:
        el catálogo del servidor (server/lib/tour-catalog.js) es la fuente. */
     trips: [
-      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 0, photos: ["assets/img/fishing/01.jpg","assets/img/fishing/02.jpg","assets/img/fishing/03.jpg","assets/img/fishing/04.jpg","assets/img/fishing/05.jpg","assets/img/fishing/06.jpg","assets/img/fishing/07.jpg"] },
-      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 0, photos: ["assets/img/fishing/08.jpg","assets/img/fishing/09.jpg","assets/img/fishing/10.jpg","assets/img/fishing/11.jpg","assets/img/fishing/12.jpg","assets/img/fishing/13.jpg","assets/img/fishing/14.jpg"] },
+      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 1800, photos: ["assets/img/fishing/01.jpg","assets/img/fishing/02.jpg","assets/img/fishing/03.jpg","assets/img/fishing/04.jpg","assets/img/fishing/05.jpg","assets/img/fishing/06.jpg","assets/img/fishing/07.jpg"] },
+      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 2850, photos: ["assets/img/fishing/08.jpg","assets/img/fishing/09.jpg","assets/img/fishing/10.jpg","assets/img/fishing/11.jpg","assets/img/fishing/12.jpg","assets/img/fishing/13.jpg","assets/img/fishing/14.jpg"] },
       { id: "expedition", name: { en: "Multi-Day Expedition", es: "Expedición de Varios Días" }, duration: { en: "Custom · per boat", es: "Personalizado · por bote" }, price: 0, photos: ["assets/img/fishing/15.jpg","assets/img/fishing/16.jpg","assets/img/fishing/17.jpg","assets/img/fishing/18.jpg","assets/img/fishing/19.jpg","assets/img/fishing/20.jpg"] }
     ],
     /* peak = best fishing months, good = decent */

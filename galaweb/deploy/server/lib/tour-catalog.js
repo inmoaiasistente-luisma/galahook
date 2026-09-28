@@ -37,14 +37,15 @@ const TOURS = {
   espanola:     { name: 'Española Day Trip',          priceCents: 31500, unit: 'person', minGuests: 1, requiresQuote: false, type: 'tour' },
   private:      { name: 'Private Boat Charter',       priceCents: null,  unit: 'boat',   minGuests: 1, requiresQuote: true,  type: 'tour' },
 
-  // ---- Pesca deportiva (boat) — DECISIÓN COMERCIAL: todo por cotización ----
-  // Sin precio público ni cobro por Stripe. El servidor NO puede cobrar
-  // estos ids: priceCents=null + requiresQuote=true fuerzan el flujo de
-  // /api/quote-request. (Las reservas históricas conservan su importe;
+  // ---- Pesca deportiva (boat) ----
+  // Half-Day y Full-Day tienen precio público (ancla derivada de FishingBooker
+  // menos $100) y se cobran por Stripe como cualquier tour. Multi-Day Expedition
+  // sigue sin precio publicado: priceCents=null + requiresQuote=true fuerzan el
+  // flujo de /api/quote-request. (Las reservas históricas conservan su importe;
   // esto solo cambia el catálogo vigente.)
-  half:       { name: 'Half-Day Charter',     priceCents: null, unit: 'boat', minGuests: 1, requiresQuote: true, type: 'fishing' },
-  full:       { name: 'Full-Day Charter',     priceCents: null, unit: 'boat', minGuests: 1, requiresQuote: true, type: 'fishing' },
-  expedition: { name: 'Multi-Day Expedition', priceCents: null, unit: 'boat', minGuests: 1, requiresQuote: true, type: 'fishing' }
+  half:       { name: 'Half-Day Charter',     priceCents: 180000, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
+  full:       { name: 'Full-Day Charter',     priceCents: 285000, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
+  expedition: { name: 'Multi-Day Expedition', priceCents: null,   unit: 'boat', minGuests: 1, requiresQuote: true,  type: 'fishing' }
 };
 
 /** Devuelve una copia inmutable del tour (con su id) o null si no existe. */
