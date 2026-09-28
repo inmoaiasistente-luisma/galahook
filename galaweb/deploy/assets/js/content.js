@@ -10,8 +10,6 @@ window.GHA_DEFAULT = {
     whatsapp: "15513129717",
     instagram: "galapagoshookadventure",
     tiktok: "galapagoshookadve",
-    instagram2: "adventuregalapagos",
-    tiktok2: "galadventure",
     facebook: "https://www.facebook.com/profile.php?id=61594066118424",
     email: "galahookadventure@outlook.com",
     phone: "+1 551-312-9717",
