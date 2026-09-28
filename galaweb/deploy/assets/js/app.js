@@ -868,19 +868,17 @@ function renderFishing(){
   if(trips) trips.innerHTML=f.trips.map(tr=>{
     const car=(tr.photos&&tr.photos.length)?tr.photos:((f.tripCarousel&&f.tripCarousel.length)?f.tripCarousel:[]);
     const carHTML=car.length?('<div class="trip-car" data-trip-car>'+car.map((src,k)=>'<div class="trip-car-slide'+(k===0?' on':'')+'" style="background-image:url('+src+')"></div>').join('')+'<div class="trip-car-dots">'+car.map((_,k)=>'<span class="'+(k===0?'on':'')+'"></span>').join('')+'</div></div>'):'';
-    /* Pesca deportiva = SOLO cotización: sin precio, sin "Desde/From",
-       sin "/ bote". Se mantiene imagen, título y duración; una etiqueta
-       compacta ocupa el lugar del precio para no dejar un hueco grande. */
+    /* Pesca deportiva sigue siendo SOLO cotización en el checkout
+       (requiresQuote en tour-catalog.js), pero cuando hay un precio de
+       referencia se muestra como ancla "Desde/From" + "/ bote"; sin precio
+       cae de vuelta a la etiqueta "Bajo cotización/On request". */
+    const priceHTML = tr.price
+      ? '<div class="pkg-price"><small style="color:var(--ink-soft)">'+(L==='es'?'Desde':'From')+'</small><b style="font-size:22px;color:var(--ink)">$'+tr.price.toLocaleString('en-US')+'</b><small style="color:var(--ink-soft)">'+(L==='es'?' / bote':' / boat')+'</small></div>'
+      : '<div class="pkg-price quote"><small style="color:var(--ink-soft)">'+(L==='es'?'Precio':'Price')+'</small><b style="font-size:22px;color:var(--ink)">'+(L==='es'?'Bajo cotización':'On request')+'</b></div>';
+    const btnLabel = tr.price ? (L==='es'?'RESERVAR AHORA':'BOOK NOW') : (L==='es'?'SOLICITAR COTIZACIÓN':'GET A QUOTE');
     return '<article class="pkg reveal">'+carHTML+'<div class="pkg-head"><span class="days">'+t(tr.name)+'</span><div class="nights" style="margin-top:6px">'+t(tr.duration)+'</div></div>'
-      /* Mismo tratamiento OSCURO de alto contraste que las tarjetas con
-         precio (que se leen sin problema): eyebrow "PRECIO/PRICE" y valor
-         "Bajo cotización/On request" en el texto oscuro de la tarjeta.
-         Sin colores suaves (gold/teal) que quedaban poco legibles. */
-      +'<div class="pkg-price quote">'
-        +'<small style="color:var(--ink-soft)">'+(L==='es'?'Precio':'Price')+'</small>'
-        +'<b style="font-size:22px;color:var(--ink)">'+(L==='es'?'Bajo cotización':'On request')+'</b>'
-      +'</div>'
-      +'<div class="pkg-foot" style="padding-top:8px">'+bookBtn(t(tr.name), 0, 'boat', 'btn btn-gold btn-block', (L==='es'?'SOLICITAR COTIZACIÓN':'GET A QUOTE'), 1, tr.id)+'</div></article>';
+      +priceHTML
+      +'<div class="pkg-foot" style="padding-top:8px">'+bookBtn(t(tr.name), tr.price, 'boat', 'btn btn-gold btn-block', btnLabel, 1, tr.id)+'</div></article>';
   }).join('');
   initTripCarousels();
   const cal=document.getElementById('fishCalendar');
