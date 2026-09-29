@@ -42,6 +42,7 @@ let dirty=false;
 const I={
   save:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M5 3h12l4 4v14H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 3v6h7V3M8 21v-7h8v7" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
   eye:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  eyeOff:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" stroke-width="2"/></svg>',
   out:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M14 4h5v16h-5M14 12H4M7 8l-3 4 3 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
@@ -53,11 +54,22 @@ function showLogin(){
    +'<h1>Owner Login</h1><p>Galápagos Hook Adventure · Admin</p>'
    +'<div class="err" id="loginErr"></div>'
    +'<div class="field"><label>Email</label><input type="email" id="aEmail" autocomplete="username" required></div>'
-   +'<div class="field"><label>Password</label><input type="password" id="aPass" autocomplete="current-password" required></div>'
+   +'<div class="field"><label>Password</label><div style="position:relative">'
+     +'<input type="password" id="aPass" autocomplete="current-password" required style="padding-right:44px">'
+     +'<button type="button" id="aPassToggle" aria-label="Show password" aria-pressed="false" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:none;border:none;padding:0;cursor:pointer;color:var(--ink-soft)">'+I.eye+'</button>'
+   +'</div></div>'
    +'<button type="submit" class="btn btn-gold btn-block" id="loginBtn" style="margin-top:8px">Log in</button>'
    +'<p style="margin:16px 0 0"><a href="index.html" style="color:var(--sea);font-weight:600;font-size:13px">← Back to site</a></p>'
    +'</form></div>';
   const btn=document.getElementById('loginBtn'), errEl=document.getElementById('loginErr');
+  const passInput=document.getElementById('aPass'), passToggle=document.getElementById('aPassToggle');
+  passToggle.addEventListener('click',function(){
+    const show=passInput.type==='password';
+    passInput.type=show?'text':'password';
+    passToggle.innerHTML=show?I.eyeOff:I.eye;
+    passToggle.setAttribute('aria-pressed',show?'true':'false');
+    passToggle.setAttribute('aria-label',show?(ES?'Ocultar contraseña':'Hide password'):(ES?'Mostrar contraseña':'Show password'));
+  });
   document.getElementById('loginForm').addEventListener('submit',function(e){
     e.preventDefault();
     const em=document.getElementById('aEmail').value.trim();
