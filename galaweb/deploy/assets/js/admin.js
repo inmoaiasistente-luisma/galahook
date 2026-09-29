@@ -2063,8 +2063,8 @@ function panelFinance(role, only){
   /* ---- DESCUENTOS ---- */
   let discTourSel=null;
   const discSec=el('<div class="fin-sec"><h3>'+(ES?'Reglas de descuento':'Discount rules')+'</h3>'
-    +'<p class="bk-sub-hint">'+(ES?'El servidor aplica UNA regla por reserva (nunca acumula). No se borran: se activan o desactivan.'
-                                  :'The server applies ONE rule per booking (never stacked). Rules are not deleted: toggle active.')+'</p></div>');
+    +'<p class="bk-sub-hint">'+(ES?'El servidor aplica UNA regla por reserva (nunca acumula). No se borran: se activan o desactivan. Sin código = se aplica sola a quien reserve ese tour. Con código = solo aplica si el cliente lo escribe en el checkout (ej. para promos de redes/ManyChat).'
+                                  :'The server applies ONE rule per booking (never stacked). Rules are not deleted: toggle active. No code = applies automatically to anyone booking that tour. With a code = only applies if the customer types it at checkout (e.g. social/ManyChat promos).')+'</p></div>');
   const discList=el('<div class="bk-table-wrap"></div>'); discSec.appendChild(discList);
   if(show('templates')||show('discounts')) wrap.appendChild(discSec);
 
@@ -2073,15 +2073,15 @@ function panelFinance(role, only){
       if(r.status===401){ onUnauthorized(); return; }
       if(!r.ok||!r.data){ discList.innerHTML=''; return; }
       const rules=r.data.rules||[];
-      const head='<table class="bk-table"><thead><tr><th>'+(ES?'Nombre':'Name')+'</th><th>Tour</th><th>'+(ES?'Tipo':'Type')+'</th><th>'+(ES?'Valor':'Value')+'</th><th>Pax</th><th>'+(ES?'Prio':'Prio')+'</th><th>'+(ES?'Activa':'Active')+'</th>'+(canEdit?'<th></th>':'')+'</tr></thead><tbody></tbody></table>';
+      const head='<table class="bk-table"><thead><tr><th>'+(ES?'Nombre':'Name')+'</th><th>Tour</th><th>'+(ES?'Código':'Code')+'</th><th>'+(ES?'Tipo':'Type')+'</th><th>'+(ES?'Valor':'Value')+'</th><th>Pax</th><th>'+(ES?'Prio':'Prio')+'</th><th>'+(ES?'Activa':'Active')+'</th>'+(canEdit?'<th></th>':'')+'</tr></thead><tbody></tbody></table>';
       discList.innerHTML=head;
       const tbody=discList.querySelector('tbody');
-      if(!rules.length){ tbody.innerHTML='<tr><td colspan="'+(canEdit?8:7)+'" class="bk-sub-hint">'+(ES?'Sin reglas. '+(canEdit?'Crea una abajo.':''):'No rules. '+(canEdit?'Create one below.':''))+'</td></tr>'; return; }
+      if(!rules.length){ tbody.innerHTML='<tr><td colspan="'+(canEdit?9:8)+'" class="bk-sub-hint">'+(ES?'Sin reglas. '+(canEdit?'Crea una abajo.':''):'No rules. '+(canEdit?'Create one below.':''))+'</td></tr>'; return; }
       rules.forEach(function(rule){
         const val= rule.discount_type==='percentage' ? (rule.percentage_bps/100)+'%' : fin$(rule.amount_cents)+(rule.discount_type==='fixed_per_pax'?'/pax':'');
         const pax= rule.min_guests+(rule.max_guests?('–'+rule.max_guests):'+');
         const tr=document.createElement('tr');
-        tr.innerHTML='<td>'+escapeHtml(rule.name)+'</td><td>'+escapeHtml(rule.tour_id||(ES?'Todos':'All'))+'</td><td>'+rule.discount_type+'</td><td>'+val+'</td><td>'+pax+'</td><td class="num">'+rule.priority+'</td>'
+        tr.innerHTML='<td>'+escapeHtml(rule.name)+'</td><td>'+escapeHtml(rule.tour_id||(ES?'Todos':'All'))+'</td><td>'+(rule.code?'<code>'+escapeHtml(rule.code)+'</code>':'<span class="bk-sub-hint">'+(ES?'Automática':'Automatic')+'</span>')+'</td><td>'+rule.discount_type+'</td><td>'+val+'</td><td>'+pax+'</td><td class="num">'+rule.priority+'</td>'
           +'<td>'+(rule.active?'<span class="bdg bdg-ok">'+(ES?'Sí':'Yes')+'</span>':'<span class="bdg bdg-muted">'+(ES?'No':'No')+'</span>')+'</td>';
         if(canEdit){
           const td=document.createElement('td');
@@ -2109,7 +2109,8 @@ function panelFinance(role, only){
     const nameF=el('<div class="ed-field"><label>'+(ES?'Nombre':'Name')+'</label><input type="text" maxlength="120"></div>');
     const dsel=bkSelectField('Tour',[['',ES?'Todos los tours':'All tours']]); discTourSel=dsel.select;
     const typeF=bkSelectField(ES?'Tipo':'Type',[['percentage',ES?'Porcentaje':'Percentage'],['fixed_total',ES?'Monto fijo total':'Fixed total'],['fixed_per_pax',ES?'Monto fijo por pax':'Fixed per pax']]);
-    row1.appendChild(nameF); row1.appendChild(dsel.wrap); row1.appendChild(typeF.wrap);
+    const codeF=el('<div class="ed-field"><label>'+(ES?'Código (opcional)':'Code (optional)')+'</label><input type="text" maxlength="30" style="text-transform:uppercase" placeholder="'+(ES?'Vacío = automática':'Blank = automatic')+'"></div>');
+    row1.appendChild(nameF); row1.appendChild(dsel.wrap); row1.appendChild(typeF.wrap); row1.appendChild(codeF);
     const row2=el('<div class="ed-row"></div>');
     const valF=el('<div class="ed-field"><label>'+(ES?'Valor (% o $)':'Value (% or $)')+'</label><input type="number" min="0" step="0.01"></div>');
     const minF=el('<div class="ed-field"><label>'+(ES?'Pax mín':'Min pax')+'</label><input type="number" min="1" value="1"></div>');
@@ -2127,6 +2128,7 @@ function panelFinance(role, only){
         min_guests:parseInt(minF.querySelector('input').value||'1',10), active:true, priority:parseInt(prioF.querySelector('input').value||'0',10) };
       if(type==='percentage'){ payload.percentage_bps=Math.round(raw*100); } else { payload.amount_cents=Math.round(raw*100); }
       const mx=maxF.querySelector('input').value; if(mx) payload.max_guests=parseInt(mx,10);
+      const cd=(codeF.querySelector('input').value||'').trim(); if(cd) payload.code=cd;
       if(startF.input.value) payload.starts_at=new Date(startF.input.value+'T00:00:00Z').toISOString();
       if(endF.input.value) payload.ends_at=new Date(endF.input.value+'T00:00:00Z').toISOString();
       saveBtn.disabled=true;
@@ -2134,7 +2136,7 @@ function panelFinance(role, only){
         saveBtn.disabled=false;
         if(rr.status===401){ onUnauthorized(); return; }
         if(!rr.ok){ adminToast(ES?'Revisa los campos de la regla.':'Check the rule fields.'); return; }
-        adminToast(ES?'Regla creada':'Rule created'); nameF.querySelector('input').value=''; valF.querySelector('input').value=''; loadDiscounts(); loadSummary();
+        adminToast(ES?'Regla creada':'Rule created'); nameF.querySelector('input').value=''; valF.querySelector('input').value=''; codeF.querySelector('input').value=''; loadDiscounts(); loadSummary();
       }).catch(function(){ saveBtn.disabled=false; });
     });
     form.appendChild(row1); form.appendChild(row2); form.appendChild(row3); form.appendChild(saveBtn);

@@ -17,8 +17,9 @@ const { computeWebPricing } = require('../server/lib/pricing-engine');
 const { getPublicNotesForTour } = require('../server/lib/tour-notes');
 const { publicPackagePriceList } = require('../server/lib/package-pricing');
 
-const ALLOWED_KEYS = ['tour_id', 'guests'];
+const ALLOWED_KEYS = ['tour_id', 'guests', 'discount_code'];
 const MAX_GUESTS = 20;
+const MAX_CODE_LEN = 30;
 
 module.exports = async function handler(req, res) {
   /* El precio canónico NUNCA se cachea: cada consulta refleja el precio vivo. */
@@ -64,9 +65,12 @@ module.exports = async function handler(req, res) {
   if (!isPositiveInt(body.guests)) return sendError(res, 400, 'INVALID_GUESTS', 'guests must be a positive integer');
   if (body.guests < tour.minGuests) return sendError(res, 400, 'GUESTS_BELOW_MIN', 'guests is below the minimum');
   if (body.guests > MAX_GUESTS) return sendError(res, 400, 'GUESTS_TOO_MANY', 'guests exceeds the maximum');
+  if (body.discount_code != null && (typeof body.discount_code !== 'string' || body.discount_code.length > MAX_CODE_LEN)) {
+    return sendError(res, 400, 'INVALID_DISCOUNT_CODE', 'discount_code is invalid');
+  }
 
   try {
-    const p = await computeWebPricing({ tenantId: tenant, tourId: tour.id, guests: body.guests });
+    const p = await computeWebPricing({ tenantId: tenant, tourId: tour.id, guests: body.guests, code: body.discount_code });
 
     /* Notas importantes activas del tour (fail-soft: si fallan, no rompen el
        precio; el cliente vería sin notas y el gate se reaplica en el submit). */
@@ -83,6 +87,7 @@ module.exports = async function handler(req, res) {
       amountCents: p.amountCents,
       currency: catalog.CURRENCY,
       discountLabel: p.appliedDiscount ? p.appliedDiscount.name : null,
+      codeInvalid: p.codeInvalid,
       pricingVersion: p.packagePricing ? p.packagePricing.pricingVersion : null,
       publishedAt: p.packagePricing ? p.packagePricing.publishedAt : null,
       priceSource: p.packagePricing ? p.packagePricing.source : 'catalog',

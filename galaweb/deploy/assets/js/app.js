@@ -303,6 +303,7 @@ let bkState={tourId:'',name:'',price:0,unit:'person',min:1,requiresQuote:false};
    muestra una estimación local (bruto) al instante y la reemplaza por el
    total del servidor cuando llega. `seq` descarta respuestas fuera de orden. */
 let bkPricing={seq:0, applied:null, pending:false};
+let bkPromoDebounce=null;
 /* Notas importantes del tour (de /api/pricing-preview). Si alguna exige
    aceptación, el botón se bloquea hasta marcar la casilla. El gate real lo
    reaplica el servidor en create-payment-intent / quote-request. */
@@ -370,6 +371,7 @@ function buildBookingModal(){
          +'<div class="field"><label id="bkLabDate">Travel date</label><input type="date" id="bkDate" required></div>'
          +'<div class="field" id="bkGuestsWrap"><label id="bkLabGuests">Guests</label><input type="number" id="bkGuests" min="1" max="20" value="2"></div>'
        +'</div>'
+       +'<div class="field" id="bkPromoWrap"><label id="bkLabPromo">Discount code (optional)</label><input id="bkPromoInput" autocomplete="off" maxlength="30" style="text-transform:uppercase"><small class="bk-sub-hint" id="bkPromoHint" style="display:none"></small></div>'
        +'<div class="bk-notes" id="bkNotes" style="display:none"></div>'
        +'<div class="bk-pay" id="bkPay">'
          +'<h4 id="bkPayTitle">'+svg('shield')+'Payment</h4>'
@@ -402,6 +404,9 @@ function buildBookingModal(){
   d.querySelector('#bkClose').addEventListener('click',closeBooking);
   d.querySelector('#bkDone').addEventListener('click',closeBooking);
   d.querySelector('#bkGuests').addEventListener('input',function(){ updateBkSummary(); refreshPricing(); });
+  d.querySelector('#bkPromoInput').addEventListener('input',function(){
+    clearTimeout(bkPromoDebounce); bkPromoDebounce=setTimeout(refreshPricing,400);
+  });
   d.querySelector('#bkDate').addEventListener('change',updateBkSummary);
   // Los campos de tarjeta son Stripe Elements — formateo/validación los maneja Stripe (ver setupPaymentFields).
   d.querySelector('#bkForm').addEventListener('submit',e=>{ e.preventDefault(); submitBooking(); });
@@ -414,6 +419,7 @@ function applyBookingLang(){
   set('bkT1', es?'Pago seguro':'Secure checkout'); set('bkT2', es?('Cancelación gratis hasta '+(S.meta.cancelDays||60)+' días antes'):('Free cancellation up to '+(S.meta.cancelDays||60)+' days before')); set('bkT3', es?'Atendido por una familia local':'Hosted by a local family');
   set('bkLabExp', es?'Experiencia':'Experience'); set('bkLabName', es?'Nombre completo':'Full name'); set('bkLabEmail', es?'Correo':'Email');
   set('bkLabDate', es?'Fecha de viaje':'Travel date'); set('bkLabGuests', es?'Viajeros':'Guests');
+  set('bkLabPromo', es?'Código de descuento (opcional)':'Discount code (optional)');
   if(S.pkgPromo&&S.pkgPromo.summary) set('bkPromoLab', t(S.pkgPromo.summary));
   set('bkLabCardName', es?'Nombre en la tarjeta':'Cardholder name'); set('bkLabCardNum', es?'Número de tarjeta':'Card number'); set('bkLabExp2', es?'Vencimiento':'Expiry'); set('bkLabZip', es?'Código postal de facturación':'Billing ZIP / Postal code');
   set('bkLabMsg', es?'Tu mensaje':'Your message');
@@ -472,6 +478,17 @@ function updateBkSummary(){
   document.getElementById('bkPay').style.display=request?'none':'';
   document.getElementById('bkMsgWrap').style.display=request?'':'none';
   document.getElementById('bkSecure').style.display=request?'none':'';
+  const promoWrap=document.getElementById('bkPromoWrap');
+  if(promoWrap){
+    promoWrap.style.display=request?'none':'';
+    const promoInput=document.getElementById('bkPromoInput'), hint=document.getElementById('bkPromoHint');
+    const typedCode=promoInput?promoInput.value.trim():'';
+    if(hint){
+      const invalid=!request&&!!typedCode&&!!bkPricing.codeInvalid;
+      hint.style.display=invalid?'':'none';
+      if(invalid) hint.textContent=es?'Código no válido para esta experiencia.':'That code is not valid for this experience.';
+    }
+  }
   document.getElementById('bkSumGuestsRow').style.display=bkState.unit==='boat'?'none':'';
   const pb=document.getElementById('bkPayBtn'); pb.disabled=false; if(pb.dataset.idle) delete pb.dataset.idle;
   pb.textContent= request?(es?'Enviar solicitud':'Send request'):((es?'Pagar ':'Pay ')+money2(amount));
@@ -493,11 +510,15 @@ function bkTotal(guests){
 function refreshPricing(){
   const guests=Math.max(bkState.min||1, parseInt(((document.getElementById('bkGuests')||{}).value||'1'),10));
   const tourId=bkState.tourId; const mySeq=++bkPricing.seq;
+  const promoEl=document.getElementById('bkPromoInput');
+  const code=promoEl?promoEl.value.trim():'';
+  const reqBody={tour_id:tourId, guests:guests}; if(code) reqBody.discount_code=code;
   bkPricing.pending=true;
-  bkPost('/api/pricing-preview',{tour_id:tourId, guests:guests}).then(function(r){
+  bkPost('/api/pricing-preview',reqBody).then(function(r){
     if(mySeq!==bkPricing.seq) return;                 // respuesta fuera de orden → ignorar
     bkPricing.pending=false;
     const data=(r&&r.data)||{};
+    bkPricing.codeInvalid=!!(code && data.codeInvalid);
     /* Notas: vienen tanto en 200 (pagable) como en 400 QUOTE_REQUIRED. */
     if(data && (Array.isArray(data.notes) || data.notesVersion!=null)){
       bkNotesState={tourId:tourId, notes:data.notes||[], version:data.notesVersion||null, requiresAck:!!data.requiresAcknowledgement};
@@ -521,7 +542,9 @@ function openBooking(opts){
   const general=!opts.name;
   bkSubmitting=false; bkResetRequestId();
   if(window.GHAPayments) GHAPayments.unmount();   // re-montaje limpio en cada apertura (sin duplicados)
-  bkPricing.applied=null; bkPricing.pending=false;
+  bkPricing.applied=null; bkPricing.pending=false; bkPricing.codeInvalid=false;
+  clearTimeout(bkPromoDebounce);
+  const promoReset=document.getElementById('bkPromoInput'); if(promoReset) promoReset.value='';
   bkNotesState={tourId:null, notes:[], version:null, requiresAck:false}; renderBkNotes();
   bkState={tourId:opts.tourId||'', name:opts.name||'', price:+opts.price||0, unit:opts.unit||'person', min:+opts.min||1, requiresQuote:!(+opts.price>0)};
   document.getElementById('bkSuccess').classList.remove('show');
@@ -535,7 +558,7 @@ function openBooking(opts){
     sel.innerHTML=html; selWrap.style.display='';
     const first=items[0];
     if(first) bkState={tourId:first.tourId, name:first.label, price:first.price, unit:first.unit, min:first.min||1, requiresQuote:false};
-    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={tourId:o.dataset.tourId, name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1, requiresQuote:!(+o.dataset.price>0)}; bkPricing.applied=null; bkResetRequestId(); syncGuestsMin(); updateBkSummary(); setupPaymentFields(); refreshPricing(); };
+    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={tourId:o.dataset.tourId, name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1, requiresQuote:!(+o.dataset.price>0)}; bkPricing.applied=null; bkPricing.codeInvalid=false; bkResetRequestId(); syncGuestsMin(); updateBkSummary(); setupPaymentFields(); refreshPricing(); };
   } else { selWrap.style.display='none'; }
   const dt=document.getElementById('bkDate'); dt.min=new Date().toISOString().slice(0,10); dt.value='';
   syncGuestsMin();
@@ -661,6 +684,10 @@ async function submitBooking(){
   const payload={ request_id:bkEnsureRequestId(), tour_id:bkState.tourId, booking_date:dt, guests:guests, customer_name:name, customer_email:email };
   if(notes) payload.notes=notes;
   if(bkNotesState.requiresAck) payload.notes_ack={ acknowledged:true, version:bkNotesState.version };
+  if(!bkState.requiresQuote){
+    const promoEl=document.getElementById('bkPromoInput'); const code=promoEl?promoEl.value.trim():'';
+    if(code) payload.discount_code=code;
+  }
 
   bkSubmitting=true; setPayBusy(true);
 

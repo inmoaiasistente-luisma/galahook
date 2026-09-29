@@ -15,10 +15,11 @@ const { requireWriter, sameOrigin } = require('../lib/admin-auth');
 const catalog = require('../lib/tour-catalog');
 
 const ALLOWED_KEYS = ['id', 'name', 'tour_id', 'discount_type', 'percentage_bps', 'amount_cents',
-  'min_guests', 'max_guests', 'starts_at', 'ends_at', 'priority', 'active'];
+  'min_guests', 'max_guests', 'starts_at', 'ends_at', 'priority', 'active', 'code'];
 const TYPES = ['percentage', 'fixed_total', 'fixed_per_pax'];
 const MAX_AMOUNT_CENTS = 100000000;
 const MAX_GUESTS = 100;
+const CODE_RE = /^[A-Z0-9_-]{2,30}$/;
 
 function isIsoOrNull(v) {
   if (v == null || v === '') return true;
@@ -82,6 +83,15 @@ module.exports = async function handler(req, res) {
   const endsAt = (b.ends_at && b.ends_at !== '') ? new Date(b.ends_at).toISOString() : null;
   if (startsAt && endsAt && endsAt <= startsAt) return sendError(res, 400, 'INVALID_DATES', 'ends_at must be after starts_at');
 
+  // código de canje: opcional. NULL = regla automática (se aplica sola, como antes).
+  // Con código, la regla SOLO aplica si el cliente lo escribe igual (sin distinguir mayúsculas).
+  let code = null;
+  if (b.code != null && b.code !== '') {
+    const c = String(b.code).trim().toUpperCase();
+    if (!CODE_RE.test(c)) return sendError(res, 400, 'INVALID_CODE', 'code must be 2-30 letters/numbers/dashes');
+    code = c;
+  }
+
   const priority = b.priority == null ? 0 : b.priority;
   if (!Number.isInteger(priority) || priority < 0 || priority > 100000) return sendError(res, 400, 'INVALID_PRIORITY', 'priority out of range');
   const active = b.active == null ? true : b.active;
@@ -91,7 +101,7 @@ module.exports = async function handler(req, res) {
     tenant_id: tenant, name: b.name.trim(), tour_id: tourId, discount_type: b.discount_type,
     percentage_bps: percentageBps, amount_cents: amountCents,
     min_guests: minGuests, max_guests: maxGuests,
-    starts_at: startsAt, ends_at: endsAt, priority: priority, active: active,
+    starts_at: startsAt, ends_at: endsAt, priority: priority, active: active, code: code,
     updated_by_user_id: session.user_id
   };
 
