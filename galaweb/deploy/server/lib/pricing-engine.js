@@ -19,16 +19,26 @@ const catalog = require('./tour-catalog');
 const { getSupabase } = require('./supabase');
 const { resolvePackageBasePriceCents } = require('./package-pricing');
 
+function normalizeDiscountCode(c) { return (c == null ? '' : String(c)).trim().toUpperCase(); }
+
 /* ---- selección de regla ---------------------------------------------
    Entre las reglas aplicables se ordena y se toma la PRIMERA:
-   1) tour específico antes que global (tour_id null)
-   2) mayor priority
-   3) mayor min_guests
-   4) created_at más reciente (último desempate)                        */
-function pickRule(rules, tourId, guests, nowIso) {
+   1) con código coincidente antes que automática (el cliente lo pidió)
+   2) tour específico antes que global (tour_id null)
+   3) mayor priority
+   4) mayor min_guests
+   5) created_at más reciente (último desempate)
+   Una regla con `code` NO nulo es de canje: solo aplica si el código que
+   envía el cliente coincide (case-insensitive). Sin código escrito, esas
+   reglas quedan fuera del filtro — nunca se aplican solas.            */
+function pickRule(rules, tourId, guests, nowIso, code) {
+  const normCode = normalizeDiscountCode(code);
   const applicable = (rules || []).filter(function (r) {
     if (r.active !== true) return false;
     if (r.tour_id != null && r.tour_id !== tourId) return false;        // específico de otro tour
+    if (r.code != null && r.code !== '') {
+      if (!normCode || normalizeDiscountCode(r.code) !== normCode) return false; // requiere código exacto
+    }
     const min = Number(r.min_guests || 1);
     if (guests < min) return false;
     if (r.max_guests != null && guests > Number(r.max_guests)) return false;
@@ -37,6 +47,9 @@ function pickRule(rules, tourId, guests, nowIso) {
     return true;
   });
   applicable.sort(function (a, b) {
+    const aCoded = (a.code != null && a.code !== '') ? 1 : 0;
+    const bCoded = (b.code != null && b.code !== '') ? 1 : 0;
+    if (aCoded !== bCoded) return bCoded - aCoded;                      // con código primero
     const aSpecific = a.tour_id != null ? 1 : 0;
     const bSpecific = b.tour_id != null ? 1 : 0;
     if (aSpecific !== bSpecific) return bSpecific - aSpecific;          // específico primero
@@ -102,7 +115,12 @@ async function computeWebPricing(o) {
     if (!res.error && Array.isArray(res.data)) rules = res.data;
   } catch (e) { rules = []; }                    // sin reglas → sin descuento
 
-  const rule = pickRule(rules, tour.id, guests, nowIso);
+  const normCode = normalizeDiscountCode(o && o.code);
+  const rule = pickRule(rules, tour.id, guests, nowIso, normCode);
+  /* El cliente escribió un código pero ninguna regla lo reconoció para este
+     tour/fecha/pax: se lo decimos explícitamente (no inferir por descuento=0,
+     que también pasa sin ningún código). */
+  const codeInvalid = !!normCode && !(rule && rule.code);
 
   /* Descuento con clamp: nunca deja el total < 1 centavo ni negativo. */
   let discount = discountForRule(rule, gross, guests);
@@ -150,6 +168,7 @@ async function computeWebPricing(o) {
     amountCents: amount,
     costCents: costCents,             // null si no hay configuración de costo
     appliedDiscount: appliedDiscount, // null si no hubo regla
+    codeInvalid: codeInvalid,         // true si el cliente escribió un código que no coincidió con ninguna regla
     packagePricing: packagePricing,   // {priceCents,source,currency,pricingVersion,publishedAt} o null (no-paquete)
     pricingSnapshot: pricingSnapshot
   };

@@ -23,8 +23,9 @@ const {
 } = require('../server/lib/http');
 
 const ALLOWED_KEYS = ['request_id', 'tour_id', 'booking_date', 'guests',
-  'customer_name', 'customer_email', 'customer_phone', 'notes', 'notes_ack'];
+  'customer_name', 'customer_email', 'customer_phone', 'notes', 'notes_ack', 'discount_code'];
 const MAX_GUESTS = 20;
+const MAX_CODE_LEN = 30;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I ambiguos
 const MAX_CODE_TRIES = 6;
 const REUSABLE_PI_STATUSES = ['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing'];
@@ -108,6 +109,9 @@ module.exports = async function handler(req, res) {
     if (notes != null && (typeof notes !== 'string' || notes.length > 1000)) {
       return sendError(res, 400, 'INVALID_NOTES', 'notes is too long');
     }
+    if (body.discount_code != null && (typeof body.discount_code !== 'string' || body.discount_code.length > MAX_CODE_LEN)) {
+      return sendError(res, 400, 'INVALID_DISCOUNT_CODE', 'discount_code is invalid');
+    }
 
     const emailNorm = normalizeEmail(customer_email);
     const expected = { tour_id, booking_date, guests, emailNorm };
@@ -118,7 +122,7 @@ module.exports = async function handler(req, res) {
     /* Precio SIEMPRE del motor único (bruto, descuento, total, costo,
        snapshot). El navegador nunca envía importes. */
     let pricing;
-    try { pricing = await computeWebPricing({ tenantId: tenant, tourId: tour.id, guests: guests }); }
+    try { pricing = await computeWebPricing({ tenantId: tenant, tourId: tour.id, guests: guests, code: body.discount_code }); }
     catch (e) {
       if (e && e.message === 'QUOTE_ONLY') return sendError(res, 400, 'QUOTE_REQUIRED', 'This experience requires a quote request');
       /* Paquete sin precio publicado (ni fallback válido): se BLOQUEA aquí,
