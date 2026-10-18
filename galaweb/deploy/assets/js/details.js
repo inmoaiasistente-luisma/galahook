@@ -261,6 +261,44 @@ window.GHA_DETAILS = {
       }
     },
 
+    bartolome: {
+      gallery: ["assets/img/bartolome-pinnacle.jpg","assets/img/bartolome-penguins.jpg","assets/img/bartolome-landscape.jpg"],
+      intro: {
+        en: "One of the most photographed landscapes in the Galápagos. Climb the 795 m boardwalk of La Escalinata to the iconic Pinnacle Rock viewpoint, then cool off at Sullivan Bay, where Galápagos penguins, sea turtles and reef sharks glide over submarine lava flows.",
+        es: "Uno de los paisajes más fotografiados de Galápagos. Sube por la escalinata de madera de 795 m hasta el icónico mirador de Roca Pináculo, y luego refréscate en Bahía Sullivan, donde pingüinos de Galápagos, tortugas marinas y tiburones de arrecife se deslizan sobre flujos de lava submarinos."
+      },
+      highlights: [
+        { en: "La Escalinata's 795 m boardwalk to Pinnacle Rock viewpoint", es: "Escalinata de madera de 795 m hasta el mirador de Roca Pináculo" },
+        { en: "Snorkeling with Galápagos penguins at Sullivan Bay", es: "Snorkel con pingüinos de Galápagos en Bahía Sullivan" },
+        { en: "Sea turtles, reef sharks & endemic wildlife", es: "Tortugas marinas, tiburones de arrecife y fauna endémica" },
+        { en: "Guided geological tour of a volcanic landscape", es: "Interpretación geológica guiada de un paisaje volcánico" }
+      ],
+      agenda: [
+        { title: { en: "Transfer to Itabaca", es: "Traslado al Canal de Itabaca" }, body: { en: "Your naturalist guide meets you in Puerto Ayora for a private 35-minute drive to the Itabaca Channel, where the boat is waiting.", es: "Tu guía naturalista te recibe en Puerto Ayora para un traslado privado de 35 minutos hasta el Canal de Itabaca, donde espera la embarcación." } },
+        { title: { en: "Crossing & La Escalinata", es: "Travesía y La Escalinata" }, body: { en: "About 2 hours by boat to Bartolomé, then a 795 m boardwalk hike with panoramic stops over Pinnacle Rock and the lava fields of Santiago Island.", es: "Unas 2 horas en bote hasta Bartolomé, seguidas de una caminata por la escalinata de madera de 795 m con paradas panorámicas sobre Roca Pináculo y los campos de lava de Isla Santiago." } },
+        { title: { en: "Snorkel at Sullivan Bay", es: "Snorkel en Bahía Sullivan" }, body: { en: "Swim over submarine lava flows at Sullivan Bay — keep an eye out for Galápagos penguins, sea turtles and reef sharks — then a hot lunch on board before the return.", es: "Nada sobre flujos de lava submarinos en Bahía Sullivan — atento a los pingüinos de Galápagos, tortugas marinas y tiburones de arrecife — y luego almuerzo caliente a bordo antes del regreso." } }
+      ],
+      included: [
+        { en: "Round-trip land transfer to Itabaca Channel", es: "Transporte terrestre ida y vuelta al Canal de Itabaca" },
+        { en: "Boat crossing in an authorized tour vessel", es: "Navegación en embarcación turística autorizada" },
+        { en: "Certified bilingual naturalist guide", es: "Guía naturalista certificado (bilingüe)" },
+        { en: "Hot lunch, snack, coffee & tea on board", es: "Almuerzo caliente, snack, café y té a bordo" },
+        { en: "Snorkel equipment (mask, snorkel & fins)", es: "Equipo de snorkel (máscara, tubo y aletas)" }
+      ],
+      notIncluded: [
+        { en: "Wetsuit (optional rental)", es: "Traje de neopreno (alquiler opcional)" },
+        { en: "$200 pp National Park entry fee (cash)", es: "Entrada al Parque Nacional $200 pp (efectivo)" },
+        { en: "Alcoholic drinks & sodas", es: "Bebidas alcohólicas y gaseosas" },
+        { en: "Gratuities", es: "Propinas" }
+      ],
+      facts: {
+        duration: { en: "Full day · 06:00–17:30", es: "Día completo · 06:00–17:30" },
+        group: { en: "Max 16 · small groups", es: "Máx 16 · grupos pequeños" },
+        level: { en: "Moderate — 795 m boardwalk hike", es: "Moderado — caminata de 795 m por escalinata" },
+        start: { en: "Puerto Ayora (Itabaca Channel)", es: "Puerto Ayora (Canal de Itabaca)" }
+      }
+    },
+
     private: {
       gallery: ["assets/img/kicker-day.jpg","assets/img/sea-cave.jpg","assets/img/fishing-c1.jpg"],
       intro: {

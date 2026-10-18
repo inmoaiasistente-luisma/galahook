@@ -277,6 +277,16 @@ window.GHA_DEFAULT = {
       }
     },
     {
+      id: "bartolome", cat: "adventure", img: "assets/img/bartolome-pinnacle.jpg",
+      name: { en: "Bartolomé Island", es: "Isla Bartolomé" },
+      duration: { en: "Full day", es: "Día completo" }, tag: { en: "Adventure", es: "Aventura" },
+      price: 330, priceLabel: { en: "per person", es: "por persona" },
+      blurb: {
+        en: "Climb La Escalinata's 795 m boardwalk to the iconic Pinnacle Rock viewpoint, then snorkel Sullivan Bay's lava flows alongside Galápagos penguins and sea turtles. Departs Puerto Ayora.",
+        es: "Sube por la escalinata de madera de 795 m hasta el icónico mirador de Roca Pináculo, y haz snorkel entre los flujos de lava de Bahía Sullivan junto a pingüinos de Galápagos y tortugas marinas. Sale desde Puerto Ayora."
+      }
+    },
+    {
       id: "private", cat: "private", img: "assets/img/kicker-day.jpg",
       name: { en: "Private Boat Charter", es: "Charter Privado de Bote" },
       duration: { en: "Custom", es: "Personalizado" }, tag: { en: "Private", es: "Privado" },
@@ -357,7 +367,8 @@ window.GHA_DEFAULT = {
     "assets/img/sealion-underwater.jpg","assets/img/kicker-sunrise.jpg","assets/img/school-fish.jpg",
     "assets/img/lagoon.jpg","assets/img/fishing-marlin.jpg","assets/img/sea-cave.jpg",
     "assets/img/highlands-hike.jpg","assets/img/sealion-beach.jpg","assets/img/hammerheads.jpg",
-    "assets/img/kicker-day.jpg","assets/img/fishing-mahi.jpg","assets/img/sealion-blacksand.jpg"
+    "assets/img/kicker-day.jpg","assets/img/fishing-mahi.jpg","assets/img/sealion-blacksand.jpg",
+    "assets/img/bartolome-pinnacle.jpg","assets/img/bartolome-sailboat.jpg","assets/img/bartolome-penguins.jpg","assets/img/bartolome-onboard.jpg"
   ],
 
   /* ---------------- MAP SPOTS (San Cristóbal) ---------------- */

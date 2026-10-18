@@ -35,6 +35,7 @@ const TOURS = {
   highlands:    { name: 'Highlands & El Junco',       priceCents: 9000,  unit: 'person', minGuests: 1, requiresQuote: false, type: 'tour' },
   'punta-pitt': { name: 'Punta Pitt',                 priceCents: 26000, unit: 'person', minGuests: 1, requiresQuote: false, type: 'tour' },
   espanola:     { name: 'Española Day Trip',          priceCents: 31500, unit: 'person', minGuests: 1, requiresQuote: false, type: 'tour' },
+  bartolome:    { name: 'Bartolomé Island',           priceCents: 33000, unit: 'person', minGuests: 1, requiresQuote: false, type: 'tour' },
   private:      { name: 'Private Boat Charter',       priceCents: null,  unit: 'boat',   minGuests: 1, requiresQuote: true,  type: 'tour' },
 
   // ---- Pesca deportiva (boat) ----
