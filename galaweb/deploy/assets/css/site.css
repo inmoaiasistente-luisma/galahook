@@ -143,10 +143,10 @@ ul{margin:0;padding:0;list-style:none;}
   transition:background .4s var(--ease),box-shadow .4s,padding .4s;
   padding:18px 0;
 }
-.site-header .wrap-wide{display:flex;align-items:center;justify-content:space-between;gap:24px;}
+.site-header .wrap-wide{display:flex;align-items:center;justify-content:space-between;gap:18px;}
 .site-header.scrolled{background:rgba(247,243,235,.92);backdrop-filter:blur(14px);box-shadow:0 1px 0 var(--line);padding:10px 0;}
 .brand{display:flex;align-items:center;gap:13px;flex-shrink:0;}
-.brand img{height:84px;width:auto;transition:height .4s var(--ease);filter:drop-shadow(0 4px 14px rgba(0,0,0,.3));}
+.brand img{height:72px;width:auto;transition:height .4s var(--ease);filter:drop-shadow(0 4px 14px rgba(0,0,0,.3));}
 .site-header.scrolled .brand img{height:64px;filter:drop-shadow(0 3px 8px rgba(0,0,0,.12));}
 .brand-text{display:flex;flex-direction:column;line-height:1;white-space:nowrap;}
 .brand-text b{font-family:var(--display);font-weight:800;font-size:16px;letter-spacing:.01em;color:var(--paper);}
@@ -157,20 +157,20 @@ ul{margin:0;padding:0;list-style:none;}
 .nav{display:flex;align-items:center;gap:2px;}
 .nav a{
   font-family:var(--body);font-weight:600;font-size:14px;letter-spacing:.01em;white-space:nowrap;
-  color:var(--paper);padding:9px 13px;border-radius:var(--radius);position:relative;
+  color:var(--paper);padding:9px 10px;border-radius:var(--radius);position:relative;
   transition:color .3s,opacity .3s;text-shadow:0 1px 8px rgba(0,0,0,.35);
 }
-.nav a::after{content:"";position:absolute;left:14px;right:14px;bottom:4px;height:1.5px;background:var(--gold);transform:scaleX(0);transform-origin:left;transition:transform .35s var(--ease);}
+.nav a::after{content:"";position:absolute;left:10px;right:10px;bottom:4px;height:1.5px;background:var(--gold);transform:scaleX(0);transform-origin:left;transition:transform .35s var(--ease);}
 .nav a:hover::after,.nav a.active::after{transform:scaleX(1);}
 .site-header.scrolled .nav a{color:var(--ink);text-shadow:none;}
 .site-header.scrolled .nav a:hover,.site-header.scrolled .nav a.active{color:var(--sea-deep);}
 
-.header-tools{display:flex;align-items:center;gap:22px;flex-shrink:0;}
-.hdr-social-group{display:inline-flex;align-items:center;gap:20px;}
+.header-tools{display:flex;align-items:center;gap:16px;flex-shrink:0;}
+.hdr-social-group{display:inline-flex;align-items:center;gap:14px;}
 /* The masthead bar is full at every width (its wrap caps at 1440px), so the
    account name shows on hover/focus as a tooltip instead of crowding the menu. */
 .hdr-social{position:relative;display:inline-flex;align-items:center;justify-content:center;color:var(--paper);opacity:.85;transition:color .25s,opacity .25s,transform .25s;text-shadow:0 1px 8px rgba(0,0,0,.35);text-decoration:none;}
-.hdr-social svg{width:38px;height:38px;}
+.hdr-social svg{width:30px;height:30px;}
 .hdr-social-name{position:absolute;top:calc(100% + 10px);left:50%;padding:6px 11px;border-radius:8px;background:var(--deep);color:var(--paper);font-family:var(--body);font-weight:600;font-size:13px;letter-spacing:.01em;white-space:nowrap;box-shadow:0 12px 28px -10px rgba(0,0,0,.55);opacity:0;transform:translate(-50%,-3px);pointer-events:none;transition:opacity .2s ease,transform .2s ease;text-shadow:none;z-index:60;}
 .hdr-social:hover .hdr-social-name,.hdr-social:focus-visible .hdr-social-name{opacity:1;transform:translate(-50%,0);}
 .hdr-social:hover{opacity:1;color:var(--gold-soft);transform:translateY(-1px);}
@@ -178,16 +178,16 @@ ul{margin:0;padding:0;list-style:none;}
 .site-header.scrolled .hdr-social:hover{color:var(--sea-deep);}
 .lang-toggle{
   display:inline-flex;border:1.5px solid rgba(255,255,255,.45);border-radius:40px;overflow:hidden;
-  font-family:var(--body);font-weight:700;font-size:22px;
+  font-family:var(--body);font-weight:700;font-size:16px;
 }
 .site-header.scrolled .lang-toggle{border-color:var(--line);}
-.lang-toggle button{padding:10px 18px;color:var(--paper);letter-spacing:.05em;transition:background .3s,color .3s;}
+.lang-toggle button{padding:8px 14px;color:var(--paper);letter-spacing:.05em;transition:background .3s,color .3s;}
 .site-header.scrolled .lang-toggle button{color:var(--ink);}
 .lang-toggle button.on{background:var(--gold);color:var(--deep);}
 
 .nav-toggle{display:none;flex-direction:column;gap:7px;padding:10px;}
 .nav-toggle span{width:32px;height:3px;background:var(--paper);transition:.3s;}
-.header-tools .btn-sm{padding:16px 30px;font-size:22px;}
+.header-tools .btn-sm{padding:13px 22px;font-size:17px;}
 .site-header.scrolled .nav-toggle span{background:var(--ink);}
 
 /* ====================================================
@@ -505,6 +505,32 @@ select option:disabled{ color:rgba(251,248,241,.5); }
 /* ====================================================
    RESPONSIVE
    ==================================================== */
+/* Header en escritorio angosto: logo + menu + redes + idioma + Reservar no caben
+   en una linea por debajo de ~1360 px (en espanol "Reservar" quedaba cortado).
+   Se compacta por pasos y por debajo de 1100 px pasa al menu hamburguesa. */
+@media(min-width:1101px) and (max-width:1360px){
+  .brand-text{display:none;}
+}
+@media(min-width:1101px) and (max-width:1240px){
+  .hdr-social-group{display:none;}
+  .nav a{padding:9px 8px;}
+  .nav a::after{left:8px;right:8px;}
+}
+@media(max-width:1100px){
+  .nav{display:none;}
+  .nav-toggle{display:flex;}
+  /* Sin backdrop-filter con menu hamburguesa: evita crear containing-block que
+     colapsa el menu fijo (.nav.open). Fondo solido para legibilidad del header. */
+  .site-header.scrolled{background:#f7f3eb;-webkit-backdrop-filter:none;backdrop-filter:none;}
+  /* Menu abierto = overlay oscuro a pantalla completa: enlaces e icono SIEMPRE
+     claros, aun con el header scrolleado (que si no pone el texto oscuro -> invisible) */
+  .nav.open{display:flex;position:fixed;top:0;right:0;bottom:0;width:min(82vw,360px);height:100dvh;background:var(--deep);flex-direction:column;align-items:stretch;padding:96px 28px 28px;gap:4px;z-index:210;box-shadow:var(--shadow);}
+  .site-header.scrolled .nav.open a,
+  .nav.open a{color:var(--paper);font-size:18px;padding:14px 12px;border-bottom:1px solid var(--line-on-dark);text-shadow:none;}
+  .nav.open a::after{display:none;}
+  .site-header.scrolled .nav.open ~ .header-tools .nav-toggle span,
+  .nav.open ~ .header-tools .nav-toggle span{background:var(--paper);}
+}
 @media(max-width:1080px){
   .footer-top{grid-template-columns:1fr 1fr;gap:34px;}
   .trust .wrap{grid-template-columns:repeat(3,1fr);}
@@ -518,29 +544,15 @@ select option:disabled{ color:rgba(251,248,241,.5); }
   .split-media{aspect-ratio:16/11;}
   .contact-grid{grid-template-columns:1fr;}
   .reel{grid-template-columns:repeat(4,1fr);}
-  .nav,.lang-toggle{display:none;}
-  .nav-toggle{display:flex;}
-  /* Header cabe en pantallas chicas: logo/iconos/boton mas compactos */
+  .lang-toggle{display:none;}
+  /* Header cabe en pantallas chicas: logo/iconos/boton mas compactos
+     (el menu hamburguesa ya entra desde 1100 px, ver arriba) */
   .site-header .wrap-wide{gap:14px;}
   .header-tools{gap:14px;}
   .header-tools .btn-sm{padding:11px 18px;font-size:15px;}
   .brand img{height:58px;}
   .site-header.scrolled .brand img{height:52px;}
   .hdr-social svg{width:30px;height:30px;}
-  /* Sin backdrop-filter en movil: evita crear containing-block que colapsa
-     el menu fijo (.nav.open). Fondo solido para legibilidad del header. */
-  .site-header.scrolled{background:#f7f3eb;-webkit-backdrop-filter:none;backdrop-filter:none;}
-  /* Refuerzo: el menu movil siempre a pantalla completa y opaco */
-  .nav.open{height:100dvh;background:var(--deep);}
-  /* Menu abierto = overlay oscuro: enlaces e icono SIEMPRE claros,
-     aun con el header scrolleado (que si no pone el texto oscuro -> invisible) */
-  .site-header.scrolled .nav.open a,
-  .nav.open a{color:var(--paper);text-shadow:none;}
-  .site-header.scrolled .nav.open ~ .header-tools .nav-toggle span,
-  .nav.open ~ .header-tools .nav-toggle span{background:var(--paper);}
-  .nav.open{display:flex;position:fixed;top:0;right:0;bottom:0;width:min(82vw,360px);background:var(--deep);flex-direction:column;align-items:stretch;padding:96px 28px 28px;gap:4px;z-index:210;box-shadow:var(--shadow);}
-  .nav.open a{color:var(--paper);font-size:18px;padding:14px 12px;border-bottom:1px solid var(--line-on-dark);text-shadow:none;}
-  .nav.open a::after{display:none;}
   .mobile-lang{display:flex;}
 }
 @media(max-width:620px){

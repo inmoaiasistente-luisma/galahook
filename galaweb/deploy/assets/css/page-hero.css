@@ -1,0 +1,115 @@
+/* ====================================================
+   CABECERA DE PÁGINAS INTERNAS
+   El mismo lenguaje del hero de la portada: la foto "viva" (video en bucle,
+   cámara quieta), marco fino con esquinas cortadas, migas que se decodifican,
+   título que sube desde una máscara y la barra de abajo.
+   Con movimiento y data-ph-run: el escenario queda fijo un tramo corto y el
+   scroll empuja la cámara hacia adelante mientras el texto se despide.
+   Sin html.mx (sin JS, "reducir movimiento" o ?motion=off): foto quieta.
+   ==================================================== */
+.pagehero.ph{
+  --ph-top:118px; --ph-side:22px; --ph-line:rgba(228,201,140,.5); --ph-c:14px; --ph-h:86svh;
+  display:block;min-height:0;overflow:clip;align-items:initial;
+}
+.pagehero.ph::after{content:none}
+.ph-contact{--ph-h:72svh}
+.ph-stage{position:relative;height:86vh;height:var(--ph-h);min-height:540px;overflow:hidden;isolation:isolate}
+
+/* Foto y video */
+.ph-media{position:absolute;inset:-14px;z-index:0;background:var(--deep);
+  transform:translate3d(var(--ph-mx,0px),calc(var(--ph-my,0px) + var(--ph-py,0px)),0) scale(var(--ph-s,1));transform-origin:50% 55%}
+.ph-media img,.ph-media video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:var(--ph-pos,50% 50%)}
+.ph-loop{opacity:0;transition:opacity .9s ease}
+.ph.loop-ok .ph-loop{opacity:1}
+.ph-shade{position:absolute;inset:0;pointer-events:none;
+  background:
+    linear-gradient(180deg,rgba(8,32,31,.6) 0%,rgba(8,32,31,0) 30%),
+    linear-gradient(0deg,rgba(8,32,31,.9) 0%,rgba(8,32,31,.45) 32%,rgba(8,32,31,0) 62%),
+    linear-gradient(90deg,rgba(8,32,31,.5) 0%,rgba(8,32,31,0) 58%)}
+/* al avanzar, la escena se oscurece un poco: el texto de la página entra limpio */
+.ph-shade::after{content:"";position:absolute;inset:0;background:var(--deep);opacity:var(--ph-dk,0)}
+
+/* Marco con esquinas cortadas (el trazo lo calcula page-hero.js) */
+.ph-frame{position:absolute;z-index:2;top:var(--ph-top);left:var(--ph-side);right:var(--ph-side);bottom:var(--ph-side);pointer-events:none}
+.ph-frame svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.ph-frame path{fill:none;stroke:var(--ph-line);stroke-width:1}
+.ph-frame i{position:absolute;width:5px;height:5px;background:var(--gold);transform:translate(-50%,-50%) rotate(45deg)}
+.ph-frame i:nth-of-type(1){left:50%;top:0}
+.ph-frame i:nth-of-type(2){left:50%;top:100%}
+
+/* Texto: abajo a la izquierda, como siempre */
+.ph-copy{position:absolute;z-index:3;left:0;right:0;bottom:calc(var(--ph-side) + 84px);
+  transform:translate3d(0,var(--ph-ty,0px),0);opacity:var(--ph-o,1)}
+.ph-copy .wrap{padding-left:clamp(28px,4vw,64px);padding-right:clamp(28px,4vw,64px)}
+.ph .breadcrumb{display:flex;align-items:center;flex-wrap:wrap;gap:0 10px;margin:0 0 20px;font:700 12.5px/1.4 var(--body);letter-spacing:.22em;color:rgba(251,248,241,.78);text-shadow:0 1px 10px rgba(0,0,0,.45)}
+.ph .breadcrumb::before{content:"";width:26px;height:1.5px;background:var(--gold)}
+.ph .breadcrumb [data-decode]{color:var(--gold-soft)}
+.ph .breadcrumb a{display:inline-flex;align-items:center;min-height:32px}
+.ph-title{overflow:hidden;padding:.1em .04em .04em;margin:-.1em -.04em -.04em}
+.ph h1{font-size:clamp(46px,7.6vw,112px);line-height:.92;max-width:15ch;text-shadow:0 6px 40px rgba(0,0,0,.35)}
+.ph .lead{max-width:46ch;margin:22px 0 0;font-size:clamp(17px,1.5vw,20px);line-height:1.55;color:rgba(255,255,255,.9);text-shadow:0 1px 14px rgba(0,0,0,.35)}
+
+/* Barra de abajo: pausa · desliza · habla con nosotros (deja libre el botón de WhatsApp) */
+.ph-dock{position:absolute;z-index:4;left:calc(var(--ph-side) + 22px);right:110px;bottom:calc(var(--ph-side) + 14px);display:flex;align-items:center;justify-content:space-between;gap:20px;font:700 11.5px/1 var(--body);letter-spacing:.22em;text-transform:uppercase;color:rgba(251,248,241,.8)}
+.ph-dock button,.ph-dock a{display:inline-flex;align-items:center;gap:10px;min-height:44px;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;text-shadow:0 1px 10px rgba(0,0,0,.5);transition:color .3s}
+.ph-dock button:hover,.ph-dock a:hover{color:var(--gold-soft)}
+.ph-dock button:focus-visible,.ph-dock a:focus-visible,.ph .breadcrumb a:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.ph-talk{margin-left:auto}
+.ph-pause svg{width:15px;height:15px}
+.ph-pause .i-play,.ph-pause .t-play,.ph.is-paused .ph-pause .i-pause,.ph.is-paused .ph-pause .t-pause{display:none}
+.ph.is-paused .ph-pause .i-play,.ph.is-paused .ph-pause .t-play{display:inline}
+.ph-cue{display:flex;align-items:center;gap:14px;white-space:nowrap}
+.ph-cue i{position:relative;display:block;width:120px;height:1px;background:rgba(251,248,241,.25);overflow:hidden}
+.ph-cue i::after{content:"";position:absolute;inset:0;background:var(--gold);transform:scaleX(var(--ph-p,0));transform-origin:0 50%}
+.ph-cue b{font-family:var(--display);font-weight:700;letter-spacing:.06em;color:var(--gold-soft);min-width:2.2em}
+.ph-talk svg{width:16px;height:16px;transition:transform .3s var(--ease)}
+.ph-talk:hover svg{transform:translateX(3px)}
+
+/* ---------- Sin movimiento: la foto quieta, sin video ni controles de video ---------- */
+html:not(.ph-on) .ph-loop,html:not(.ph-on) .ph-pause,html:not(.ph-on) .ph-cue{display:none}
+
+/* ---------- Con movimiento ---------- */
+@media (prefers-reduced-motion:no-preference){
+  html.ph-on,html.ph-on body{overflow-x:clip}   /* hidden rompe position:sticky */
+  .ph-on .ph[data-ph-run]{height:150vh;height:150svh}
+  .ph-on .ph[data-ph-run] .ph-stage{position:sticky;top:0;height:100vh;height:100svh}
+
+  /* Entrada: el marco se dibuja, las migas se decodifican, el título sube desde su máscara */
+  .mx .ph-frame path{stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 2.2s cubic-bezier(.65,0,.35,1) .2s}
+  .mx .ph.mx-in .ph-frame path{stroke-dashoffset:0}
+  .mx .ph-frame i{opacity:0;transition:opacity .6s ease 1.6s}
+  .mx .ph.mx-in .ph-frame i{opacity:1}
+  .mx .ph h1{transform:translateY(108%);transition:transform 1.2s var(--mx-out) .25s}
+  .mx .ph.mx-in h1{transform:none}
+  .mx .ph .breadcrumb,.mx .ph .lead,.mx .ph-dock>*{opacity:0;translate:0 14px;transition:opacity .9s var(--mx-out),translate .9s var(--mx-out)}
+  .mx .ph.mx-in .breadcrumb{opacity:1;translate:0 0;transition-delay:.05s}
+  .mx .ph.mx-in .lead{opacity:1;translate:0 0;transition-delay:.75s}
+  .mx .ph.mx-in .ph-dock>*{opacity:1;translate:0 0}
+  .mx .ph.mx-in .ph-dock>:nth-child(1){transition-delay:1.2s}
+  .mx .ph.mx-in .ph-dock>:nth-child(2){transition-delay:1.3s}
+  .mx .ph.mx-in .ph-dock>:nth-child(3){transition-delay:1.4s}
+  .mx .ph-media{will-change:transform}
+}
+
+/* ---------- Tamaños ---------- */
+@media (max-width:900px){
+  .pagehero.ph{--ph-top:104px;--ph-side:16px}
+}
+@media (max-width:620px){
+  .pagehero.ph{--ph-top:80px;--ph-side:12px;--ph-h:80svh}
+  .ph-contact{--ph-h:68svh}
+  .ph-copy{bottom:calc(var(--ph-side) + 66px)}
+  .ph-copy .wrap{padding-left:22px;padding-right:22px}
+  .ph .breadcrumb{font-size:11px;letter-spacing:.18em;margin-bottom:14px}
+  .ph .lead{margin-top:16px}
+  .ph-dock{left:calc(var(--ph-side) + 10px);right:90px;bottom:calc(var(--ph-side) + 6px);gap:12px;font-size:10px;letter-spacing:.14em}
+  .ph-dock .ph-talk,.ph-pause .t-pause,.ph-pause .t-play,.ph.is-paused .ph-pause .t-play,.ph-cue i{display:none}
+  .ph-cue{gap:10px}
+}
+@media (max-aspect-ratio:3/4){
+  .ph-media img,.ph-media video{object-position:50% 50%}
+}
+@media (max-height:700px) and (min-width:621px){
+  .ph h1{font-size:clamp(44px,6.4vw,88px)}
+  .ph .lead{margin-top:14px}
+}

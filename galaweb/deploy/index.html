@@ -23,6 +23,10 @@
 <meta name="theme-color" content="#0d2b2a">
 <link rel="icon" href="assets/img/logo.png">
 <link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/motion.css">
+<link rel="stylesheet" href="assets/css/mosaic.css">
+<link rel="stylesheet" href="assets/css/hero-scroll.css">
+<script src="assets/js/motion.js"></script>
 </head>
 <body data-page="index">
 
@@ -35,21 +39,82 @@
 <header class="site-header" id="site-header"></header>
 
 <!-- ============ HERO ============ -->
-<section class="hero">
-  <div class="hero-slides" id="heroSlides"></div>
-  <div class="hero-inner">
-    <div class="wrap-wide">
-      <p class="eyebrow" data-hero="kicker"></p>
-      <h1><span data-hero="title"></span><span class="h-script" data-hero="script"></span></h1>
-      <p class="lead" data-hero="sub"></p>
-      <div class="hero-cta">
-        <a class="btn btn-gold" href="packages.html" data-en="Explore Packages" data-es="Ver Paquetes">Explore Packages</a>
-        <a class="btn btn-ghost" href="contact.html" data-en="Plan With Us" data-es="Planifica con Nosotros">Plan With Us</a>
+<!-- Entrada: Kicker Rock vivo (bucle) → al bajar, la cámara avanza hasta León Dormido → bajo el agua.
+     Videos e imágenes: Higgsfield (foto mejorada a 4K + Kling 3.0). Lógica en hero-scroll.js -->
+<section class="hero hx" id="hero">
+  <div class="hx-stage">
+    <div class="hx-media" aria-hidden="true">
+      <picture>
+        <source media="(max-aspect-ratio: 3/4)" srcset="assets/img/hero/kicker-portrait.jpg">
+        <img src="assets/img/hero/kicker-1600.jpg" srcset="assets/img/hero/kicker-1600.jpg 1600w, assets/img/hero/kicker-2560.jpg 2560w" sizes="100vw" alt="" fetchpriority="high">
+      </picture>
+      <video class="hx-scrub" muted playsinline preload="auto" data-src="assets/video/hero-entrada"></video>
+      <video class="hx-loop" muted playsinline loop preload="auto" data-src="assets/video/hero-vivo"></video>
+      <div class="hx-deep"><img src="assets/img/hero/hammerheads-cine.jpg" alt="" loading="lazy" decoding="async"></div>
+      <div class="hx-tide"></div>
+    </div>
+    <div class="hx-shade"></div>
+    <div class="hx-frame" aria-hidden="true"><svg><path pathLength="1"/></svg><i></i><i></i></div>
+
+    <!-- Capítulo 1: el hero de siempre (textos editables desde content.js / panel) -->
+    <div class="hx-copy hx-c0">
+      <div class="wrap-wide">
+        <p class="eyebrow" data-hero="kicker"></p>
+        <h1><span data-hero="title"></span><span class="h-script" data-hero="script"></span></h1>
+        <p class="lead" data-hero="sub"></p>
+        <div class="hero-cta">
+          <a class="btn btn-gold" href="packages.html" data-en="Explore Packages" data-es="Ver Paquetes">Explore Packages</a>
+          <a class="btn btn-ghost" href="contact.html" data-en="Plan With Us" data-es="Planifica con Nosotros">Plan With Us</a>
+        </div>
       </div>
     </div>
+
+    <!-- Capítulo 2: León Dormido -->
+    <div class="hx-copy hx-c1">
+      <div class="wrap-wide">
+        <p class="hx-label"><b>02</b><span data-decode data-en="Kicker Rock · León Dormido" data-es="Kicker Rock · León Dormido">Kicker Rock · León Dormido</span></p>
+        <h2 class="hx-h">
+          <span class="ln"><span data-en="Two tuff towers" data-es="Dos torres de toba">Two tuff towers</span></span>
+          <span class="h-script" data-en="in the open sea" data-es="en mar abierto">in the open sea</span>
+        </h2>
+        <p class="hx-p" data-en="Snorkel the legendary channel between the two rocks — a 6–7 hour ocean tour from San Cristóbal." data-es="Haz snorkel en el legendario canal entre las dos rocas — un tour de 6–7 horas desde San Cristóbal.">Snorkel the legendary channel between the two rocks — a 6–7 hour ocean tour from San Cristóbal.</p>
+        <div class="hx-acts">
+          <a class="btn btn-ghost" href="tours.html" data-en="See the tour" data-es="Ver el tour">See the tour</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Capítulo 3: bajo el agua -->
+    <div class="hx-copy hx-c2">
+      <div class="wrap-wide">
+        <p class="hx-label"><b>03</b><span data-decode data-en="Under the water" data-es="Bajo el agua">Under the water</span></p>
+        <h2 class="hx-h">
+          <span class="ln"><span data-en="Hammerheads" data-es="Tiburones martillo">Hammerheads</span></span>
+          <span class="h-script" data-en="right beneath you" data-es="bajo tus pies">right beneath you</span>
+        </h2>
+        <p class="hx-p" data-en="Snorkel or dive the wall of León Dormido: hammerheads, Galápagos sharks, sea turtles and rays." data-es="Snorkel o buceo en la pared de León Dormido: tiburones martillo, tiburones de Galápagos, tortugas y rayas.">Snorkel or dive the wall of León Dormido: hammerheads, Galápagos sharks, sea turtles and rays.</p>
+        <div class="hx-acts">
+          <a class="btn btn-gold" href="tours.html" data-en="See ocean tours" data-es="Ver tours de mar">See ocean tours</a>
+        </div>
+      </div>
+    </div>
+
+    <ol class="hx-rail" aria-label="Chapters">
+      <li class="is-on"><button type="button" data-ch="0"><b>01</b><span data-decode data-en="Sunrise" data-es="Amanecer">Sunrise</span><i></i></button></li>
+      <li><button type="button" data-ch="1"><b>02</b><span data-decode data-en="Kicker Rock" data-es="León Dormido">Kicker Rock</span><i></i></button></li>
+      <li><button type="button" data-ch="2"><b>03</b><span data-decode data-en="Underwater" data-es="Bajo el agua">Underwater</span><i></i></button></li>
+    </ol>
+
+    <div class="hx-dock">
+      <button class="hx-pause" type="button" aria-pressed="false">
+        <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+        <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>
+        <span class="t-pause" data-en="Pause" data-es="Pausar">Pause</span><span class="t-play" data-en="Play" data-es="Reproducir">Play</span>
+      </button>
+      <div class="hx-cue" aria-hidden="true"><span data-decode data-en="Scroll to discover" data-es="Desliza para descubrir">Scroll to discover</span><i></i><b>00</b></div>
+      <a class="hx-talk" href="contact.html"><span data-decode data-en="Talk with us" data-es="Habla con nosotros">Talk with us</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg></a>
+    </div>
   </div>
-  <div class="hero-dots" id="heroDots"></div>
-  <div class="scroll-hint"><span data-en="Scroll" data-es="Desliza">Scroll</span><i></i></div>
 </section>
 
 <!-- ============ TRUST STRIP ============ -->
@@ -147,18 +212,22 @@
   </div>
 </section>
 
-<!-- ============ GALLERY REEL ============ -->
-<section class="section-sm paper-bg">
-  <div class="wrap">
-    <div class="center reveal" style="margin-bottom:30px">
-      <p class="eyebrow" style="justify-content:center" data-en="Follow Our Adventures" data-es="Síguenos">Follow Our Adventures</p>
-      <h2 style="font-size:clamp(28px,4vw,44px)"><a href="https://instagram.com/galapagoshookadventure" target="_blank" rel="noopener" style="color:inherit">@galapagoshookadventure</a></h2>
-      <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap">
-        <a class="btn btn-ink btn-sm" href="https://instagram.com/galapagoshookadventure" target="_blank" rel="noopener" data-en="Follow on Instagram" data-es="Síguenos en Instagram">Follow on Instagram</a>
-        <a class="btn btn-ghost btn-sm" href="https://tiktok.com/@galapagoshookadve" target="_blank" rel="noopener" data-en="Watch on TikTok" data-es="Míranos en TikTok">Watch on TikTok</a>
+<!-- ============ GALLERY MOSAIC (columnas de fotos que corren sin fin) ============ -->
+<section class="mz" id="mosaic">
+  <div class="mz-copy">
+    <div class="mz-copy-in">
+      <p class="eyebrow" data-en="Follow Our Adventures" data-es="Síguenos">Follow Our Adventures</p>
+      <h2 class="mz-h"><a href="https://instagram.com/galapagoshookadventure" target="_blank" rel="noopener"><span class="ln"><span>@galapagos</span></span><span class="ln"><span>hook</span></span><span class="ln"><span>adventure</span></span></a></h2>
+      <p class="mz-p" data-html data-en="&lt;b&gt;Real catches&lt;/b&gt; and real days on the water, straight from our boats in San Cristóbal. Follow along on Instagram and TikTok." data-es="&lt;b&gt;Capturas reales&lt;/b&gt; y días reales en el mar, directo desde nuestros botes en San Cristóbal. Síguenos en Instagram y TikTok."><b>Real catches</b> and real days on the water, straight from our boats in San Cristóbal. Follow along on Instagram and TikTok.</p>
+      <div class="mz-acts">
+        <a class="mz-pill" href="https://instagram.com/galapagoshookadventure" target="_blank" rel="noopener"><b data-en="Follow on Instagram" data-es="Síguenos en Instagram">Follow on Instagram</b><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.3" fill="currentColor"/></svg></i></a>
+        <a class="mz-link" href="https://tiktok.com/@galapagoshookadve" target="_blank" rel="noopener"><span data-en="Watch on TikTok" data-es="Míranos en TikTok">Watch on TikTok</span><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3c.3 2.5 1.8 4 4.5 4.2v3C18 10 16.5 9.5 15 8.6V15a5.5 5.5 0 11-5.5-5.5c.3 0 .7 0 1 .1v3.1a2.5 2.5 0 101.8 2.4V3z" fill="currentColor"/></svg></i></a>
       </div>
     </div>
-    <div class="reel" id="galleryReel"></div>
+  </div>
+  <div class="mz-stage">
+    <div class="mz-grid" aria-hidden="true"></div>
+    <button class="mz-pause" type="button" aria-pressed="false"><svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg><svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg><span class="mz-sr" data-en="Pause the photo wall" data-es="Pausar el muro de fotos">Pause the photo wall</span></button>
   </div>
 </section>
 
@@ -184,6 +253,8 @@
 <script src="https://js.stripe.com/v3/"></script>
 <script src="assets/js/payments.js"></script>
 <script src="assets/js/app.js?v=hp10"></script>
+<script src="assets/js/mosaic.js"></script>
+<script src="assets/js/hero-scroll.js"></script>
 <!-- FishingBooker Direct: additional booking channel for fishing (does not touch Stripe/checkout) -->
 <script src="https://fishingbooker.com/embeds/integration/v1"></script>
 </body>

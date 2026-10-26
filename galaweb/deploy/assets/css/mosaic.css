@@ -1,0 +1,101 @@
+/* ====================================================
+   MOSAICO "SÍGUENOS"
+   Columnas de fotos y bloques de color que corren sin fin, alternando el
+   sentido, a la velocidad de la referencia: una tarjeta cada 2,92 s.
+   El movimiento vive bajo html.mx (motion.js): sin JS, con "reducir
+   movimiento" o con ?motion=off el muro queda quieto.
+   ==================================================== */
+.mz{
+  --col:200px; --gap:13px; --r:22px; --tile:calc(var(--col) * 1.3125);
+  --mz-grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  position:relative;overflow:hidden;background:var(--paper);
+  height:clamp(640px,100svh,880px);
+}
+
+/* Texto: titular enorme en tres líneas, párrafo y llamados */
+.mz-copy{position:relative;z-index:2;height:100%;max-width:var(--maxw);margin:0 auto;padding:0 28px;display:flex;align-items:center;pointer-events:none}
+.mz-copy-in{width:min(480px,38vw);pointer-events:auto}
+.mz-h{font-family:var(--display);font-weight:800;text-transform:uppercase;font-size:clamp(46px,6.1vw,82px);line-height:.94;letter-spacing:-.05em;color:var(--ink);margin:0 0 26px}
+.mz-h a{display:block;color:inherit;transition:color .3s}
+.mz-h a:hover{color:var(--sea-deep)}
+.mz-h .ln{display:block;overflow:hidden;padding:.07em .03em .03em;margin:-.07em -.03em -.03em}
+.mz-h .ln>span{display:block}
+.mz-p{font-size:18px;line-height:1.48;color:var(--ink);max-width:30em;margin:0}
+.mz-p b{font-weight:700}
+
+.mz-acts{display:flex;align-items:center;flex-wrap:wrap;gap:16px 26px;margin-top:34px}
+.mz-pill{display:inline-flex;align-items:center;gap:5px}
+.mz-pill b{display:inline-flex;align-items:center;height:60px;padding:0 26px;border-radius:22px;background:var(--ink);color:var(--paper);font:700 13.5px/1 var(--body);letter-spacing:.07em;text-transform:uppercase;transition:background .3s}
+.mz-pill i{display:grid;place-items:center;width:60px;height:60px;border-radius:50%;background:var(--gold);color:var(--deep);transition:transform .5s var(--ease),background .3s}
+.mz-pill:hover b{background:var(--deep)}
+.mz-pill:hover i{background:var(--gold-soft);transform:rotate(-12deg)}
+.mz-pill svg{width:21px;height:21px}
+.mz-link{display:inline-flex;align-items:center;gap:12px;font:700 15px/1.2 var(--body);color:var(--ink)}
+.mz-link i{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;border:1.5px solid var(--ink);transition:background .3s,color .3s}
+.mz-link svg{width:17px;height:17px}
+.mz-link:hover i{background:var(--ink);color:var(--paper)}
+.mz-h a:focus-visible,.mz-pill:focus-visible,.mz-link:focus-visible,.mz-pause:focus-visible{outline:2px solid var(--sea);outline-offset:3px;border-radius:24px}
+
+/* Muro: columnas que se recortan contra los bordes de la sección */
+.mz-stage{position:absolute;top:0;bottom:0;right:clamp(28px,4.8vw,62px);width:calc(var(--n,3) * var(--col) + (var(--n,3) - 1) * var(--gap))}
+.mz-grid{position:absolute;inset:0;display:flex;gap:var(--gap);overflow:hidden}
+.mz-col{flex:0 0 var(--col);min-width:0}
+.mz-track{display:flow-root;will-change:transform}   /* flow-root: el margen de la última tarjeta cuenta en la altura */
+/* quieto (sin movimiento): las columnas pares bajan media tarjeta para mantener el escalonado */
+html:not(.mx) .mz-col:nth-child(even) .mz-track{transform:translate3d(0,calc((var(--tile) + var(--gap)) * -.42),0)}
+/* margen (no gap) para que el -50 % del recorrido calce exacto con la copia */
+.mz-cell{position:relative;height:var(--tile);margin-bottom:var(--gap);border-radius:var(--r);overflow:hidden;background:var(--deep-2);isolation:isolate}
+.mz-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s ease}
+.mz-cell img.is-ready{opacity:1}
+.mz-solid::after{content:"";position:absolute;inset:0;background-image:var(--mz-grain);background-size:180px;opacity:.13;mix-blend-mode:multiply;pointer-events:none}
+.mz-gold{background:var(--gold)}
+.mz-goldsoft{background:var(--gold-soft)}
+.mz-sea{background:var(--sea)}
+.mz-sand{background:var(--sand-2);box-shadow:inset 0 0 0 1px #e2d7bf}
+.mz-deep{background:var(--deep);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+.mz-deep::after{mix-blend-mode:screen;opacity:.06}
+.mz-logo{display:grid;place-items:center;background:var(--deep);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+.mz-logo img{position:static;width:80%;height:auto;opacity:1;filter:drop-shadow(0 10px 18px rgba(0,0,0,.45))}
+
+/* Pausa (solo aparece cuando el muro se mueve); a la izquierda para no chocar con WhatsApp */
+.mz-pause{position:absolute;left:14px;bottom:14px;z-index:3;display:none;place-items:center;width:46px;height:46px;border-radius:50%;background:var(--deep);color:var(--gold-soft);box-shadow:var(--shadow-sm);transition:background .3s}
+.mz-pause:hover{background:var(--deep-3)}
+.mz-pause svg{width:18px;height:18px}
+.mz-pause .i-play,.mz.is-paused .mz-pause .i-pause{display:none}
+.mz.is-paused .mz-pause .i-play{display:block}
+.mz-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Celular y tablet: texto arriba, muro abajo a todo el ancho */
+@media (max-width:1079px){
+  .mz{--gap:9px;--r:16px;height:auto}
+  .mz-copy{height:auto;display:block;padding:clamp(56px,10vw,84px) 20px 30px}
+  .mz-copy-in{width:auto;max-width:560px}
+  .mz-stage{position:relative;top:auto;bottom:auto;right:auto;width:auto;height:clamp(420px,112vw,640px);margin:0 16px}
+}
+
+@keyframes mzUp{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,-50%,0)}}
+@keyframes mzDown{from{transform:translate3d(0,-50%,0)}to{transform:translate3d(0,0,0)}}
+
+@media (prefers-reduced-motion:no-preference){
+  /* Recorrido sin fin: quieto hasta que la sección se ve, pausa al pasar el mouse */
+  .mx .mz-track{animation:mzUp var(--dur,40s) linear var(--delay,0s) infinite;animation-play-state:paused}
+  .mx .mz-col.is-down .mz-track{animation-name:mzDown}
+  .mx .mz.mz-run .mz-track{animation-play-state:running}
+  .mx .mz.is-paused .mz-track{animation-play-state:paused}
+  @media (hover:hover){ .mx .mz-grid:hover .mz-track{animation-play-state:paused} }
+  .mx .mz-pause{display:grid}
+
+  /* Entrada: líneas del titular que suben, columnas que llegan en su propio sentido */
+  .mx .mz-h .ln>span{transform:translateY(110%);transition:transform 1s var(--mx-out)}
+  .mx .mz.mz-in .mz-h .ln>span{transform:none}
+  .mx .mz.mz-in .mz-h .ln:nth-child(1)>span{transition-delay:.1s}
+  .mx .mz.mz-in .mz-h .ln:nth-child(2)>span{transition-delay:.185s}
+  .mx .mz.mz-in .mz-h .ln:nth-child(3)>span{transition-delay:.27s}
+  .mx .mz-p,.mx .mz-acts>*{opacity:0;translate:0 14px;transition:opacity .9s var(--mx-out),translate .9s var(--mx-out)}
+  .mx .mz.mz-in .mz-p{opacity:1;translate:0 0;transition-delay:.5s}
+  .mx .mz.mz-in .mz-acts>*{opacity:1;translate:0 0}
+  .mx .mz.mz-in .mz-acts>:nth-child(1){transition-delay:.66s}
+  .mx .mz.mz-in .mz-acts>:nth-child(2){transition-delay:.74s}
+  .mx .mz-col{opacity:0;transform:translate3d(0,var(--from,22%),0);transition:opacity 1s ease,transform 2.1s cubic-bezier(.22,1,.36,1);transition-delay:calc(var(--ci,0) * 90ms)}
+  .mx .mz.mz-in .mz-col{opacity:1;transform:none}
+}
