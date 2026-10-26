@@ -628,6 +628,8 @@ select option:disabled{ color:rgba(251,248,241,.5); }
 .bk-cards{display:flex;gap:8px;margin-bottom:14px;}
 .bk-cards span{font-size:11px;font-weight:800;letter-spacing:.04em;padding:5px 9px;border-radius:5px;background:var(--foam);color:var(--sea-deep);}
 .bk-secure{text-align:center;font-size:12px;color:var(--ink-soft);margin-top:14px;}
+.bk-policy{font-size:13px;line-height:1.5;color:var(--ink);margin:4px 0 10px;}
+.bk-policy a{color:inherit;text-decoration:underline;}
 .bk-success{display:none;padding:56px 40px 50px;text-align:center;}
 .bk-success.show{display:block;}
 .bk-success .tick{width:78px;height:78px;border-radius:50%;background:#e3f2e9;color:#1f8a5b;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;}

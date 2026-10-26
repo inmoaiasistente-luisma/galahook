@@ -179,6 +179,10 @@ function ymdYearsAgo(n) {
   ok('36 terms.html: el diseño pertenece a Loan-IX Softworks', /el diseño del sitio pertenece a Loan-IX Softworks/.test(terms));
   ok('37 sin marcadores [PENDING] ni RUC inventado en las páginas legales', [priv, legal, terms].every(function (s) { return !/\[PENDING/i.test(s) && !/\bRUC\b/.test(s); }));
   ok('38 pie de página: "Privacidad y Seguridad"', /data-es="Privacidad y Seguridad"/.test(app));
+  ok('39 términos: ley de Florida + derechos irrenunciables del consumidor a salvo (LODC art. 43)',
+    /se rigen por las leyes del estado de Florida/.test(terms) && /que no puedan renunciarse/.test(terms) && !/se rigen por las leyes de Ecuador/.test(terms));
+  ok('40 checkout: política "sin reembolso" visible ANTES de pagar + enlace a términos (Fla. Stat. 559.9335(10))',
+    /id="bkPolicy"[\s\S]{0,200}id="bkPayBtn"/.test(app) && /días o menos: <b>sin reembolso<\/b>/.test(app) && /href="terms\.html" target="_blank"/.test(app));
 
   console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);

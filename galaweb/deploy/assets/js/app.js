@@ -386,6 +386,8 @@ function buildBookingModal(){
          +'<div class="field"><label id="bkLabZip">Billing ZIP / Postal code</label><input id="bkZip" autocomplete="postal-code"></div>'
        +'</div>'
        +'<div class="field" id="bkMsgWrap" style="display:none"><label id="bkLabMsg">Your message</label><textarea id="bkMsg"></textarea></div>'
+       // Política de cancelación ANTES de cobrar (Fla. Stat. 559.9335(10); LODC Ecuador: información veraz).
+       +'<p class="bk-policy" id="bkPolicy"></p>'
        +'<button type="submit" class="btn btn-gold btn-block" id="bkPayBtn" style="margin-top:6px">Pay</button>'
        +'<p class="bk-secure" id="bkSecure"></p>'
      +'</form>'
@@ -425,6 +427,10 @@ function applyBookingLang(){
   set('bkLabMsg', es?'Tu mensaje':'Your message');
   const pt=document.getElementById('bkPayTitle'); if(pt) pt.innerHTML=svg('shield')+(es?'Pago':'Payment');
   set('bkSecure', es?'🔒 Pago seguro · procesado por Stripe':'🔒 Secure checkout · powered by Stripe');
+  const cd=S.meta.cancelDays||15, pol=document.getElementById('bkPolicy');
+  if(pol) pol.innerHTML=es
+    ?('Cancelación con más de '+cd+' días de anticipación: reembolso del 100%. Con '+cd+' días o menos: <b>sin reembolso</b>. Al reservar aceptas los <a href="terms.html" target="_blank" rel="noopener">Términos y Condiciones</a>.')
+    :('Cancel more than '+cd+' days before: 100% refund. '+cd+' days or less: <b>no refund</b>. By booking you accept the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>.');
   renderBkNotes();   // relocaliza cabecera y casilla de notas
 }
 /* Renderiza las notas importantes activas del tour y, si corresponde, la
