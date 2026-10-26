@@ -139,6 +139,39 @@ async function syncBookingIntakeStatus(bookingId, formStatus) {
 
 function isReadonlyStatus(status) { return READONLY_STATUSES.indexOf(status) !== -1; }
 
+/* ---------------- consentimiento expreso (LOPDP arts. 21 y 26) ----------------
+   Version del texto de la casilla en passengers.js; subirla si el texto cambia. */
+const DATA_CONSENT_VERSION = '2026-10';
+const SENSITIVE_PAX_FIELDS = ['special_assistance', 'dietary_requirements', 'accessibility_or_mobility_needs'];
+
+function hasText(v) { return typeof v === 'string' && v.trim() !== ''; }
+
+/** true si la persona tiene menos de 18 años en refYmd (fechas YYYY-MM-DD). */
+function isMinorOn(dob, refYmd) {
+  if (!dob || !refYmd) return false;
+  const b = String(dob).split('-'); const t = String(refYmd).split('-');
+  if (b.length !== 3 || t.length !== 3) return false;
+  let age = (+t[0]) - (+b[0]);
+  const mDiff = (+t[1]) - (+b[1]);
+  if (mDiff < 0 || (mDiff === 0 && (+t[2]) < (+b[2]))) age -= 1;
+  return age >= 0 && age < 18;
+}
+
+/**
+ * true si lo que se va a guardar exige la autorizacion expresa: algun dato
+ * opcional de asistencia/alimentacion/accesibilidad/movilidad, notas de
+ * accesibilidad del hotel (solo se guardan si pide hotel), o algun menor.
+ */
+function needsDataConsent(passengers, lodging, todayYmd) {
+  const list = Array.isArray(passengers) ? passengers : [];
+  for (const p of list) {
+    if (!p || typeof p !== 'object') continue;
+    for (const k of SENSITIVE_PAX_FIELDS) if (hasText(p[k])) return true;
+    if (isMinorOn(p.date_of_birth, todayYmd)) return true;
+  }
+  return !!(lodging && typeof lodging === 'object' && lodging.needs_hotel === true && hasText(lodging.accessibility_notes));
+}
+
 /* ---------------- contrato para Milu Turismo ---------------- */
 function ageCategoryAt(dob, travelDate) {
   if (!dob || !travelDate) return null;
@@ -257,5 +290,6 @@ module.exports = {
   ELIGIBLE_BOOKING_STATUSES, READONLY_STATUSES, FORM_TO_BOOKING_STATUS, FORM_TTL_DAYS,
   signFormToken, verifyFormToken, buildFormUrl, buildFormUrlForAccess, computeExpiry,
   isIntakeEligible, ensurePassengerForm, syncBookingIntakeStatus, isReadonlyStatus,
-  ageCategoryAt, buildTravelRequirements
+  ageCategoryAt, buildTravelRequirements,
+  DATA_CONSENT_VERSION, isMinorOn, needsDataConsent
 };

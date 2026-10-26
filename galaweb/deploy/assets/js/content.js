@@ -28,7 +28,7 @@ window.GHA_DEFAULT = {
     notifyEmail: "",      /* sin uso — el buzón interno es BOOKING_NOTIFICATION_EMAIL */
     stripeKey: "",        /* sin uso — la clave publicable la sirve /api/stripe-config */
     formEndpoint: "",     /* sin uso — los correos salen de Resend en el servidor */
-    cancelDays: 30        /* free cancellation window (sí se usa en los textos) */
+    cancelDays: 15        /* free cancellation: MORE than this many days before (sí se usa en los textos) */
   },
 
   hero: {
@@ -181,9 +181,9 @@ window.GHA_DEFAULT = {
     items: [
       { en: "Full payment is required to reserve your place.", es: "Se requiere el pago completo para reservar tu lugar." },
       { en: "If availability differs from what's shown on the site, we'll notify you within 24 hours of your reservation — you may then pick another date or receive a refund.", es: "Si la disponibilidad difiere de lo mostrado en el sitio, te avisaremos dentro de las 24 horas de tu reserva; podrás elegir otra fecha o recibir un reembolso." },
-      { en: "Cancellation 30 days or more before the activity: 100% refund.", es: "Cancelación con 30 días o más de anticipación: reembolso del 100%." },
-      { en: "Cancellation 30 days or less before the activity: no refund.", es: "Cancelación con 30 días o menos de anticipación: sin reembolso." },
-      { en: "A reservation made and confirmed 30 days or less before the date is non-refundable.", es: "Una reserva hecha y confirmada con 30 días o menos de anticipación no es reembolsable." },
+      { en: "Cancellation more than 15 days before the activity: 100% refund.", es: "Cancelación con más de 15 días de anticipación: reembolso del 100%." },
+      { en: "Cancellation 15 days or less before the activity: no refund.", es: "Cancelación con 15 días o menos de anticipación: sin reembolso." },
+      { en: "A reservation made and confirmed 15 days or less before the date is non-refundable.", es: "Una reserva hecha y confirmada con 15 días o menos de anticipación no es reembolsable." },
       { en: "Itineraries may change without notice. Española tours run on Thursdays.", es: "Los itinerarios pueden cambiar sin previo aviso. Los tours a Española se realizan los jueves." },
       { en: "Date changes carry additional charges — contact us for any itinerary change.", es: "Los cambios de fecha tienen cargos adicionales; contáctanos para cualquier cambio de itinerario." },
       { en: "Ecuadorian travelers: 15% IVA tax is added to the displayed amount.", es: "Viajeros ecuatorianos: se añade el 15% de IVA al monto mostrado." }
