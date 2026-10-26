@@ -23,17 +23,41 @@
 <meta name="theme-color" content="#0d2b2a">
 <link rel="icon" href="assets/img/logo.png">
 <link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/motion.css">
+<link rel="stylesheet" href="assets/css/page-hero.css">
+<script src="assets/js/motion.js"></script>
 </head>
 <body data-page="tours">
 <header class="site-header" id="site-header"></header>
 
-<section class="pagehero">
-  <div class="pagehero-bg" style="background-image:url(assets/img/school-fish.jpg)"></div>
-  <div class="pagehero-inner"><div class="wrap">
-    <p class="breadcrumb"><a href="index.html" data-en="Home" data-es="Inicio">Home</a> · <span data-en="Tours" data-es="Tours">Tours</span></p>
-    <h1 data-en="Ocean Tours & Adventures" data-es="Tours Oceánicos y Aventuras">Ocean Tours &amp; Adventures</h1>
-    <p class="lead" data-en="Small groups, certified local guides and the boats we run ourselves — across San Cristóbal and the central islands." data-es="Grupos pequeños, guías locales certificados y los botes que operamos nosotros mismos — por San Cristóbal y las islas centrales."></p>
-  </div></div>
+<!-- Cabecera "viva": foto nueva o la de siempre + video en bucle de Higgsfield/Kling.
+     Estilos en page-hero.css, lógica en page-hero.js. Sin movimiento queda la foto quieta. -->
+<section class="pagehero ph" data-ph-run>
+  <div class="ph-stage">
+    <div class="ph-media" aria-hidden="true">
+      <picture>
+        <source media="(max-aspect-ratio: 3/4)" srcset="assets/img/hero/tours-portrait.jpg">
+        <img src="assets/img/hero/tours-1600.jpg" alt="" fetchpriority="high" decoding="async">
+      </picture>
+      <video class="ph-loop" muted playsinline loop preload="none" data-src="assets/video/tours-vivo"></video>
+    </div>
+    <div class="ph-shade"></div>
+    <div class="ph-frame" aria-hidden="true"><svg><path pathLength="1"/></svg><i></i><i></i></div>
+    <div class="ph-copy"><div class="wrap">
+      <p class="breadcrumb"><a href="index.html" data-en="Home" data-es="Inicio">Home</a> · <span data-decode data-en="Tours" data-es="Tours">Tours</span></p>
+      <div class="ph-title"><h1 data-en="Ocean Tours & Adventures" data-es="Tours Oceánicos y Aventuras">Ocean Tours &amp; Adventures</h1></div>
+      <p class="lead" data-en="Small groups, certified local guides and the boats we run ourselves — across San Cristóbal and the central islands." data-es="Grupos pequeños, guías locales certificados y los botes que operamos nosotros mismos — por San Cristóbal y las islas centrales."></p>
+    </div></div>
+    <div class="ph-dock">
+      <button class="ph-pause" type="button" aria-pressed="false">
+        <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+        <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>
+        <span class="t-pause" data-en="Pause" data-es="Pausar">Pause</span><span class="t-play" data-en="Play" data-es="Reproducir">Play</span>
+      </button>
+      <div class="ph-cue" aria-hidden="true"><span data-en="Scroll to discover" data-es="Desliza para descubrir">Scroll to discover</span><i></i><b>00</b></div>
+      <a class="ph-talk" href="contact.html"><span data-decode data-en="Talk with us" data-es="Habla con nosotros">Talk with us</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg></a>
+    </div>
+  </div>
 </section>
 
 <section class="section paper-bg">
@@ -60,5 +84,6 @@
 <script src="https://js.stripe.com/v3/"></script>
 <script src="assets/js/payments.js"></script>
 <script src="assets/js/app.js?v=hp10"></script>
+<script src="assets/js/page-hero.js"></script>
 </body>
 </html>

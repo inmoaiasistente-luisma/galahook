@@ -1,0 +1,164 @@
+/* ====================================================
+   HERO "ENTRADA"
+   Kicker Rock al amanecer: la foto mejorada respira sola (video en bucle) y,
+   al bajar, la cámara avanza hacia León Dormido y termina bajo el agua.
+   Marco con esquinas cortadas, índice de capítulos y barra inferior.
+   Sin html.mx (sin JS, "reducir movimiento" o ?motion=off): una sola
+   pantalla quieta con la foto y el titular, como el hero de hoy.
+   ==================================================== */
+.hero.hx{
+  --hx-top:132px; --hx-side:22px; --hx-line:rgba(228,201,140,.5); --hx-c:14px;
+  display:block;min-height:0;overflow:clip;
+}
+.hero.hx::after{content:none}
+.hx-stage{position:relative;height:100vh;height:100svh;min-height:560px;overflow:hidden;isolation:isolate}
+
+/* Imagen y videos */
+.hx-media{position:absolute;inset:-14px;z-index:0;background:var(--deep);transform:translate3d(var(--hx-mx,0px),var(--hx-my,0px),0)}
+.hx-media img,.hx-media video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:57% 50%}
+.hx-scrub,.hx-loop{opacity:0;transition:opacity .8s ease}
+.hx.is-ready .hx-scrub{opacity:1}
+.hx.loop-ok.is-live .hx-loop{opacity:1}
+/* Bajo el agua: sube desde abajo como una línea de agua */
+.hx-deep{position:absolute;inset:0;clip-path:inset(calc(var(--hx-dive,100) * 1%) 0 0 0)}
+.hx-deep img{transform:scale(var(--hx-ds,1.12));transform-origin:30% 40%}
+.hx-tide{position:absolute;left:0;right:0;top:calc(var(--hx-dive,100) * 1%);height:1px;background:var(--gold-soft);box-shadow:0 0 18px 2px rgba(228,201,140,.55);opacity:var(--hx-to,0)}
+.hx-shade{position:absolute;inset:0;pointer-events:none;
+  background:
+    linear-gradient(180deg,rgba(8,32,31,.55) 0%,rgba(8,32,31,0) 26%),
+    linear-gradient(0deg,rgba(8,32,31,.92) 0%,rgba(8,32,31,.5) 30%,rgba(8,32,31,0) 58%),
+    linear-gradient(90deg,rgba(8,32,31,.45) 0%,rgba(8,32,31,0) 55%),
+    linear-gradient(270deg,rgba(8,32,31,.5) 0%,rgba(8,32,31,0) 26%)}
+
+/* Marco: líneas finas con las esquinas cortadas (el trazo lo dibuja hero-scroll.js) */
+.hx-frame{position:absolute;z-index:2;top:var(--hx-top);left:var(--hx-side);right:var(--hx-side);bottom:var(--hx-side);pointer-events:none}
+.hx-frame svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.hx-frame path{fill:none;stroke:var(--hx-line);stroke-width:1}
+.hx-frame i{position:absolute;width:5px;height:5px;background:var(--gold);transform:translate(-50%,-50%) rotate(45deg)}
+.hx-frame i:nth-of-type(1){left:50%;top:0}
+.hx-frame i:nth-of-type(2){left:50%;top:100%}
+
+/* Texto de cada capítulo: abajo a la izquierda, como el hero de siempre */
+.hx-copy{position:absolute;z-index:3;left:0;right:0;bottom:calc(var(--hx-side) + 92px)}
+.hx .hx-copy .wrap-wide{padding-left:clamp(28px,4vw,64px);padding-right:clamp(28px,4vw,64px)}
+.hx h1{font-size:clamp(52px,9.4vw,136px)}
+.hx .eyebrow{color:var(--gold-soft);text-shadow:0 1px 10px rgba(0,0,0,.45)}
+.hx .lead{max-width:44ch;margin:22px 0 30px}
+.hx-copy:not(.hx-c0){pointer-events:none}
+.hx-copy:not(.hx-c0).is-on{pointer-events:auto}
+.hx-label{display:flex;align-items:center;gap:12px;margin:0 0 18px;font:700 12.5px/1 var(--body);letter-spacing:.22em;text-transform:uppercase;color:var(--gold-soft)}
+.hx-label b{color:var(--gold);font-family:var(--display);letter-spacing:.06em}
+.hx-label::before{content:"";width:26px;height:1.5px;background:var(--gold)}
+.hx-h{font-family:var(--display);font-weight:800;text-transform:uppercase;font-size:clamp(42px,6.6vw,96px);line-height:.9;letter-spacing:-.03em;color:var(--paper);margin:0;text-shadow:0 6px 40px rgba(0,0,0,.4)}
+.hx-h .ln{display:block;overflow:hidden;padding:.08em .04em .02em;margin:-.08em -.04em -.02em}
+.hx-h .ln>span{display:block}
+.hx-h .h-script{display:block;font-size:.86em;text-transform:none;font-weight:600;margin-top:.02em;text-shadow:0 4px 30px rgba(0,0,0,.3)}
+.hx-p{max-width:40ch;margin:20px 0 0;font-size:clamp(17px,1.6vw,20px);line-height:1.55;color:rgba(255,255,255,.9)}
+.hx-acts{display:flex;flex-wrap:wrap;gap:14px;margin-top:28px}
+
+/* Botones con esquinas cortadas: dorado sólido y vidrio con línea fina */
+.hx .btn{position:relative;border-radius:0;clip-path:polygon(var(--hx-c) 0,100% 0,100% calc(100% - var(--hx-c)),calc(100% - var(--hx-c)) 100%,0 100%,0 var(--hx-c))}
+/* vidrio: la línea recta es una sombra interior; las dos diagonales, degradados en las esquinas */
+.hx .btn-ghost{
+  --e:rgba(251,248,241,.62);
+  border-color:transparent;color:var(--paper);background-color:rgba(251,248,241,.1);
+  background-image:
+    linear-gradient(to bottom right,transparent calc(50% + .1px),var(--e) calc(50% + .1px),var(--e) calc(50% + 1.3px),transparent calc(50% + 1.3px)),
+    linear-gradient(to bottom right,transparent calc(50% - 1.3px),var(--e) calc(50% - 1.3px),var(--e) calc(50% - .1px),transparent calc(50% - .1px));
+  background-size:var(--hx-c) var(--hx-c);background-position:0 0,100% 100%;background-repeat:no-repeat;
+  box-shadow:inset 0 0 0 1px var(--e);
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.hx .btn-ghost:hover{background-color:rgba(251,248,241,.24);border-color:transparent;color:var(--paper)}
+
+/* Índice de capítulos (derecha): número, nombre y una barra que se llena */
+.hx-rail{position:absolute;z-index:3;right:calc(var(--hx-side) + 26px);top:50%;transform:translateY(-50%);list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.hx-rail button{display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:12px;row-gap:7px;width:178px;padding:10px 12px;text-align:left;color:rgba(251,248,241,.72);font:600 12px/1 var(--body);letter-spacing:.2em;text-transform:uppercase;text-shadow:0 1px 10px rgba(0,0,0,.55);transition:color .3s}
+.hx-rail b{font-family:var(--display);font-weight:700;letter-spacing:.04em;color:inherit}
+.hx-rail i{grid-column:1 / -1;display:block;height:1px;background:rgba(251,248,241,.22);overflow:hidden}
+.hx-rail i::after{content:"";display:block;height:100%;background:var(--gold);transform:scaleX(var(--f,0));transform-origin:0 50%}
+.hx-rail button:hover,.hx-rail .is-on button{color:var(--paper)}
+.hx-rail .is-on b{color:var(--paper)}
+.hx-rail .is-on i{background:rgba(251,248,241,.4)}
+.hx-rail button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* Barra inferior: pausa · desliza · habla con nosotros (deja libre el botón de WhatsApp) */
+.hx-dock{position:absolute;z-index:4;left:calc(var(--hx-side) + 22px);right:110px;bottom:calc(var(--hx-side) + 14px);display:flex;align-items:center;justify-content:space-between;gap:20px;font:700 11.5px/1 var(--body);letter-spacing:.22em;text-transform:uppercase;color:rgba(251,248,241,.8)}
+.hx-dock button,.hx-dock a{display:inline-flex;align-items:center;gap:10px;min-height:44px;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;text-shadow:0 1px 10px rgba(0,0,0,.5);transition:color .3s}
+.hx-dock button:hover,.hx-dock a:hover{color:var(--gold-soft)}
+.hx-dock button:focus-visible,.hx-dock a:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.hx-pause svg{width:15px;height:15px}
+.hx-pause .i-play,.hx-pause .t-play,.hx.is-paused .hx-pause .i-pause,.hx.is-paused .hx-pause .t-pause{display:none}
+.hx.is-paused .hx-pause .i-play,.hx.is-paused .hx-pause .t-play{display:inline}
+.hx-cue{display:flex;align-items:center;gap:14px;white-space:nowrap}
+.hx-cue i{position:relative;display:block;width:120px;height:1px;background:rgba(251,248,241,.25);overflow:hidden}
+.hx-cue i::after{content:"";position:absolute;inset:0;background:var(--gold);transform:scaleX(var(--hx-p,0));transform-origin:0 50%}
+.hx-cue b{font-family:var(--display);font-weight:700;letter-spacing:.06em;color:var(--gold-soft);min-width:2.2em}
+.hx-talk svg{width:16px;height:16px;transition:transform .3s var(--ease)}
+.hx-talk:hover svg{transform:translateX(3px)}
+
+/* ---------- Sin movimiento: una pantalla, la foto quieta y el primer capítulo ---------- */
+html:not(.hx-on) .hx-scrub,html:not(.hx-on) .hx-loop,html:not(.hx-on) .hx-deep,html:not(.hx-on) .hx-tide,
+html:not(.hx-on) .hx-copy:not(.hx-c0),html:not(.hx-on) .hx-rail,html:not(.hx-on) .hx-cue,html:not(.hx-on) .hx-pause{display:none}
+
+/* ---------- Con movimiento: la sección es larga y el escenario queda fijo mientras se recorre ---------- */
+@media (prefers-reduced-motion:no-preference){
+  html.hx-on,html.hx-on body{overflow-x:clip}   /* hidden rompe position:sticky */
+  .hx-on .hero.hx{height:360vh;height:360svh}
+  .hx-on .hx-stage{position:sticky;top:0}
+
+  /* Capítulo 1 se va hacia arriba; 2 y 3 entran con líneas enmascaradas */
+  .hx-on .hx-c0{transition:opacity .7s var(--mx-out),transform .9s var(--mx-out),filter .7s}
+  .hx-on .hx-c0.is-off{opacity:0;transform:translate3d(0,-46px,0);filter:blur(6px);pointer-events:none}
+  .hx-on .hx-copy:not(.hx-c0) .hx-label,.hx-on .hx-copy:not(.hx-c0) .hx-p,.hx-on .hx-copy:not(.hx-c0) .hx-acts{opacity:0;translate:0 16px;transition:opacity .5s var(--mx-out),translate .5s var(--mx-out)}
+  .hx-on .hx-copy:not(.hx-c0) .ln>span{transform:translateY(112%);transition:transform .6s var(--mx-out)}
+  .hx-on .hx-copy:not(.hx-c0) .h-script{clip-path:inset(-30% 100% -30% 0);transition:clip-path .7s var(--mx-out)}
+  .hx-on .hx-copy.is-on .hx-label,.hx-on .hx-copy.is-on .hx-p,.hx-on .hx-copy.is-on .hx-acts{opacity:1;translate:0 0;transition-duration:.9s}
+  .hx-on .hx-copy.is-on .hx-p{transition-delay:.45s}
+  .hx-on .hx-copy.is-on .hx-acts{transition-delay:.6s}
+  .hx-on .hx-copy.is-on .ln>span{transform:none;transition-duration:1.1s;transition-delay:.12s}
+  .hx-on .hx-copy.is-on .h-script{clip-path:inset(-30% -10% -30% -2%);transition-duration:1.2s;transition-delay:.4s}
+
+  /* Entrada de la página: el marco se dibuja, el índice y la barra aparecen.
+     Va con .mx (se pone en <head>) para que nada se asome antes de tiempo */
+  .mx .hx-frame path{stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 2.2s cubic-bezier(.65,0,.35,1) .2s}
+  .mx .hero.mx-in .hx-frame path{stroke-dashoffset:0}
+  .mx .hx-frame i{opacity:0;transition:opacity .6s ease 1.6s}
+  .mx .hero.mx-in .hx-frame i{opacity:1}
+  .mx .hx-rail li,.mx .hx-dock>*{opacity:0;translate:0 12px;transition:opacity .8s var(--mx-out),translate .8s var(--mx-out)}
+  .mx .hero.mx-in .hx-rail li,.mx .hero.mx-in .hx-dock>*{opacity:1;translate:0 0}
+  .mx .hero.mx-in .hx-rail li:nth-child(1){transition-delay:1.2s}
+  .mx .hero.mx-in .hx-rail li:nth-child(2){transition-delay:1.3s}
+  .mx .hero.mx-in .hx-rail li:nth-child(3){transition-delay:1.4s}
+  .mx .hero.mx-in .hx-dock>:nth-child(1){transition-delay:1.5s}
+  .mx .hero.mx-in .hx-dock>:nth-child(2){transition-delay:1.6s}
+  .mx .hero.mx-in .hx-dock>:nth-child(3){transition-delay:1.7s}
+}
+
+/* ---------- Tamaños ---------- */
+@media (max-width:1180px){
+  .hx-rail button{width:auto;grid-template-columns:auto;padding:8px 6px}
+  .hx-rail span{display:none}
+  .hx-rail i{width:34px}
+}
+@media (max-width:900px){
+  .hero.hx{--hx-top:104px;--hx-side:16px;--hx-c:11px}
+  .hx-rail{display:none}
+}
+@media (max-width:620px){
+  .hero.hx{--hx-top:80px;--hx-side:12px}
+  .hx-copy{bottom:calc(var(--hx-side) + 70px)}
+  .hx .hx-copy .wrap-wide{padding-left:22px;padding-right:22px}
+  .hx .lead{margin:16px 0 22px}
+  .hx-dock{left:calc(var(--hx-side) + 10px);right:90px;bottom:calc(var(--hx-side) + 6px);gap:12px;font-size:10px;letter-spacing:.14em}
+  .hx-dock .hx-talk,.hx-pause .t-pause,.hx-pause .t-play,.hx.is-paused .hx-pause .t-play,.hx-cue i{display:none}
+  .hx-cue{gap:10px}
+  .hx .btn{padding:14px 20px}
+}
+@media (max-aspect-ratio:3/4){
+  .hx-media img,.hx-media video{object-position:50% 50%}
+  .hx-media .hx-deep img{object-position:16% 50%}   /* el martillo grande queda a la vista */
+}
+@media (max-height:700px) and (min-width:621px){
+  .hx h1{font-size:clamp(48px,7vw,96px)}
+  .hx .lead{margin:14px 0 20px}
+}

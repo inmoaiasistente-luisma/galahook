@@ -1,0 +1,77 @@
+/* ====================================================
+   CAPA DE MOVIMIENTO
+   Se suma a site.css sin cambiar el diseño. Todo vive bajo html.mx, que solo
+   pone motion.js cuando el visitante acepta movimiento: sin JS, con
+   "reducir movimiento" o con ?motion=off la página queda igual que hoy.
+   ==================================================== */
+:root{
+  --mx-out:cubic-bezier(.16,1,.3,1);      /* salida rápida, llegada suave */
+  --mx-pop:cubic-bezier(.34,1.56,.64,1);  /* un pequeño rebote */
+}
+
+@media (prefers-reduced-motion:no-preference){
+
+  /* 1 · Barra de progreso de lectura */
+  .mx-progress{position:fixed;top:0;left:0;right:0;height:3px;z-index:250;background:var(--gold);transform:scaleX(0);transform-origin:0 50%;pointer-events:none}
+
+  /* 2 · Hero: entrada en cascada */
+  .mx .mx-w{display:inline-block;overflow:hidden;vertical-align:top;padding:.2em .04em .1em;margin:-.2em -.04em -.1em}
+  .mx .mx-w>span{display:inline-block;transform:translateY(120%);transition:transform 1.1s var(--mx-out);transition-delay:calc(var(--wi,0) * 80ms + var(--wd,0ms))}
+  .mx .mx-in .mx-w>span{transform:none}
+  .mx .hero.mx-settled .mx-w{overflow:visible}
+
+  .mx .hero h1{--wd:150ms}
+  .mx .hero .h-script{clip-path:inset(-30% 100% -30% 0);transition:clip-path 1.3s var(--mx-out) .75s}
+  .mx .hero.mx-in .h-script{clip-path:inset(-30% -10% -30% -2%)}
+  .mx .hero .eyebrow,.mx .hero .lead,.mx .hero .hero-cta,.mx .hero-dots,.mx .scroll-hint{opacity:0;translate:0 18px;transition:opacity .9s var(--mx-out),translate .9s var(--mx-out)}
+  .mx .hero.mx-in .eyebrow{opacity:1;translate:0 0;transition-delay:.05s}
+  .mx .hero.mx-in .lead{opacity:1;translate:0 0;transition-delay:1s}
+  .mx .hero.mx-in .hero-cta{opacity:1;translate:0 0;transition-delay:1.15s}
+  .mx .hero.mx-in .hero-dots,.mx .hero.mx-in .scroll-hint{opacity:1;translate:0 0;transition-delay:1.4s}
+  .mx .hero-inner,.mx .hero-slides{will-change:transform}
+
+  /* 3 · Puntos del hero: el activo se vuelve una barra que se llena */
+  .mx .hero-dots button{position:relative;overflow:hidden;border-radius:5px;transition:height .45s var(--mx-out),background .3s}
+  .mx .hero-dots button.on{height:34px;transform:none;background:rgba(255,255,255,.35)}
+  .mx .hero-dots button.on::after{content:"";position:absolute;inset:0;background:var(--gold);transform-origin:50% 0;animation:mx-fill 5.2s linear forwards}
+  @keyframes mx-fill{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+
+  /* 4 · Títulos de sección: palabra por palabra + la línea dorada que crece */
+  .mx h2 .mx-w>span{transition-duration:1s;transition-delay:calc(var(--wi,0) * 60ms + 120ms)}
+  .mx .eyebrow.mx-t::before{transform:scaleX(0);transform-origin:0 50%;transition:transform .9s var(--mx-out) .15s}
+  .mx .center .eyebrow.mx-t::before{transform-origin:100% 50%}
+  .mx .eyebrow.mx-t.mx-in::before{transform:none}
+
+  /* 5 · Fotos grandes: se abren como cortina y luego flotan con el scroll */
+  .mx .split-media.mx-t{clip-path:inset(14% 10% 14% 10% round 10px);transition:clip-path 1.4s var(--mx-out)}
+  .mx .split-media.mx-t.mx-in{clip-path:inset(-14% -14% -14% -14% round 10px)}
+  .mx .split-media.mx-t img{scale:1.22;translate:0 var(--mx-py,0px);transition:scale 1.8s var(--mx-out)}
+  .mx .split-media.mx-t.mx-in img{scale:1.09}
+
+  /* 6 · Tarjetas en cascada (paquetes y tours) + zoom suave en la foto del paquete */
+  .mx .pkg-grid>.reveal,.mx #toursGrid>.reveal{transition-delay:calc(var(--i,0) * 120ms)}
+  .mx .pkg-grid.mx-done>.reveal,.mx #toursGrid.mx-done>.reveal{transition-delay:0s}
+  .mx .pkg-media img{transition:transform 1.1s var(--ease)}
+  .mx .pkg:hover .pkg-media img{transform:scale(1.06)}
+
+  /* 7 · Franja de confianza, especies y galería: entran en ola */
+  .mx .trust.mx-t .trust-item,.mx .chips.mx-t .chip,.mx .reel.mx-t>a{opacity:0;transform:translateY(16px) scale(.94);transition:opacity .6s var(--mx-out),transform .8s var(--mx-pop);transition-delay:calc(var(--i,0) * 70ms)}
+  .mx .trust.mx-in .trust-item,.mx .chips.mx-in .chip,.mx .reel.mx-in>a{opacity:1;transform:none}
+  .mx .reel.mx-t>a{transition-delay:calc(var(--i,0) * 45ms)}
+  .mx .trust-item svg{transition:transform .5s var(--mx-pop)}
+  .mx .trust-item:hover svg{transform:translateY(-4px) rotate(-6deg)}
+  .mx .chip:hover svg{animation:mx-swim .7s ease-in-out}
+  @keyframes mx-swim{35%{transform:translateX(3px) rotate(-8deg)}70%{transform:translateX(-1px) rotate(4deg)}}
+
+  /* 8 · Cifras de la familia: cuentan al aparecer */
+  .mx .stat b{font-variant-numeric:tabular-nums}
+
+  /* 9 · Botones: se acercan al cursor (solo con ratón) y se hunden al tocarlos */
+  .mx .btn{transition:transform .35s var(--ease),background .3s,color .3s,box-shadow .3s,translate .6s var(--mx-out);translate:var(--mx-bx,0px) var(--mx-by,0px)}
+  .mx .btn:active{transform:scale(.97)}
+
+  /* 10 · Llamado final: la foto de fondo se mueve más lento que la página */
+  .mx .mx-cta{position:relative;overflow:hidden;background-image:none!important}
+  .mx .mx-cta-bg{position:absolute;left:0;right:0;top:-18%;bottom:-18%;z-index:0;background-size:cover;background-position:center;will-change:transform}
+  .mx .mx-cta>.wrap{position:relative;z-index:1}
+}

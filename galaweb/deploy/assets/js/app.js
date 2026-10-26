@@ -932,7 +932,7 @@ function renderAbout(){
 }
 function renderConservation(){
   const body=document.getElementById('consBody');
-  if(body) body.innerHTML='<p>'+t(S.conservation.body)+'</p>';
+  if(body) body.innerHTML='<p>'+t(S.conservation.body)+'</p>'+(S.conservation.law?'<p>'+t(S.conservation.law)+'</p>':'');
   const pil=document.getElementById('consPillars');
   if(pil) pil.innerHTML=S.conservation.pillars.map((p,k)=>'<div class="feature reveal"><div class="ic">'+svg(['community','fish','shield','commitment'][k]||'shield')+'</div><h4>'+t(p.title)+'</h4><p>'+t(p.text)+'</p></div>').join('');
   observeReveals();

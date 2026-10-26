@@ -353,6 +353,14 @@ window.GHA_DEFAULT = {
       en: "The Galápagos gave our family everything. We run small groups, use responsible boats, practice catch-and-release, and reinvest in local conservation so these islands stay wild for the next generation.",
       es: "Galápagos le dio todo a nuestra familia. Operamos en grupos pequeños, usamos botes responsables, practicamos captura y liberación, y reinvertimos en la conservación local para que estas islas sigan salvajes para la próxima generación."
     },
+    /* Norma verificada: DPNG, Acuerdo Nº 117 (2013), Normas de manejo del Tour de Pesca Vivencial
+       en la Reserva Marina de Galápagos: "Se permite la captura y liberación ... de las especies de
+       picudo y pez espada. Se prohíbe la extracción para fines comerciales y consumo de dichas especies."
+       Fuente: https://faolex.fao.org/docs/pdf/ecu197031.pdf (consultada 2026-10-26). */
+    law: {
+      en: "Marlin are no exception. Inside the Galápagos Marine Reserve, Galápagos National Park rules allow marlin, other billfish and swordfish to be caught only to be released: keeping them to eat or to sell is prohibited. Every one goes back to the water.",
+      es: "Con el marlín no hay excepción. En la Reserva Marina de Galápagos, las normas del Parque Nacional Galápagos solo permiten pescar el marlín, los demás picudos y el pez espada en captura y liberación: está prohibido sacarlos para consumo o para venta. Cada uno vuelve al agua."
+    },
     image: "assets/img/sealion-underwater.jpg",
     pillars: [
       { title: { en: "Small Groups", es: "Grupos Pequeños" }, text: { en: "Lower impact, richer encounters.", es: "Menor impacto, mejores encuentros." } },
@@ -370,6 +378,18 @@ window.GHA_DEFAULT = {
     "assets/img/kicker-day.jpg","assets/img/fishing-mahi.jpg","assets/img/sealion-blacksand.jpg",
     "assets/img/bartolome-pinnacle.jpg","assets/img/bartolome-sailboat.jpg","assets/img/bartolome-penguins.jpg","assets/img/bartolome-onboard.jpg"
   ],
+
+  /* Mosaico "Síguenos": copias livianas (600 px de alto) en assets/img/mosaic.
+     Van en el orden en que se reparten por columnas (1ª, 2ª, 3ª, 1ª…); la pesca manda. */
+  mosaic: [
+    "f05","sealion-underwater","f08","hammerheads-cine","fishing-marlin","f13","kicker-sunrise",
+    "f06","fishing-c1","kicker-shark-cine","school-fish","f10","bartolome-pinnacle","f16",
+    "fishing-mahi","f01","sealion-blacksand","f19","fishing-release","f09",
+    "lagoon","f12","fishing-c2","f02","sea-cave","f14",
+    "f17","bartolome-penguins","f03","f11","kicker-day","f15",
+    "sealion-beach","f04","f20","bartolome-sailboat","f07","highlands-hike",
+    "f18","bartolome-onboard","bartolome-landscape"
+  ].map(n => "assets/img/mosaic/" + n + ".jpg"),
 
   /* ---------------- MAP SPOTS (San Cristóbal) ---------------- */
   mapSpots: [
