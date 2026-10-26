@@ -123,8 +123,8 @@
     var t=function(v){return v&&typeof v==='object'?(v[L]||v.en):v;};
     var ul=document.getElementById('contactInfo');
     if(ul) ul.innerHTML=
-      '<li>'+svg('pin')+'<div><small>'+(L==='es'?'Galápagos (sede)':'Galápagos (HQ)')+'</small><span>'+t(m.address)+'</span></div></li>'
-     +'<li>'+svg('pin')+'<div><small>'+(L==='es'?'Oficina EE. UU.':'USA Office')+'</small><span>'+t(m.addressUs)+'</span></div></li>'
+      '<li>'+svg('pin')+'<div><small>'+(L==='es'?'Domicilio principal · EE. UU.':'Main office · USA')+'</small><span>'+t(m.addressUs)+'</span></div></li>'
+     +'<li>'+svg('pin')+'<div><small>'+(L==='es'?'Operaciones en Galápagos':'Galápagos operations')+'</small><span>'+t(m.address)+'</span></div></li>'
      +'<li>'+svg('wa')+'<div><small>WhatsApp</small><span>+'+m.whatsapp+'</span></div></li>'
      +'<li>'+svg('phone')+'<div><small>'+(L==='es'?'Teléfono':'Phone')+'</small><span>'+m.phone+'</span></div></li>'
      +'<li>'+svg('mail')+'<div><small>Email</small><span>'+m.email+'</span></div></li>'

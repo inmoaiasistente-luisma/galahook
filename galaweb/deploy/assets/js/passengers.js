@@ -67,7 +67,8 @@
       MISSING_DOC_EXP: T('A document expiration date is missing.', 'Falta una fecha de expiración.'),
       DOC_EXPIRED: T('A document is expired.', 'Un documento está vencido.'),
       MISSING_CONNECTION_CITY: T('Please choose your connection city.', 'Elige tu ciudad de conexión.'),
-      INVALID_LODGING: T('Please review the hotel details.', 'Revisa los datos del hotel.')
+      INVALID_LODGING: T('Please review the hotel details.', 'Revisa los datos del hotel.'),
+      CONSENT_REQUIRED: T('Please tick the authorization box at the end of the form.', 'Marca la casilla de autorización al final del formulario.')
     };
     return m[code] || T('Please review the form and try again.', 'Revisa el formulario e inténtalo de nuevo.');
   }
@@ -214,6 +215,16 @@
       + '</div>';
 
     if (!ro) {
+      // Autorización expresa (LOPDP arts. 21 y 26): obligatoria para enviar.
+      html += '<div class="pf-card">'
+        + '<label class="pf-check"><input type="checkbox" id="pf_consent"' + (f.data_consent ? ' checked' : '') + '><span>'
+        + T('I authorize Galápagos Hook Adventure to use the optional special assistance, dietary, accessibility or mobility details I provided and, as parent or legal guardian, the details of any minors listed, only to organize this trip, as described in the ',
+            'Autorizo a Galápagos Hook Adventure a usar los datos opcionales de asistencia especial, alimentación, accesibilidad o movilidad que indiqué y, como padre, madre o representante legal, los datos de los menores incluidos, solo para organizar este viaje, según la ')
+        + '<a href="security-policy.html" target="_blank" rel="noopener">' + T('Privacy &amp; Security Policy', 'Política de Privacidad y Seguridad') + '</a>. '
+        + T('I can withdraw it by writing to galahookadventure@outlook.com.', 'Puedo retirarla escribiendo a galahookadventure@outlook.com.')
+        + '</span></label>'
+        + '<div class="pf-hint">' + T('Required to submit the form.', 'Obligatoria para enviar el formulario.') + '</div>'
+        + '</div>';
       html += '<div class="pf-actions">'
         + '<button class="btn btn-ink" id="pfSave" type="button">' + T('Save draft', 'Guardar borrador') + '</button>'
         + '<button class="btn btn-gold" id="pfSubmit" type="button">' + T('Submit all passengers', 'Enviar todos los pasajeros') + '</button>'
@@ -278,7 +289,7 @@
   function save(isSubmit) {
     var saveBtn = document.getElementById('pfSave'), subBtn = document.getElementById('pfSubmit');
     if (saveBtn) saveBtn.disabled = true; if (subBtn) subBtn.disabled = true;
-    var payload = { form: gatherForm(), passengers: gatherPassengers(), lodging: gatherLodging() };
+    var payload = { form: gatherForm(), passengers: gatherPassengers(), lodging: gatherLodging(), consent: checked('pf_consent') };
     api(isSubmit ? 'submit' : 'save-draft', payload).then(function (r) {
       if (saveBtn) saveBtn.disabled = false; if (subBtn) subBtn.disabled = false;
       if (r.ok && r.data && (r.data.submitted || r.data.saved)) {

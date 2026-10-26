@@ -148,8 +148,8 @@ function buildFooter(){
        +'<li><a href="admin.html" data-en="Admin" data-es="Admin"></a></li>'
      +'</ul></div>'
      +'<div class="footer-col"><h4 data-en="Get in touch" data-es="Contáctanos"></h4><ul class="footer-contact">'
-       +'<li>'+svg('pin')+'<span><b style="display:block;font-weight:700;color:var(--gold-soft);font-family:var(--body);font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px">Galápagos HQ</b>'+t(m.address)+'</span></li>'
-       +'<li>'+svg('pin')+'<span><b style="display:block;font-weight:700;color:var(--gold-soft);font-family:var(--body);font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px">USA Office</b>'+t(m.addressUs)+'</span></li>'
+       +'<li>'+svg('pin')+'<span><b style="display:block;font-weight:700;color:var(--gold-soft);font-family:var(--body);font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px" data-en="Main office · USA" data-es="Domicilio principal · EE. UU.">Main office · USA</b>'+t(m.addressUs)+'</span></li>'
+       +'<li>'+svg('pin')+'<span><b style="display:block;font-weight:700;color:var(--gold-soft);font-family:var(--body);font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px" data-en="Galápagos operations" data-es="Operaciones en Galápagos">Galápagos operations</b>'+t(m.address)+'</span></li>'
        +'<li>'+svg('phone')+'<span>'+m.phone+'</span></li>'
        +'<li>'+svg('mail')+'<span>'+m.email+'</span></li>'
        +'<li>'+svg('clock')+'<span>'+t(m.hours)+'</span></li>'
@@ -158,7 +158,7 @@ function buildFooter(){
    +'<div class="footer-bottom">'
      +'<span>© '+new Date().getFullYear()+' Galápagos Hook Adventure. '+(L==='es'?'Todos los derechos reservados.':'All rights reserved.')+'</span>'
      +'<div class="footer-legal">'
-       +'<a href="security-policy.html" data-en="Security Policy" data-es="Política de Seguridad">Security Policy</a>'
+       +'<a href="security-policy.html" data-en="Privacy &amp; Security" data-es="Privacidad y Seguridad">Privacy &amp; Security</a>'
        +'<a href="terms.html" data-en="Terms &amp; Conditions" data-es="Términos y Condiciones">Terms &amp; Conditions</a>'
        +'<a href="legal.html" data-en="Legal" data-es="Legal">Legal</a>'
      +'</div>'
@@ -357,7 +357,7 @@ function buildBookingModal(){
        +'<div class="bk-total"><span id="bkL4">Total</span><b id="bkSumTotal">—</b></div>'
        +'<ul class="bk-trust">'
          +'<li>'+svg('shield')+'<span id="bkT1">Secure checkout</span></li>'
-         +'<li>'+svg('check')+'<span id="bkT2">Free cancellation up to 30 days before</span></li>'
+         +'<li>'+svg('check')+'<span id="bkT2">Free cancellation more than 15 days before</span></li>'
          +'<li>'+svg('user')+'<span id="bkT3">Hosted by a local family</span></li>'
        +'</ul>'
      +'</aside>'
@@ -386,6 +386,8 @@ function buildBookingModal(){
          +'<div class="field"><label id="bkLabZip">Billing ZIP / Postal code</label><input id="bkZip" autocomplete="postal-code"></div>'
        +'</div>'
        +'<div class="field" id="bkMsgWrap" style="display:none"><label id="bkLabMsg">Your message</label><textarea id="bkMsg"></textarea></div>'
+       // Política de cancelación ANTES de cobrar (Fla. Stat. 559.9335(10); LODC Ecuador: información veraz).
+       +'<p class="bk-policy" id="bkPolicy"></p>'
        +'<button type="submit" class="btn btn-gold btn-block" id="bkPayBtn" style="margin-top:6px">Pay</button>'
        +'<p class="bk-secure" id="bkSecure"></p>'
      +'</form>'
@@ -416,7 +418,7 @@ function applyBookingLang(){
   const es=L==='es'; const set=(id,txt)=>{ const el=document.getElementById(id); if(el) el.textContent=txt; };
   set('bkEyebrow', es?'Tu reserva':'Your booking');
   set('bkL1', es?'Fecha de viaje':'Travel date'); set('bkL2', es?'Viajeros':'Guests'); set('bkL3', es?'Precio':'Price'); set('bkL4', es?'Total':'Total');
-  set('bkT1', es?'Pago seguro':'Secure checkout'); set('bkT2', es?('Cancelación gratis hasta '+(S.meta.cancelDays||60)+' días antes'):('Free cancellation up to '+(S.meta.cancelDays||60)+' days before')); set('bkT3', es?'Atendido por una familia local':'Hosted by a local family');
+  set('bkT1', es?'Pago seguro':'Secure checkout'); set('bkT2', es?('Cancelación gratis con más de '+(S.meta.cancelDays||15)+' días de anticipación'):('Free cancellation more than '+(S.meta.cancelDays||15)+' days before')); set('bkT3', es?'Atendido por una familia local':'Hosted by a local family');
   set('bkLabExp', es?'Experiencia':'Experience'); set('bkLabName', es?'Nombre completo':'Full name'); set('bkLabEmail', es?'Correo':'Email');
   set('bkLabDate', es?'Fecha de viaje':'Travel date'); set('bkLabGuests', es?'Viajeros':'Guests');
   set('bkLabPromo', es?'Código de descuento (opcional)':'Discount code (optional)');
@@ -425,6 +427,10 @@ function applyBookingLang(){
   set('bkLabMsg', es?'Tu mensaje':'Your message');
   const pt=document.getElementById('bkPayTitle'); if(pt) pt.innerHTML=svg('shield')+(es?'Pago':'Payment');
   set('bkSecure', es?'🔒 Pago seguro · procesado por Stripe':'🔒 Secure checkout · powered by Stripe');
+  const cd=S.meta.cancelDays||15, pol=document.getElementById('bkPolicy');
+  if(pol) pol.innerHTML=es
+    ?('Cancelación con más de '+cd+' días de anticipación: reembolso del 100%. Con '+cd+' días o menos: <b>sin reembolso</b>. Al reservar aceptas los <a href="terms.html" target="_blank" rel="noopener">Términos y Condiciones</a>.')
+    :('Cancel more than '+cd+' days before: 100% refund. '+cd+' days or less: <b>no refund</b>. By booking you accept the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>.');
   renderBkNotes();   // relocaliza cabecera y casilla de notas
 }
 /* Renderiza las notas importantes activas del tour y, si corresponde, la

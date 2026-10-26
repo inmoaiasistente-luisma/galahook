@@ -20,7 +20,8 @@ const {
   logServer, isRealYmd, todayInGalapagos, getTenantId
 } = require('../server/lib/http');
 const {
-  verifyFormToken, isReadonlyStatus, syncBookingIntakeStatus
+  verifyFormToken, isReadonlyStatus, syncBookingIntakeStatus,
+  DATA_CONSENT_VERSION, needsDataConsent
 } = require('../server/lib/passenger-intake');
 const { encryptDocumentNumber, decryptDocumentNumber, maskDocument } = require('../server/lib/passenger-crypto');
 const { sendOwnerSubmitted } = require('../server/lib/passenger-intake-emails');
@@ -28,7 +29,7 @@ const { checkRateLimit } = require('../server/lib/rate-limit');
 const { clientIpMasked } = require('../server/lib/passenger-audit');
 
 const ACTIONS = ['load', 'save-draft', 'submit'];
-const ALLOWED_KEYS = ['action', 'token', 'form', 'passengers', 'lodging'];
+const ALLOWED_KEYS = ['action', 'token', 'form', 'passengers', 'lodging', 'consent'];
 const DOC_TYPES = ['passport', 'national_id', 'other'];
 const GENDERS = ['male', 'female', 'x', 'undisclosed'];
 const CITIES = ['quito', 'guayaquil', 'either'];
@@ -149,7 +150,8 @@ async function doLoad(res, supabase, form, booking, guests, editable) {
       international_flights_purchased: form.international_flights_purchased,
       ecuador_arrival_date: form.ecuador_arrival_date, ecuador_arrival_time: form.ecuador_arrival_time,
       arrival_airport: form.arrival_airport, connection_notes: form.connection_notes,
-      changes_requested_note: form.changes_requested_note
+      changes_requested_note: form.changes_requested_note,
+      data_consent: !!form.data_consent_at
     },
     passengers: passengers,
     lodging: lodging
@@ -243,6 +245,14 @@ async function doSave(res, supabase, tenant, form, booking, guests, body, strict
     return sendError(res, 400, 'MISSING_CONNECTION_CITY', 'Please choose your connection city');
   }
 
+  /* --- autorizacion expresa (LOPDP arts. 21/26): obligatoria al enviar, y al
+     guardar si hay datos opcionales de salud/accesibilidad o algun menor --- */
+  if (body.consent != null && typeof body.consent !== 'boolean') return sendError(res, 400, 'INVALID_CONSENT', 'consent must be boolean');
+  const consent = body.consent === true;
+  if (!consent && (strict || needsDataConsent(incoming, body.lodging, todayInGalapagos()))) {
+    return sendError(res, 400, 'CONSENT_REQUIRED', 'Please authorize the processing of the optional and minors\' data');
+  }
+
   try {
     /* Cargar pasajeros existentes para el manejo del documento. */
     const existQ = await supabase.from('booking_passengers').select('*').eq('passenger_form_id', form.id);
@@ -306,6 +316,8 @@ async function doSave(res, supabase, tenant, form, booking, guests, body, strict
     formPatch.ecuador_arrival_time = arrTime;
     formPatch.arrival_airport = airport;
     formPatch.connection_notes = connNotes;
+    formPatch.data_consent_at = consent ? now : null;
+    formPatch.data_consent_version = consent ? DATA_CONSENT_VERSION : null;
 
     let newStatus = form.status;
     if (strict) {
