@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Leave your review — Galápagos Hook Adventure</title>
+<meta name="description" content="Tell us how your adventure in San Cristóbal, Galápagos went.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d2b2a">
+<link rel="icon" href="assets/img/logo.png">
+<link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/reviews.css">
+</head>
+<body class="rs">
+<div class="rs-shell">
+
+  <header class="rs-hero">
+    <img class="rs-bg" src="assets/img/hero/contact-1600.jpg" alt="" fetchpriority="high">
+    <div class="rs-frame" aria-hidden="true"><svg><path/></svg><i></i><i></i></div>
+    <div class="rs-top">
+      <a class="rs-logo" href="index.html"><img src="assets/img/logo.png" alt="Galápagos Hook Adventure"></a>
+      <div class="rs-lang" role="group" aria-label="Idioma / Language">
+        <button type="button" data-lang="en" lang="en">English</button>
+        <button type="button" data-lang="es" lang="es">Español</button>
+      </div>
+    </div>
+    <div class="rs-copy">
+      <p class="eyebrow" data-en="Passenger logbook" data-es="Bitácora de a bordo">Passenger logbook</p>
+      <h1 data-en="How was your adventure?" data-es="¿Cómo estuvo tu aventura?">How was your adventure?</h1>
+      <p class="lead" data-en="A review on Google is what helps our family most. It takes less than a minute." data-es="Tu reseña en Google es lo que más ayuda a nuestra familia. Toma menos de un minuto.">A review on Google is what helps our family most. It takes less than a minute.</p>
+    </div>
+  </header>
+
+  <main class="rs-main">
+    <div class="rs-card">
+      <noscript><p class="rs-next"><a href="https://search.google.com/local/writereview?placeid=ChIJ5VCfRXvpAJARW1i9n5H4ht4">Leave your review on Google · Deja tu reseña en Google</a></p></noscript>
+
+      <form id="rsForm" novalidate>
+        <fieldset class="rs-group" id="gRate">
+          <legend class="rs-label" id="rsWord">Tap the stars</legend>
+          <div class="rs-stars" id="rsStars"></div>
+          <p class="rs-err" id="eRate"></p>
+        </fieldset>
+
+        <div class="rs-group field" id="gText">
+          <label for="rsText" data-en="Your review" data-es="Tu reseña">Your review</label>
+          <textarea id="rsText" name="text" rows="3" maxlength="1000" data-ph-en="One or two lines are enough. What was the best part? What would you improve?" data-ph-es="Una o dos líneas bastan. ¿Qué fue lo mejor? ¿Qué mejorarías?"></textarea>
+        </div>
+
+        <div class="rs-group field" id="gName">
+          <label for="rsName" data-en="Your name" data-es="Tu nombre">Your name</label>
+          <input class="rs-name" id="rsName" name="name" autocomplete="name" maxlength="80" aria-describedby="eName">
+          <p class="rs-err" id="eName"></p>
+        </div>
+
+        <!-- honeypot igual al de contacto -->
+        <div aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden"><label>Company<input id="rsCompany" name="company" tabindex="-1" autocomplete="off"></label></div>
+
+        <button type="submit" class="btn btn-gold btn-block rs-submit" id="rsSubmit">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>
+          <span data-en="Continue on Google" data-es="Continuar en Google">Continue on Google</span>
+        </button>
+        <p class="rs-next" data-en="We copy your text. On Google, tap the stars, paste and post." data-es="Copiamos tu texto. En Google toca las estrellas, pega y publica.">We copy your text. On Google, tap the stars, paste and post.</p>
+        <button type="button" class="rs-later" id="rsOnlySite" data-en="No Google account? Leave it here" data-es="¿Sin cuenta de Google? Déjala aquí">No Google account? Leave it here</button>
+        <p class="rs-legal"><span data-en="By continuing you agree to publish your review, translated if needed, and your name on this site." data-es="Al continuar autorizas publicar tu reseña, traducida si hace falta, y tu nombre en este sitio.">By continuing you agree to publish your review, translated if needed, and your name on this site.</span> <a href="security-policy.html" target="_blank" rel="noopener" data-en="Privacy" data-es="Privacidad">Privacy</a></p>
+      </form>
+
+      <section id="rsThanks" hidden>
+        <div class="rs-thanks-head">
+          <span class="rs-tick" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+          <h2 id="rsThanksTitle" tabindex="-1"></h2>
+        </div>
+
+        <div class="rs-google">
+          <h3 id="rsGTitle"></h3>
+          <p id="rsGText" aria-live="polite"></p>
+          <button type="button" class="btn btn-gold btn-block" id="rsGoogle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>
+            <span id="rsGBtn"></span>
+          </button>
+        </div>
+
+        <article class="rv-entry rs-entry">
+          <div class="rv-body">
+            <span class="rv-stars" id="rsOutStars"></span>
+            <blockquote id="rsOutText"></blockquote>
+            <div class="rv-by"><b class="rv-sign" id="rsOutName"></b></div>
+          </div>
+        </article>
+        <p class="rs-saved" id="rsSaved" aria-live="polite"></p>
+        <a class="rs-later" href="index.html" data-en="Back to the site" data-es="Volver al sitio">Back to the site</a>
+      </section>
+
+    </div>
+  </main>
+</div>
+<script src="assets/js/resena.js"></script>
+</body>
+</html>

@@ -3403,6 +3403,18 @@ function refreshMessagesBadge(){
   }).catch(function(){});
 }
 
+/* Insignia de reseñas por revisar en el menú. No-op si no existe. */
+function refreshReviewsBadge(){
+  const badge=document.getElementById('rvBadge');
+  if(!badge) return;
+  apiGet('/api/admin-reviews?status=pending&limit=1').then(function(r){
+    if(!r.ok||!r.data||!r.data.counts) return;
+    const n=r.data.counts.pending||0;
+    badge.textContent=n>99?'99+':(n?String(n):'');
+    badge.hidden=!n;
+  }).catch(function(){});
+}
+
 function panelMessages(role){
   const p=el('<div class="bk-screen"></div>');
   p.appendChild(el('<p class="sub" style="margin-top:-2px">'+(ES
@@ -3535,6 +3547,10 @@ function panelsFor(role){
     {id:'messages',  label:(ES?'Mensajes':'Messages'),
       navLabel:(ES?'Mensajes':'Messages')+'<span id="msgBadge" hidden style="margin-left:8px;padding:1px 7px;border-radius:999px;background:#cf9f54;color:#11302f;font-size:11px;font-weight:800;vertical-align:middle"></span>',
       build:function(){ return panelMessages(role); }},
+    /* Reseñas por QR. Owner y admin la ven; solo el owner publica (assets/js/admin-reviews.js). */
+    {id:'reviews',   label:(ES?'Reseñas':'Reviews'),
+      navLabel:(ES?'Reseñas':'Reviews')+'<span id="rvBadge" hidden style="margin-left:8px;padding:1px 7px;border-radius:999px;background:#cf9f54;color:#11302f;font-size:11px;font-weight:800;vertical-align:middle"></span>',
+      build:function(){ return window.ghaPanelReviews({ES:ES,apiGet:apiGet,apiPost:apiPost,adminToast:adminToast,onUnauthorized:onUnauthorized,canWrite:canWrite,refreshBadge:refreshReviewsBadge}); }},
     {id:'calendar',  label:(ES?'Calendario':'Calendar'), build:function(){ return panelCalendar(role); }},
     {id:'sales',     label:(ES?'Ventas':'Sales'), build:function(){ return panelSales(role); }},
     {id:'finance',   label:(ES?'Finanzas':'Finance'), build:function(){ return panelFinanceHub(role); }},
@@ -3608,6 +3624,7 @@ function showAdmin(user){
     b.addEventListener('click',()=>open(def.id)); nav.appendChild(b);
   });
   refreshMessagesBadge();   // insignia de mensajes no leídos (owner y admin; no-op para staff)
+  refreshReviewsBadge();    // insignia de reseñas por revisar (owner y admin; no-op para staff)
   /* Escritorio: abre el primer panel (sidebar + contenido, como siempre).
      Móvil/PWA: arranca en la LISTA de secciones; el panel se abre al tocar una. */
   const mobileNav = !!(window.matchMedia && window.matchMedia('(max-width:760px)').matches);

@@ -427,13 +427,13 @@ ok('19 buildAuditRow: sin sesión o sin acción → null',
   const adm = read('assets/js/admin.js');
   const html = read('admin.html');
 
-  /* Las ocho entradas, en orden (Mensajes se añadió tras Reservas: bandeja de
-     contacto para owner y admin). */
+  /* Las nueve entradas, en orden (Mensajes y Reseñas van tras Reservas: bandejas
+     para owner y admin). */
   const navBlock = adm.slice(adm.indexOf('const panels=[', adm.indexOf('function panelsFor')));
   const navIds = (navBlock.slice(0, navBlock.indexOf('];')).match(/id:'([a-z]+)'/g) || [])
     .map(function (s) { return s.slice(4, -1); });
-  ok('70 la navegación tiene exactamente 8 entradas, en el orden pedido',
-    navIds.join(',') === 'dashboard,bookings,messages,calendar,sales,finance,content,settings');
+  ok('70 la navegación tiene exactamente 9 entradas, en el orden pedido',
+    navIds.join(',') === 'dashboard,bookings,messages,reviews,calendar,sales,finance,content,settings');
 
   /* Lo oculto sigue EXISTIENDO en el código: ocultar no es borrar. */
   ['panelMiluTourism', 'panelHotelPreferences', 'panelPackagePricing', 'panelPackageNotes',
