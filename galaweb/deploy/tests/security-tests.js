@@ -79,6 +79,50 @@ ok('24 vendor: d3 y topojson presentes en el repo', fs.existsSync(path.join(BASE
 /* ---- higiene: README de pagos fuera de /assets (no se sirve al navegador) ---- */
 ok('25 PAYMENTS-README ya no está en /assets', !fs.existsSync(path.join(BASE, 'assets/PAYMENTS-README.txt')));
 
+/* ---- 0027: avisos del Advisor de Supabase (funciones) ---- */
+const m27 = read('supabase/migrations/0027_supabase_advisor_hardening.sql');
+const s27 = m27.replace(/--.*$/gm, '');
+ok('26 0027 explica el riesgo y queda marcada como aplicada', /Riesgo real/.test(m27) && /APLICADA en Producción el 2026-11-07/.test(m27) && !/NO APLICADA/.test(m27));
+ok('27 0027 sync_sold_at pasa a SECURITY INVOKER', /alter function public\.sync_sold_at\(\) security invoker;/.test(s27));
+ok('28 0027 sync_sold_at sin EXECUTE para public/anon/authenticated, sí para service_role',
+  /revoke execute on function public\.sync_sold_at\(\) from public, anon, authenticated;/.test(s27)
+  && /grant\s+execute on function public\.sync_sold_at\(\) to service_role;/.test(s27));
+['set_updated_at\\(\\)', 'forbid_mutation_package_price_history\\(\\)', 'forbid_mutation_travel_search_audit\\(\\)',
+  'milu_forbid_physical_delete\\(\\)', 'page_view_stats\\(text, timestamptz, timestamptz\\)'].forEach(function (f, i) {
+  ok('29.' + (i + 1) + ' 0027 fija search_path vacío: ' + f.replace(/\\/g, ''),
+    new RegExp('alter function public\\.' + f + "\\s+set search_path = '';").test(s27));
+});
+ok('30 0027 page_view_stats solo para service_role (incluye revoke de PUBLIC)',
+  /revoke execute on function public\.page_view_stats\(text, timestamptz, timestamptz\) from public, anon, authenticated;/.test(s27)
+  && /grant\s+execute on function public\.page_view_stats\(text, timestamptz, timestamptz\) to service_role;/.test(s27));
+ok('31 0027 no toca tablas, triggers, políticas ni datos',
+  !/\b(create|alter|drop)\s+(table|trigger|policy)\b/i.test(s27) && !/\b(insert\s+into|update\s+public\.|delete\s+from|drop\s+function)\b/i.test(s27)
+  && /^\s*begin;/m.test(s27) && /^\s*commit;/m.test(s27));
+const m06 = read('supabase/migrations/0006_agency_bookings.sql');
+ok('32 sync_sold_at solo toca NEW (sin tablas) y su trigger sigue en bookings',
+  /if new\.sold_at is null and new\.paid_at is not null then\s+new\.sold_at := new\.paid_at;/.test(m06)
+  && /create trigger trg_bookings_sync_sold_at[\s\S]*?execute function public\.sync_sold_at\(\)/.test(m06));
+const m22 = read('supabase/migrations/0022_page_views.sql');
+const statsBody = (m22.match(/function public\.page_view_stats[\s\S]*?\$\$([\s\S]*?)\$\$/) || [])[1] || '';
+ok('33 page_view_stats solo lee public.page_views calificada (seguro con search_path vacío)',
+  /from public\.page_views/.test(statsBody) && (statsBody.match(/\bfrom\s+(?!public\.)\w+/g) || []).length === 0);
+function listJs(dir) {
+  const abs = path.join(BASE, dir);
+  if (!fs.existsSync(abs)) return [];
+  return fs.readdirSync(abs, { withFileTypes: true }).reduce(function (acc, e) {
+    const rel = dir + '/' + e.name;
+    if (e.isDirectory()) return e.name === 'vendor' ? acc : acc.concat(listJs(rel));
+    return /\.js$/.test(e.name) ? acc.concat(rel) : acc;
+  }, []);
+}
+const appJs = ['api', 'server', 'assets/js', 'scripts'].reduce(function (a, d) { return a.concat(listJs(d)); }, []);
+ok('34 ningún código llama sync_sold_at por RPC (quitar EXECUTE no rompe nada)',
+  appJs.length > 10 && appJs.every(function (f) { return read(f).indexOf('sync_sold_at') === -1; }));
+const pvh = read('server/admin-handlers/page-views.js');
+ok('35 el panel llama page_view_stats con el cliente del servidor (secret key = service_role)',
+  /getSupabase\s*}\s*=\s*require\('\.\.\/lib\/supabase'\)/.test(pvh) && /rpc\('page_view_stats'/.test(pvh)
+  && /SUPABASE_SECRET_KEY/.test(read('server/lib/supabase.js')));
+
 /* ------------------------------------------------------------------ */
 console.log('\n' + pass + ' PASS · ' + fail + ' FAIL');
 if (fail) process.exit(1);
