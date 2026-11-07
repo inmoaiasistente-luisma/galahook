@@ -104,6 +104,10 @@ ROUTES['page-views'] = require('../server/admin-handlers/page-views');
 /* Bandeja de mensajes de contacto (owner y admin, migración 0023). */
 ROUTES['contact-messages'] = require('../server/admin-handlers/contact-messages-list');
 ROUTES['contact-message-update'] = require('../server/admin-handlers/contact-message-update');
+/* Reseñas por QR (migración 0026). */
+ROUTES['reviews-list'] = require('../server/admin-handlers/reviews-list');
+ROUTES['review-update'] = require('../server/admin-handlers/review-update');
+ROUTES['review-settings-save'] = require('../server/admin-handlers/review-settings-save');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no
    puede apuntar a una acción distinta de la que autorizó el rewrite. */

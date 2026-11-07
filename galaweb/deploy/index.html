@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="assets/css/motion.css">
 <link rel="stylesheet" href="assets/css/mosaic.css">
 <link rel="stylesheet" href="assets/css/hero-scroll.css">
+<link rel="stylesheet" href="assets/css/reviews.css">
 <script src="assets/js/motion.js"></script>
 </head>
 <body data-page="index">
@@ -231,6 +232,33 @@
   </div>
 </section>
 
+<!-- ============ RESEÑAS ============ -->
+<section class="section rv" id="resenas">
+  <div class="wrap rv-grid">
+    <div class="rv-side reveal">
+      <p class="eyebrow" data-en="Passenger reviews" data-es="Reseñas de pasajeros">Passenger reviews</p>
+      <h2 data-en="The onboard logbook" data-es="La bitácora de a bordo">The onboard logbook</h2>
+      <p class="lead" data-en="Every review is signed by someone who traveled with us. We don't change what they write." data-es="Cada reseña va firmada por quien viajó con nosotros. No cambiamos lo que escribe.">Every review is signed by someone who traveled with us. We don't change what they write.</p>
+      <div class="rv-score" id="rvScore" hidden>
+        <b id="rvScoreNum"></b>
+        <div>
+          <span class="rv-stars" id="rvScoreStars"></span>
+          <small id="rvScoreCount"></small>
+        </div>
+      </div>
+      <a class="textlink" href="https://www.google.com/maps/place/?q=place_id:ChIJ5VCfRXvpAJARW1i9n5H4ht4" target="_blank" rel="noopener"><span data-en="See them on Google" data-es="Verlas en Google">See them on Google</span><svg viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M0 6h22M17 1l5 5-5 5"/></svg></a>
+    </div>
+
+    <div class="rv-wall is-empty" id="rvWall">
+      <aside class="rv-cta reveal">
+        <h3 data-en="Traveled with us?" data-es="¿Viajaste con nosotros?">Traveled with us?</h3>
+        <p data-en="A review on Google is what helps us most. It takes less than a minute." data-es="Tu reseña en Google es lo que más nos ayuda. Toma menos de un minuto.">A review on Google is what helps us most. It takes less than a minute.</p>
+        <a class="btn btn-gold btn-block" href="resena.html" data-en="Review us on Google" data-es="Deja tu reseña en Google">Review us on Google</a>
+      </aside>
+    </div>
+  </div>
+</section>
+
 <!-- ============ CTA ============ -->
 <section class="section teal center" style="background-image:linear-gradient(rgba(8,32,31,.72),rgba(8,32,31,.82)),url(assets/img/kicker-sunrise.jpg);background-size:cover;background-position:center">
   <div class="wrap">
@@ -253,6 +281,7 @@
 <script src="https://js.stripe.com/v3/"></script>
 <script src="assets/js/payments.js"></script>
 <script src="assets/js/app.js?v=hp10"></script>
+<script src="assets/js/reviews.js"></script>
 <script src="assets/js/mosaic.js"></script>
 <script src="assets/js/hero-scroll.js"></script>
 <!-- FishingBooker Direct: additional booking channel for fishing (does not touch Stripe/checkout) -->
