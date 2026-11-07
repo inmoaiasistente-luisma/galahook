@@ -107,7 +107,6 @@ ROUTES['contact-message-update'] = require('../server/admin-handlers/contact-mes
 /* Reseñas por QR (migración 0026). */
 ROUTES['reviews-list'] = require('../server/admin-handlers/reviews-list');
 ROUTES['review-update'] = require('../server/admin-handlers/review-update');
-ROUTES['review-translate'] = require('../server/admin-handlers/review-translate');
 ROUTES['review-settings-save'] = require('../server/admin-handlers/review-settings-save');
 
 /* Solo de la query. El cuerpo no decide el destino: así un POST no

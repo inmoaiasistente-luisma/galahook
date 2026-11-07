@@ -21,10 +21,9 @@ const REJECT_REASONS = ['spam', 'abuse', 'third_party_data', 'not_passenger'];
 const NAME_MIN = 2;
 const NAME_MAX = 80;
 const BODY_MAX = 1000;
-const TRANSLATION_MAX = 1500;
 const PUBLIC_LIMIT = 4;
 
-const PUBLIC_FIELDS = 'rating,body,translation,author_name,lang,trip,created_at';
+const PUBLIC_FIELDS = 'rating,body,author_name,lang,trip,created_at';
 
 /* Quita caracteres de control (conserva salto de línea y tabulador). */
 function cleanText(v) {
@@ -67,7 +66,6 @@ function toPublicReview(row) {
   return {
     rating: row.rating,
     body: row.body,
-    translation: row.translation || null,
     author_name: row.author_name,
     lang: row.lang,
     trip: row.trip || null,
@@ -90,6 +88,6 @@ function isMissingTable(err) {
 }
 
 module.exports = {
-  CONSENT_VERSION, LANGS, STATUSES, TRIPS, REJECT_REASONS, TRANSLATION_MAX, PUBLIC_LIMIT, PUBLIC_FIELDS,
+  CONSENT_VERSION, LANGS, STATUSES, TRIPS, REJECT_REASONS, PUBLIC_LIMIT, PUBLIC_FIELDS,
   cleanText, validateSubmission, toPublicReview, rateBucket, isMissingTable
 };

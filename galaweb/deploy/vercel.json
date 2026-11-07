@@ -13,7 +13,6 @@
     { "source": "/api/admin-contact-message-update", "destination": "/api/admin-router?action=contact-message-update" },
     { "source": "/api/admin-reviews", "destination": "/api/admin-router?action=reviews-list" },
     { "source": "/api/admin-review-update", "destination": "/api/admin-router?action=review-update" },
-    { "source": "/api/admin-review-translate", "destination": "/api/admin-router?action=review-translate" },
     { "source": "/api/admin-review-settings-save", "destination": "/api/admin-router?action=review-settings-save" },
     { "source": "/api/admin-logout", "destination": "/api/admin-router?action=logout" },
     { "source": "/api/admin-session", "destination": "/api/admin-router?action=session" },

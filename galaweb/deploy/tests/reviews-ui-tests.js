@@ -44,8 +44,8 @@ ok('4 /resena no se indexa', /<meta name="robots" content="noindex">/.test(page)
 ok('5 /resena fuera del sitemap', sitemap.indexOf('resena') === -1);
 ok('6 botones de idioma EN y ES', /data-lang="en"/.test(page) && /data-lang="es"/.test(page));
 ok('7 honeypot presente', /name="company"/.test(page));
-ok('8 aviso menciona traducción en ES', /traducida si hace falta/.test(page));
-ok('9 aviso menciona traducción en EN', /translated if needed/.test(page));
+ok('8 aviso sin traducción en ES', /autorizas publicar tu reseña y tu nombre/.test(page) && !/traducid/i.test(page));
+ok('9 aviso sin traducción en EN', /publish your review and your name/.test(page) && !/translated/i.test(page));
 ok('10 enlace a privacidad', /href="security-policy\.html"/.test(page));
 ok('11 límites iguales al servidor', /id="rsText"[^>]*maxlength="1000"/.test(page) && /id="rsName"[^>]*maxlength="80"/.test(page));
 ok('12 sin JavaScript queda un camino a Google', /<noscript>[\s\S]*writereview\?placeid=[\s\S]*<\/noscript>/.test(page));
@@ -70,6 +70,9 @@ ok('27 ABUSO el muro nunca usa innerHTML', wallJs.indexOf('innerHTML') === -1 &&
 ok('28 las tarjetas nuevas no usan .reveal', wallJs.indexOf('reveal') === -1);
 ok('29 texto traducible por el mecanismo del sitio', /dataset\.en/.test(wallJs) && /dataset\.es/.test(wallJs));
 ok('30 data-html nunca entra en el muro', wallJs.indexOf('data-html') === -1);
+ok('30b cada reseña sale en su idioma original', /\.lang=r\.lang/.test(wallJs) && !/translation|Traducida|Translated/.test(wallJs));
+ok('30c el inicio no promete traducir', !/translate it|traducimos/.test(home));
+ok('30d el panel no traduce', !/translat|traduc/i.test(adminJs) && !/rva-tr[-{]/.test(adminCss) && !/.rv-tr[{:]/.test(css));
 ok('31 oculta la nota si no hay datos', /\.rv-score\[hidden\]/.test(css));
 
 /* ---------------- panel ---------------- */
@@ -78,7 +81,7 @@ ok('33 panel cargado antes de admin.js', adminHtml.indexOf('assets/js/admin-revi
 ok('34 entrada en el menú', /id:'reviews'/.test(adminMain) && /ghaPanelReviews/.test(adminMain));
 ok('35 insignia de pendientes', /rvBadge/.test(adminMain));
 ok('36 ABUSO el panel pinta reseñas solo como texto', adminJs.indexOf('innerHTML') === -1 && adminJs.indexOf('insertAdjacentHTML') === -1);
-ok('37 todos los endpoints del panel', ['/api/admin-reviews', '/api/admin-review-update', '/api/admin-review-translate', '/api/admin-review-settings-save'].every(function (u) { return adminJs.indexOf(u) !== -1; }));
+ok('37 todos los endpoints del panel', ['/api/admin-reviews', '/api/admin-review-update', '/api/admin-review-settings-save'].every(function (u) { return adminJs.indexOf(u) !== -1; }));
 ok('38 nunca dice que publicó en Google', /Abrió Google/.test(adminJs) && !/Publicó en Google/i.test(adminJs));
 ok('39 recuerda que una nota baja no se rechaza', /nota baja no es motivo/.test(adminJs));
 ok('40 motivos iguales al servidor', ['spam', 'abuse', 'third_party_data', 'not_passenger'].every(function (k) { return adminJs.indexOf(k) !== -1; }));
@@ -92,7 +95,7 @@ ok('45 volante en el sitio', exists('assets/volante-resenas-a5.pdf'));
 
 /* ---------------- privacidad ---------------- */
 ok('46 privacidad cubre reseñas EN', /Reviews\./.test(privacy) && /Reseñas\./.test(privacy));
-ok('47 privacidad nombra a Anthropic', /Anthropic/.test(privacy));
+ok('47 privacidad ya no nombra a Anthropic', !/Anthropic/.test(privacy) && !/translat|traducci/i.test(privacy));
 ok('48 privacidad nombra a Google en terceros', /Google Reviews|reseñas de Google/.test(privacy));
 
 /* ---------------- secretos ---------------- */

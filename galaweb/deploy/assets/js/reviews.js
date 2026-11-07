@@ -56,25 +56,16 @@
     return [MONTHS_EN[i]+' '+m[1],MONTHS_ES[i]+' '+m[1]];
   }
 
-  function textsFor(r){
-    var tr=r.translation;
-    return {
-      en:r.lang==='en'?r.body:(tr||r.body),
-      es:r.lang==='es'?r.body:(tr||r.body),
-      labelEn:r.lang==='es'&&tr?'Translated from Spanish':'',
-      labelEs:r.lang==='en'&&tr?'Traducida del inglés':''
-    };
-  }
-
   function bodyOf(r){
     var body=node('div','rv-body'),meta=node('div','rv-meta');
-    var trip=TRIPS[r.trip],when=monthLabel(r.month),t=textsFor(r);
+    var trip=TRIPS[r.trip],when=monthLabel(r.month),quote=node('blockquote');
     if(trip)meta.appendChild(both(node('span'),trip[0],trip[1]));
     meta.appendChild(both(node('span'),when[0],when[1]));
     body.appendChild(meta);
     body.appendChild(starsInto(node('span','rv-stars'),r.rating));
-    body.appendChild(both(node('blockquote'),t.en,t.es));
-    body.appendChild(both(node('small','rv-tr'),t.labelEn,t.labelEs));
+    quote.textContent=r.body;   // cada reseña queda en el idioma en que se escribió
+    quote.lang=r.lang;
+    body.appendChild(quote);
     var by=node('div','rv-by'),sign=node('b','rv-sign');
     sign.textContent=r.author_name;
     by.appendChild(sign);

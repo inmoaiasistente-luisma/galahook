@@ -56,17 +56,7 @@
 .rva-trip select{width:100%;min-height:44px;padding:0 12px;border:1.5px solid rgba(17,48,47,.36);border-radius:var(--radius);background:#fff;color:var(--a-text);font-family:var(--body);font-size:15px;}
 .rva-trip select option{background:#fff;color:var(--a-text);}
 
-
-/* traduccion */
-.rva-tr{margin:0 0 12px;}
-.rva-tr label{display:block;margin-bottom:5px;font-size:13px;font-weight:700;color:var(--a-text);}
-.rva-tr textarea{display:block;width:100%;min-height:76px;padding:9px 12px;border:1.5px solid rgba(17,48,47,.36);border-radius:var(--radius);background:#fff;color:var(--a-text);font-family:var(--body);font-size:15px;line-height:1.45;resize:vertical;}
-.rva-tr small{display:block;margin-top:5px;font-size:13px;line-height:1.35;color:var(--a-text-soft);}
-.rva-tr-read{margin:-4px 0 12px;font-size:14.5px;line-height:1.5;color:var(--a-text);overflow-wrap:anywhere;}
-
 .rva-muted{color:var(--a-text-soft);font-style:italic;}
-.rva-tr-note{margin:6px 0 0;font-size:13.5px;font-weight:600;line-height:1.4;color:var(--a-text);}
-.rva-tr-retry{min-height:32px;padding:0 4px;color:var(--a-text);font-weight:700;text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
 
 /* nota de Google */
 .rva-score p{margin:0 0 12px;font-size:14px;line-height:1.45;color:var(--a-text-soft);}

@@ -2,11 +2,11 @@
 -- LOAN-IX Booking Engine — 0026_reviews
 -- Reseñas por QR: lo que el pasajero envía desde /resena y la nota pública
 -- de Google que el owner mantiene al día desde el panel.
--- PREPARADA, NO APLICADA. Requiere autorización del owner antes de ejecutar.
--- Ejecutar UNA sola vez, ANTES de desplegar el código que la usa.
+-- APLICADA en Producción el 2026-11-06 con autorización del owner.
+-- La columna translation quedó sin uso: cada reseña se muestra en su idioma.
 --
 -- Toda reseña entra en 'pending'. Solo el owner publica o rechaza, y el
--- texto del pasajero no se edita: solo su traducción. No se guarda IP.
+-- texto del pasajero no se edita. No se guarda IP.
 -- client_key lo genera el navegador: hace que reintentar no duplique y deja
 -- marcar más tarde que el pasajero abrió Google. Nunca sale hacia el panel
 -- ni hacia el sitio público.

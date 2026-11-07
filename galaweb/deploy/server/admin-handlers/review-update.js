@@ -2,7 +2,7 @@
 
 /* =========================================================
    POST /api/admin-review-update  (action=review-update)
-   body: { id, action: 'publish'|'reject'|'pending', translation?, trip?, reason? }
+   body: { id, action: 'publish'|'reject'|'pending', trip?, reason? }
    ---------------------------------------------------------
    Solo el OWNER modera (requireWriter). El texto del pasajero no se toca:
    'body' no es un campo aceptado aquí. Una nota baja no es motivo de
@@ -13,11 +13,11 @@ const { sendJson, sendError, logServer, readJsonBody, rejectUnknownKeys, isUuid,
 const { getSupabase } = require('../lib/supabase');
 const { requireWriter, sameOrigin } = require('../lib/admin-auth');
 const { recordAudit } = require('../lib/admin-audit');
-const { TRIPS, REJECT_REASONS, TRANSLATION_MAX, cleanText } = require('../lib/reviews');
+const { TRIPS, REJECT_REASONS } = require('../lib/reviews');
 
-const ALLOWED_KEYS = ['id', 'action', 'translation', 'trip', 'reason'];
+const ALLOWED_KEYS = ['id', 'action', 'trip', 'reason'];
 const ACTIONS = ['publish', 'reject', 'pending'];
-const SELECT = 'id,status,body,translation,trip,reject_reason,handled_by,handled_at,published_at';
+const SELECT = 'id,status,body,trip,reject_reason,handled_by,handled_at,published_at';
 
 /** @returns {{patch:object}|{status:number,code:string,message:string}} */
 function buildPatch(body, row, session) {
@@ -38,14 +38,9 @@ function buildPatch(body, row, session) {
   if (body.trip !== undefined && body.trip !== null && body.trip !== '' && TRIPS.indexOf(body.trip) === -1) {
     return refuse(400, 'INVALID_TRIP', 'Invalid trip');
   }
-  if (body.translation !== undefined && body.translation !== null && typeof body.translation !== 'string') {
-    return refuse(400, 'INVALID_TRANSLATION', 'Invalid translation');
-  }
-  const translation = typeof body.translation === 'string' ? cleanText(body.translation) : '';
-  if (translation.length > TRANSLATION_MAX) return refuse(400, 'TRANSLATION_TOO_LONG', 'Translation is too long');
 
   return { patch: {
-    status: 'published', translation: translation || null, trip: body.trip || null,
+    status: 'published', trip: body.trip || null,
     handled_by: session.email, handled_at: now, published_at: now
   } };
 }

@@ -4,8 +4,8 @@
    GET /api/admin-reviews   (action=reviews-list)
    ---------------------------------------------------------
    Panel "Reseñas". Lo ven OWNER y ADMIN; staff → 403. Filtro opcional
-   por status. Devuelve conteos para pestañas e insignia, la nota de Google
-   y si la traducción automática está disponible. Nunca devuelve client_key.
+   por status. Devuelve conteos para pestañas e insignia y la nota de Google.
+   Nunca devuelve client_key.
 
    Las reseñas sin texto no se pueden publicar ni rechazar por su nota, así
    que van aparte (rating_only) y no cuentan como trabajo pendiente.
@@ -17,9 +17,8 @@ const { sendJson, sendError, logServer, getTenantId } = require('../lib/http');
 const { getSupabase } = require('../lib/supabase');
 const { requireOwnerOrAdmin } = require('../lib/admin-auth');
 const { STATUSES, isMissingTable } = require('../lib/reviews');
-const { isConfigured } = require('../lib/review-translate');
 
-const FIELDS = 'id,created_at,rating,body,author_name,lang,opened_google,status,translation,trip,reject_reason,handled_by,handled_at,published_at';
+const FIELDS = 'id,created_at,rating,body,author_name,lang,opened_google,status,trip,reject_reason,handled_by,handled_at,published_at';
 const FILTERS = STATUSES.concat(['rating_only']);
 const MAX_ROWS = 100;
 
@@ -30,7 +29,7 @@ function getQuery(req) {
 }
 
 function notReady(role) {
-  return { ready: false, role: role, rows: [], counts: { pending: 0, published: 0, rejected: 0, rating_only: 0, total: 0, opened_google: 0 }, settings: null, translate_ready: false };
+  return { ready: false, role: role, rows: [], counts: { pending: 0, published: 0, rejected: 0, rating_only: 0, total: 0, opened_google: 0 }, settings: null };
 }
 
 /* Aplica la pestaña elegida a una consulta de reviews. */
@@ -84,8 +83,7 @@ module.exports = async function handler(req, res) {
         pending: nums[0], published: nums[1], rejected: nums[2], rating_only: nums[3],
         total: nums[0] + nums[1] + nums[2] + nums[3], opened_google: nums[4]
       },
-      settings: st.data || null,
-      translate_ready: isConfigured()
+      settings: st.data || null
     });
   } catch (err) {
     if (isMissingTable(err)) return sendJson(res, 200, notReady(session.role));

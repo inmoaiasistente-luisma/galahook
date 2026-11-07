@@ -1,5 +1,5 @@
 /* Panel "Reseñas" del admin: lo que los pasajeros envían con el QR.
-   Lo ven owner y admin; solo el owner publica, rechaza y corrige traducciones.
+   Lo ven owner y admin; solo el owner publica y rechaza.
    Todo lo escrito por pasajeros se pinta con textContent. */
 (function(){
   'use strict';
@@ -60,7 +60,6 @@
     var STATUS={pending:say('Pendiente','Pending'),published:say('Publicada','Published'),rejected:say('Rechazada','Rejected')};
 
     var state={filter:'pending',rejectOpen:null,data:null};
-    var drafts={};   // traducciones escritas en esta pantalla, por id
 
     var root=h('div','bk-screen');
     root.appendChild(h('p','sub',say(
@@ -155,42 +154,12 @@
       if(isNaN(d))return '';
       return d.toLocaleString(ES?'es':'en',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
     }
-    function targetLang(r){return r.lang==='es'?say('inglés','English'):say('español','Spanish');}
-
-    function translationBlock(r,card){
-      if(!r.body||r.status==='rejected')return null;
-      var name=say('Traducción al ','Translation to ')+targetLang(r);
-      if(r.status==='published'||!owner){
-        if(!r.translation)return null;
-        var read=h('p','rva-tr-read');
-        read.appendChild(h('b',null,name+': '));
-        read.appendChild(document.createTextNode(r.translation));
-        return read;
-      }
-      var box=h('div','rva-tr'),lb=h('label',null,name),ta=h('textarea');
-      var id='rvaTr'+r.id;
-      lb.htmlFor=id;ta.id=id;ta.rows=3;ta.maxLength=1500;
-      ta.value=drafts[r.id]!=null?drafts[r.id]:(r.translation||'');
-      ta.addEventListener('input',function(){drafts[r.id]=ta.value;});
-      box.appendChild(lb);
-      box.appendChild(ta);
-      box.appendChild(h('small',null,say(
-        'Quien lee el sitio en '+targetLang(r)+' la verá marcada como traducción. Corrígela aquí si hace falta.',
-        'Readers of the site in '+targetLang(r)+' will see it marked as a translation. Correct it here if needed.')));
-      var note=h('p','rva-tr-note');
-      note.hidden=true;
-      box.appendChild(note);
-      card.rvaTranslate={row:r,area:ta,note:note};
-      return box;
-    }
-
     function act(r,body,okMsg,btn){
       btn.disabled=true;
       apiPost('/api/admin-review-update',Object.assign({id:r.id},body)).then(function(res){
         if(res.status===401){ctx.onUnauthorized();return;}
         if(!res.ok){btn.disabled=false;toast(say('No se pudo guardar. Recarga e intenta de nuevo.','Could not save. Reload and try again.'));return;}
         state.rejectOpen=null;
-        delete drafts[r.id];
         toast(okMsg);
         load();
       }).catch(function(){btn.disabled=false;toast(say('No se pudo guardar. Intenta de nuevo.','Could not save. Try again.'));});
@@ -221,7 +190,7 @@
       return box;
     }
 
-    function pendingControls(r,card){
+    function pendingControls(r){
       var wrap=h('div');
       var tripSel=null;
       if(r.body){
@@ -241,8 +210,7 @@
       if(r.body){
         var pub=button('btn btn-gold btn-sm',say('Publicar','Publish'));
         pub.addEventListener('click',function(){
-          var ta=card.rvaTranslate&&card.rvaTranslate.area;
-          act(r,{action:'publish',translation:ta?ta.value:'',trip:tripSel.value},say('Publicada en la bitácora','Published to the logbook'),pub);
+          act(r,{action:'publish',trip:tripSel.value},say('Publicada en la bitácora','Published to the logbook'),pub);
         });
         row.appendChild(pub);
       }
@@ -277,8 +245,6 @@
       c.appendChild(r.body
         ? h('p','rva-text',r.body)
         : h('p','rva-text rva-muted',say('Solo dejó estrellas: no se publica en la bitácora.','Stars only: it is not published to the logbook.')));
-      var tr=translationBlock(r,c);
-      if(tr)c.appendChild(tr);
 
       var facts=h('div','rva-facts');
       facts.appendChild(h('span','rva-g '+(r.opened_google?'yes':'no'),r.opened_google?say('Abrió Google','Opened Google'):say('No abrió Google','Did not open Google')));
@@ -287,7 +253,7 @@
 
       if(!owner)return c;
       if(r.status==='pending'){
-        c.appendChild(pendingControls(r,c));
+        c.appendChild(pendingControls(r));
       } else {
         var row=h('div','rva-acts'),back=button('mini-btn',say('Volver a pendiente','Back to pending'));
         back.addEventListener('click',function(){act(r,{action:'pending'},say('Volvió a pendientes','Back in pending'),back);});
@@ -295,40 +261,6 @@
         c.appendChild(row);
       }
       return c;
-    }
-
-    /* ---------- traducción automática, de una en una ---------- */
-    function noteFor(job,text,retry){
-      job.note.textContent=text;
-      job.note.hidden=false;
-      if(!retry)return;
-      var b=button('rva-tr-retry',say('Reintentar','Retry'));
-      b.addEventListener('click',function(){job.note.hidden=true;runQueue([job]);});
-      job.note.appendChild(document.createTextNode(' '));
-      job.note.appendChild(b);
-    }
-
-    function runQueue(jobs){
-      var job=jobs.shift();
-      if(!job)return;
-      noteFor(job,say('Traduciendo…','Translating…'));
-      apiPost('/api/admin-review-translate',{id:job.row.id}).then(function(r){
-        if(r.status===401){ctx.onUnauthorized();return;}
-        if(r.ok&&r.data&&r.data.configured===false){
-          noteFor(job,say('La traducción automática no está activada. Escríbela a mano o publica sin traducir.','Automatic translation is off. Type it by hand or publish without it.'));
-          return;
-        }
-        if(r.ok&&r.data&&r.data.translation){
-          if(!job.area.value){job.area.value=r.data.translation;drafts[job.row.id]=r.data.translation;}
-          job.note.hidden=true;
-        } else {
-          noteFor(job,say('No se pudo traducir.','Could not translate.'),true);
-        }
-        runQueue(jobs);
-      }).catch(function(){
-        noteFor(job,say('No se pudo traducir.','Could not translate.'),true);
-        runQueue(jobs);
-      });
     }
 
     /* ---------- pintar ---------- */
@@ -353,16 +285,7 @@
         list.appendChild(empty);
         return;
       }
-      var jobs=[];
-      d.rows.forEach(function(r){
-        var c=card(r);
-        list.appendChild(c);
-        var job=c.rvaTranslate;
-        if(!job||job.area.value)return;
-        if(d.translate_ready)jobs.push(job);
-        else noteFor(job,say('La traducción automática no está activada. Escríbela a mano o publica sin traducir.','Automatic translation is off. Type it by hand or publish without it.'));
-      });
-      runQueue(jobs);
+      d.rows.forEach(function(r){list.appendChild(card(r));});
     }
 
     function load(){

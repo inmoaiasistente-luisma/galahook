@@ -167,5 +167,3 @@ html:has(body.rs){overflow-x:clip;}
 }
 
 /* resenas en dos idiomas */
-.rv-tr{font-size:13px;font-weight:600;line-height:1.3;color:var(--ink-soft);}
-.rv-tr:empty{display:none;}
