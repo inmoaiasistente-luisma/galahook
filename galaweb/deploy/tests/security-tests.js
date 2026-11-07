@@ -82,7 +82,7 @@ ok('25 PAYMENTS-README ya no está en /assets', !fs.existsSync(path.join(BASE, '
 /* ---- 0027: avisos del Advisor de Supabase (funciones) ---- */
 const m27 = read('supabase/migrations/0027_supabase_advisor_hardening.sql');
 const s27 = m27.replace(/--.*$/gm, '');
-ok('26 0027 explica el riesgo y queda marcada NO APLICADA', /Riesgo real/.test(m27) && /NO APLICADA en Producción/.test(m27));
+ok('26 0027 explica el riesgo y queda marcada como aplicada', /Riesgo real/.test(m27) && /APLICADA en Producción el 2026-11-07/.test(m27) && !/NO APLICADA/.test(m27));
 ok('27 0027 sync_sold_at pasa a SECURITY INVOKER', /alter function public\.sync_sold_at\(\) security invoker;/.test(s27));
 ok('28 0027 sync_sold_at sin EXECUTE para public/anon/authenticated, sí para service_role',
   /revoke execute on function public\.sync_sold_at\(\) from public, anon, authenticated;/.test(s27)

@@ -2,7 +2,9 @@
 -- LOAN-IX Booking Engine — 0027_supabase_advisor_hardening
 -- Corrige los avisos de seguridad del Advisor de Supabase vistos el
 -- 2026-11-06 en Producción.
--- NO APLICADA en Producción: se aplica solo con autorización del owner.
+-- APLICADA en Producción el 2026-11-07 con autorización del owner. Después,
+-- el Advisor solo muestra rls_enabled_no_policy (intencional) y el aviso de
+-- contraseñas filtradas (ajuste de Auth).
 --
 -- Riesgo real, en corto:
 --
