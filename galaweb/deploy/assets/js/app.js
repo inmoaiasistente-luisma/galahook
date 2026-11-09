@@ -81,7 +81,7 @@ function waLink(msg){
 
 /* ---------------- HEADER / FOOTER ---------------- */
 const NAV=[
-  {p:'index',     href:'index.html',         en:'Home',         es:'Inicio'},
+  {p:'index',     href:'/',         en:'Home',         es:'Inicio'},
   {p:'packages',  href:'packages.html',      en:'Packages',     es:'Paquetes'},
   {p:'tours',     href:'tours.html',         en:'Tours',        es:'Tours'},
   {p:'fishing',   href:'sport-fishing.html', en:'Sport Fishing',es:'Pesca'},
@@ -96,7 +96,7 @@ function buildHeader(){
   const active=document.body.dataset.page;
   el.innerHTML=
   '<div class="wrap-wide">'
-   +'<a class="brand" href="index.html">'
+   +'<a class="brand" href="/">'
      +'<img src="'+logoSrc()+'" alt="Galápagos Hook Adventure">'
      +'<span class="brand-text"><b>Galápagos Hook</b><span>Adventure</span></span>'
    +'</a>'

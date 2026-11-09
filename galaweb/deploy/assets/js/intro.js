@@ -2,7 +2,7 @@
    GALÁPAGOS HOOK — globe intro / preloader
    Spinning country-outline globe (light, on teal) + whirl,
    a progress bar to 100%, then a "ready" prompt + enter arrow.
-   Mount:  <div id="globeIntro" data-enter-href="index.html"></div>
+   Mount:  <div id="globeIntro" data-enter-href="/"></div>
            data-enter-href : navigate here on enter (optional)
            data-session    : show once per browser session
            data-text       : override the ready headline
