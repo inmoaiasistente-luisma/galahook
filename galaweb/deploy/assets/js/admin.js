@@ -59,7 +59,7 @@ function showLogin(){
      +'<button type="button" id="aPassToggle" aria-label="Show password" aria-pressed="false" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:none;border:none;padding:0;cursor:pointer;color:var(--ink-soft)">'+I.eye+'</button>'
    +'</div></div>'
    +'<button type="submit" class="btn btn-gold btn-block" id="loginBtn" style="margin-top:8px">Log in</button>'
-   +'<p style="margin:16px 0 0"><a href="index.html" style="color:var(--sea);font-weight:600;font-size:13px">← Back to site</a></p>'
+   +'<p style="margin:16px 0 0"><a href="/" style="color:var(--sea);font-weight:600;font-size:13px">← Back to site</a></p>'
    +'</form></div>';
   const btn=document.getElementById('loginBtn'), errEl=document.getElementById('loginErr');
   const passInput=document.getElementById('aPass'), passToggle=document.getElementById('aPassToggle');
@@ -3584,7 +3584,7 @@ function showAdmin(user){
        // Los controles que ESCRIBEN contenido solo se generan para el owner:
        // el admin es de lectura y el staff no toca el sitio.
        +(canEditContent?'<span class="save-state" id="saveState"></span>':'')
-       +'<a class="mini-btn top-view" href="index.html" target="_blank">'+I.eye+' View site</a>'
+       +'<a class="mini-btn top-view" href="/" target="_blank">'+I.eye+' View site</a>'
        +(canEditContent?'<button class="mini-btn" id="resetBtn">Reset all</button>':'')
        +'<button class="mini-btn" id="logoutBtn">'+I.out+' Log out</button>'
        +(canEditContent?'<button class="btn btn-gold btn-sm" id="saveBtn">'+I.save+' Save changes</button>':'')
