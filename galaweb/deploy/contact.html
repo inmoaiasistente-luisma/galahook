@@ -71,7 +71,7 @@
       </div>
 
       <div class="reveal">
-        <form data-contact style="background:rgba(255,255,255,.05);border:1px solid var(--line-on-dark);border-radius:12px;padding:30px">
+        <form data-contact>
           <div class="form-row">
             <div class="field"><label data-en="Full name" data-es="Nombre completo">Full name</label><input name="name" autocomplete="name" required></div>
             <div class="field"><label data-en="Email" data-es="Correo">Email</label><input name="email" type="email" autocomplete="email" placeholder="you@email.com"></div>
@@ -90,7 +90,7 @@
           <!-- honeypot: oculto para humanos; si un bot lo rellena, el envío se descarta -->
           <div class="hp-field" aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden"><label>Company<input name="company" tabindex="-1" autocomplete="off"></label></div>
           <button type="submit" class="btn btn-gold btn-block" data-en="Send message" data-es="Enviar mensaje">Send message</button>
-          <p style="font-size:12.5px;color:rgba(255,255,255,.5);text-align:center;margin:14px 0 0" data-en="Leave your email or WhatsApp and we'll reply — usually within a day." data-es="Déjanos tu correo o WhatsApp y te respondemos — normalmente en un día."></p>
+          <p class="contact-note" data-en="Leave your email or WhatsApp and we'll reply — usually within a day." data-es="Déjanos tu correo o WhatsApp y te respondemos — normalmente en un día."></p>
           <p style="text-align:center;margin:12px 0 0"><a data-wa-secondary target="_blank" rel="noopener" href="#" style="color:var(--gold);font-size:13.5px;text-decoration:underline" data-en="Prefer WhatsApp? Chat with us →" data-es="¿Prefieres WhatsApp? Escríbenos →">Prefer WhatsApp? Chat with us →</a></p>
         </form>
       </div>

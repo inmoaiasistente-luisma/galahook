@@ -41,7 +41,7 @@
 .ph-copy{position:absolute;z-index:3;left:0;right:0;bottom:calc(var(--ph-side) + 84px);
   transform:translate3d(0,var(--ph-ty,0px),0);opacity:var(--ph-o,1)}
 .ph-copy .wrap{padding-left:clamp(28px,4vw,64px);padding-right:clamp(28px,4vw,64px)}
-.ph .breadcrumb{display:flex;align-items:center;flex-wrap:wrap;gap:0 10px;margin:0 0 20px;font:700 12.5px/1.4 var(--body);letter-spacing:.22em;color:rgba(251,248,241,.78);text-shadow:0 1px 10px rgba(0,0,0,.45)}
+.ph .breadcrumb{display:flex;align-items:center;flex-wrap:wrap;gap:0 10px;margin:0 0 20px;font:700 12.5px/1.4 var(--body);letter-spacing:.22em;color:var(--paper);text-shadow:0 1px 10px rgba(0,0,0,.65)}
 .ph .breadcrumb::before{content:"";width:26px;height:1.5px;background:var(--gold)}
 .ph .breadcrumb [data-decode]{color:var(--gold-soft)}
 .ph .breadcrumb a{display:inline-flex;align-items:center;min-height:32px}
@@ -50,7 +50,7 @@
 .ph .lead{max-width:46ch;margin:22px 0 0;font-size:clamp(17px,1.5vw,20px);line-height:1.55;color:rgba(255,255,255,.9);text-shadow:0 1px 14px rgba(0,0,0,.35)}
 
 /* Barra de abajo: pausa · desliza · habla con nosotros (deja libre el botón de WhatsApp) */
-.ph-dock{position:absolute;z-index:4;left:calc(var(--ph-side) + 22px);right:110px;bottom:calc(var(--ph-side) + 14px);display:flex;align-items:center;justify-content:space-between;gap:20px;font:700 11.5px/1 var(--body);letter-spacing:.22em;text-transform:uppercase;color:rgba(251,248,241,.8)}
+.ph-dock{position:absolute;z-index:4;left:calc(var(--ph-side) + 22px);right:110px;bottom:calc(var(--ph-side) + 14px);display:flex;align-items:center;justify-content:space-between;gap:20px;font:700 12px/1.3 var(--body);letter-spacing:.2em;text-transform:uppercase;color:var(--paper)}
 .ph-dock button,.ph-dock a{display:inline-flex;align-items:center;gap:10px;min-height:44px;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;text-shadow:0 1px 10px rgba(0,0,0,.5);transition:color .3s}
 .ph-dock button:hover,.ph-dock a:hover{color:var(--gold-soft)}
 .ph-dock button:focus-visible,.ph-dock a:focus-visible,.ph .breadcrumb a:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
@@ -100,11 +100,13 @@ html:not(.ph-on) .ph-loop,html:not(.ph-on) .ph-pause,html:not(.ph-on) .ph-cue{di
   .ph-contact{--ph-h:68svh}
   .ph-copy{bottom:calc(var(--ph-side) + 66px)}
   .ph-copy .wrap{padding-left:22px;padding-right:22px}
-  .ph .breadcrumb{font-size:11px;letter-spacing:.18em;margin-bottom:14px}
+  .ph .breadcrumb{font-size:12px;letter-spacing:.14em;margin-bottom:14px}
+  .ph h1{font-size:clamp(38px,11.5vw,46px)}
   .ph .lead{margin-top:16px}
-  .ph-dock{left:calc(var(--ph-side) + 10px);right:90px;bottom:calc(var(--ph-side) + 6px);gap:12px;font-size:10px;letter-spacing:.14em}
+  .ph-dock{left:calc(var(--ph-side) + 10px);right:90px;bottom:calc(var(--ph-side) + 6px);gap:8px;letter-spacing:.08em}
   .ph-dock .ph-talk,.ph-pause .t-pause,.ph-pause .t-play,.ph.is-paused .ph-pause .t-play,.ph-cue i{display:none}
-  .ph-cue{gap:10px}
+  .ph-dock .ph-pause{flex:0 0 44px;justify-content:center;padding:0}
+  .ph-cue{gap:8px;white-space:normal}
 }
 @media (max-aspect-ratio:3/4){
   .ph-media img,.ph-media video{object-position:50% 50%}
