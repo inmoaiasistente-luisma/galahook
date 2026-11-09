@@ -23,3 +23,11 @@ test('the site navigation, breadcrumbs, reviews and admin links go directly home
   assert.deepEqual(obsolete, []);
   for (const path of paths) assert.match(read(path), /\bhref\s*[:=]\s*["']\/["']/, path);
 });
+
+test('the published Trivia entry links Home and the logo to the root without dropping campaign data', () => {
+  const entry = read('trivia/index.html').match(/<script\b[^>]*type="module"[^>]*src="\/(trivia\/[^"]+\.js)"/);
+  assert.ok(entry, 'Trivia module entry must exist');
+  const bundle = read(entry[1]);
+  assert.doesNotMatch(bundle, /index\.html/);
+  assert.match(bundle, /utm_source=trivia&utm_medium=game&utm_campaign=site_nav/);
+});
