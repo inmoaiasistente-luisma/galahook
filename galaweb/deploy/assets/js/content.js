@@ -73,7 +73,7 @@ window.GHA_DEFAULT = {
         { en: "All meals & local cuisine", es: "Todas las comidas y cocina local" },
         { en: "Kicker Rock (León Dormido) tour", es: "Tour Kicker Rock (León Dormido)" },
         { en: "San Cristóbal 360° tour", es: "Tour San Cristóbal 360°" },
-        { en: "Galápagos flight (GYE/UIO) & all island transport", es: "Vuelo a Galápagos (GYE/UIO) y todo el transporte en la isla" }
+        { en: "Airport pickup & all island transfers", es: "Recogida en el aeropuerto y todos los traslados en la isla" }
       ]
     },
     {
@@ -89,7 +89,7 @@ window.GHA_DEFAULT = {
         { en: "Kicker Rock & 360° tours", es: "Tours Kicker Rock y 360°" },
         { en: "Half-day sport fishing", es: "Pesca deportiva de medio día" },
         { en: "Highlands & El Junco lagoon", es: "Tierras altas y laguna El Junco" },
-        { en: "Galápagos flight (GYE/UIO) & all island transport", es: "Vuelo a Galápagos (GYE/UIO) y todo el transporte en la isla" }
+        { en: "Airport pickup & all island transfers", es: "Recogida en el aeropuerto y todos los traslados en la isla" }
       ]
     },
     {
@@ -106,7 +106,7 @@ window.GHA_DEFAULT = {
         { en: "Full day of sport fishing", es: "Día completo de pesca deportiva" },
         { en: "Discovery diving day", es: "Día de buceo de descubrimiento" },
         { en: "Highlands, beaches & snorkeling", es: "Tierras altas, playas y snorkel" },
-        { en: "Galápagos flight (GYE/UIO) & all island transport", es: "Vuelo a Galápagos (GYE/UIO) y todo el transporte en la isla" }
+        { en: "Airport pickup & all island transfers", es: "Recogida en el aeropuerto y todos los traslados en la isla" }
       ]
     },
     {
@@ -122,7 +122,7 @@ window.GHA_DEFAULT = {
         { en: "Tortuga Bay & Charles Darwin Station", es: "Tortuga Bay y Estación Charles Darwin" },
         { en: "Bartolomé / North Seymour boat day", es: "Día de bote a Bartolomé / North Seymour" },
         { en: "Punta Pitt, Kicker Rock & El Junco", es: "Punta Pitt, Kicker Rock y El Junco" },
-        { en: "Galápagos flight, inter-island ferry & transport", es: "Vuelo a Galápagos, ferry inter-islas y transporte" }
+        { en: "Inter-island ferry by boat & all transfers", es: "Ferry entre islas en lancha y todos los traslados" }
       ]
     },
     {
@@ -138,14 +138,14 @@ window.GHA_DEFAULT = {
         { en: "Tortuga Bay & Charles Darwin Station", es: "Tortuga Bay y Estación Charles Darwin" },
         { en: "Bartolomé / North Seymour boat day", es: "Día de bote a Bartolomé / North Seymour" },
         { en: "Sierra Negra volcano & Las Tintoreras", es: "Volcán Sierra Negra y Las Tintoreras" },
-        { en: "Galápagos flight, inter-island ferries & transport", es: "Vuelo a Galápagos, ferries inter-islas y transporte" }
+        { en: "Inter-island ferries by boat & all transfers", es: "Ferries entre islas en lancha y todos los traslados" }
       ]
     }
   ],
 
   pkgNote: {
-    en: "International flights to Ecuador are not included. We cover your round-trip flight from Quito (UIO) or Guayaquil (GYE) to Galápagos plus all in-island transport.",
-    es: "Los vuelos internacionales hasta Ecuador no están incluidos. Nosotros cubrimos tu vuelo redondo desde Quito (UIO) o Guayaquil (GYE) a Galápagos y todo el transporte dentro de la isla."
+    en: "Flights are not included: not the international flight to Ecuador, not the flight from Quito (UIO) or Guayaquil (GYE) to Galápagos, and not flights between islands. On the Island Hopper packages you travel between islands by boat; for an additional fee you can fly a local airline between islands instead.",
+    es: "Los vuelos no están incluidos: ni el vuelo internacional a Ecuador, ni el vuelo desde Quito (UIO) o Guayaquil (GYE) a Galápagos, ni los vuelos entre islas. En los paquetes Island Hopper viajas entre islas en lancha; pagando una tarifa adicional puedes volar entre islas en una aerolínea local."
   },
 
   /* Ya NO hay descuento automático ni nota de grupo en la tarjeta del paquete.
