@@ -862,7 +862,7 @@ function pkgPriceBlock(p){
 function pkgBookControl(p, onIndex){
   var ps=pkgPriceState(p.id);
   if(PKG_CHECKOUT_PAUSED) return '<a class="btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block" href="contact.html">'+(L==='es'?'Contáctenos':'Contact us')+'</a>';
-  var label=onIndex?(L==='es'?'Consultar':'Enquire'):(L==='es'?'Reservar este viaje':'Book this trip');
+  var label=L==='es'?'Reservar este viaje':'Book this trip';   // también en el inicio: este botón abre la reserva con pago
   if(ps.state==='priced') return bookBtn(t(p.name)+' · '+t(p.days), ps.price, 'person', 'btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block', label, (p.minGuests||2), p.id);
   if(ps.state==='loading') return '<button type="button" class="btn '+(p.popular?'btn-gold':'btn-ink')+' btn-block" disabled>'+(L==='es'?'Cargando…':'Loading…')+'</button>';
   return '<button type="button" class="btn btn-ink btn-block" disabled title="'+(L==='es'?'Precio no disponible':'Price unavailable')+'">'+(L==='es'?'No disponible':'Unavailable')+'</button>';
