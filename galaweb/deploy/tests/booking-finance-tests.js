@@ -137,5 +137,26 @@ ok('48b plantillas y descuentos siguen accesibles desde Configuración',
 ok('49 admin.js: form venta manual envía sale_source', /payload\.sale_source=saleSrc\.value/.test(adm) && /function panelRecordSale/.test(adm));
 ok('50 admin.html: estilos .fin-tabs/.fin-tab (tema claro)', /\.fin-tab\.on\{background:var\(--a-gold\)/.test(read('admin.html')));
 
+/* ---------------- botón de paquetes: reserva directa ----------------
+   Un paquete con precio publicado se reserva y paga en línea, también desde
+   el inicio. El botón no puede decir "Consultar"/"Enquire" si abre el pago. */
+{
+  const vm = require('vm');
+  const appJs = read('assets/js/app.js');
+  const src = appJs.slice(appJs.indexOf('function pkgBookControl'), appJs.indexOf('function pkgCard'));
+  const labelFor = function (lang, onIndex) {
+    const box = { L: lang, PKG_CHECKOUT_PAUSED: false, out: null,
+      pkgPriceState: function () { return { state: 'priced', price: 3499, cents: 349900 }; },
+      t: function (x) { return x[lang]; },
+      bookBtn: function (name, price, unit, cls, label) { return label; } };
+    vm.runInNewContext(src + ';out=pkgBookControl({id:"p3",name:{en:"N",es:"N"},days:{en:"D",es:"D"}},' + onIndex + ');', box);
+    return box.out;
+  };
+  ok('51 paquetes con precio: el inicio dice Reservar, no Consultar',
+    labelFor('es', true) === 'Reservar este viaje' && labelFor('en', true) === 'Book this trip');
+  ok('52 paquetes con precio: la página de paquetes sigue igual',
+    labelFor('es', false) === 'Reservar este viaje' && labelFor('en', false) === 'Book this trip');
+}
+
 console.log('\n=== RESULTADO BOOKING-FINANCE: ' + pass + ' PASS · ' + fail + ' FAIL ===');
 if (fail > 0) process.exit(1);
