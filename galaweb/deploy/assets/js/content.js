@@ -316,14 +316,15 @@ window.GHA_DEFAULT = {
       { en: "Yellowtail", es: "Jurel" }
     ],
     tripCarousel: ["assets/img/fishing-c1.jpg","assets/img/fishing-c2.jpg","assets/img/fishing-c3.jpg"],
-    /* DECISIÓN COMERCIAL: toda la pesca deportiva es SOLO por cotización.
-       price:0 hace que el frontend las trate como cotización (sin precio
-       público, sin Stripe). El precio real de cobro nunca vive aquí:
-       el catálogo del servidor (server/lib/tour-catalog.js) es la fuente. */
+    /* Precios mostrados = espejo del catálogo del servidor
+       (server/lib/tour-catalog.js), que es la fuente del cobro. price:0 hace
+       que el frontend lo trate como solicitud (sin Stripe). La expedición
+       (ownSection) no se pinta como tarjeta: tiene su propia sección en
+       sport-fishing.html. */
     trips: [
-      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 1800, photos: ["assets/img/fishing/01.jpg","assets/img/fishing/02.jpg","assets/img/fishing/03.jpg","assets/img/fishing/04.jpg","assets/img/fishing/05.jpg","assets/img/fishing/06.jpg","assets/img/fishing/07.jpg"] },
-      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 2850, photos: ["assets/img/fishing/08.jpg","assets/img/fishing/09.jpg","assets/img/fishing/10.jpg","assets/img/fishing/11.jpg","assets/img/fishing/12.jpg","assets/img/fishing/13.jpg","assets/img/fishing/14.jpg"] },
-      { id: "expedition", name: { en: "Multi-Day Expedition", es: "Expedición de Varios Días" }, duration: { en: "Custom · per boat", es: "Personalizado · por bote" }, price: 0, photos: ["assets/img/fishing/15.jpg","assets/img/fishing/16.jpg","assets/img/fishing/17.jpg","assets/img/fishing/18.jpg","assets/img/fishing/19.jpg","assets/img/fishing/20.jpg"] }
+      { id: "half", name: { en: "Half-Day Charter", es: "Charter Medio Día" }, duration: { en: "4–5 hrs · per boat", es: "4–5 hrs · por bote" }, price: 1900, includes: { en: "All gear, bait, crew and refreshments included.", es: "Incluye todo el equipo, carnada, tripulación y refrigerios." }, photos: ["assets/img/fishing/01.jpg","assets/img/fishing/02.jpg","assets/img/fishing/03.jpg","assets/img/fishing/04.jpg","assets/img/fishing/05.jpg","assets/img/fishing/06.jpg","assets/img/fishing/07.jpg"] },
+      { id: "full", name: { en: "Full-Day Charter", es: "Charter Día Completo", }, duration: { en: "8 hrs · per boat", es: "8 hrs · por bote" }, price: 2900, includes: { en: "All gear, bait, crew and refreshments included.", es: "Incluye todo el equipo, carnada, tripulación y refrigerios." }, photos: ["assets/img/fishing/08.jpg","assets/img/fishing/09.jpg","assets/img/fishing/10.jpg","assets/img/fishing/11.jpg","assets/img/fishing/12.jpg","assets/img/fishing/13.jpg","assets/img/fishing/14.jpg"] },
+      { id: "expedition", ownSection: true, name: { en: "8-Day Galápagos Fishing Expedition", es: "Expedición de Pesca en Galápagos de 8 Días" }, duration: { en: "8 days · 7 nights · per group", es: "8 días · 7 noches · por grupo" }, price: 0, photos: ["assets/img/fishing/15.jpg","assets/img/fishing/16.jpg","assets/img/fishing/17.jpg","assets/img/fishing/18.jpg","assets/img/fishing/19.jpg","assets/img/fishing/20.jpg"] }
     ],
     /* peak = best fishing months, good = decent */
     calendar: { peak: [10,11,0,1,2,3], good: [4,9], months: ["J","F","M","A","M","J","J","A","S","O","N","D"] },

@@ -898,7 +898,7 @@ function renderFishing(){
   const reel=document.getElementById('fishReel');
   if(reel) reel.innerHTML=f.photos.map((p,k)=>'<div class="hero-slide'+(k===0?' on':'')+'" style="background-image:url('+p+')"></div>').join('');
   const trips=document.getElementById('fishTrips');
-  if(trips) trips.innerHTML=f.trips.map(tr=>{
+  if(trips) trips.innerHTML=f.trips.filter(tr=>!tr.ownSection).map(tr=>{
     const car=(tr.photos&&tr.photos.length)?tr.photos:((f.tripCarousel&&f.tripCarousel.length)?f.tripCarousel:[]);
     const carHTML=car.length?('<div class="trip-car" data-trip-car>'+car.map((src,k)=>'<div class="trip-car-slide'+(k===0?' on':'')+'" style="background-image:url('+src+')"></div>').join('')+'<div class="trip-car-dots">'+car.map((_,k)=>'<span class="'+(k===0?'on':'')+'"></span>').join('')+'</div></div>'):'';
     /* Pesca deportiva sigue siendo SOLO cotización en el checkout
@@ -909,10 +909,16 @@ function renderFishing(){
       ? '<div class="pkg-price"><small style="color:var(--ink-soft)">'+(L==='es'?'Desde':'From')+'</small><b style="font-size:22px;color:var(--ink)">$'+tr.price.toLocaleString('en-US')+'</b><small style="color:var(--ink-soft)">'+(L==='es'?' / bote':' / boat')+'</small></div>'
       : '<div class="pkg-price quote"><small style="color:var(--ink-soft)">'+(L==='es'?'Precio':'Price')+'</small><b style="font-size:22px;color:var(--ink)">'+(L==='es'?'Bajo cotización':'On request')+'</b></div>';
     const btnLabel = tr.price ? (L==='es'?'RESERVAR AHORA':'BOOK NOW') : (L==='es'?'SOLICITAR COTIZACIÓN':'GET A QUOTE');
+    const incHTML = tr.includes ? '<ul class="pkg-includes"><li>'+svg('check')+'<span>'+t(tr.includes)+'</span></li></ul>' : '';
     return '<article class="pkg reveal">'+carHTML+'<div class="pkg-head"><span class="days">'+t(tr.name)+'</span><div class="nights" style="margin-top:6px">'+t(tr.duration)+'</div></div>'
       +priceHTML
+      +incHTML
       +'<div class="pkg-foot" style="padding-top:8px">'+bookBtn(t(tr.name), tr.price, 'boat', 'btn btn-gold btn-block', btnLabel, 1, tr.id)+'</div></article>';
   }).join('');
+  /* La expedición de 8 días tiene su propia sección (sport-fishing.html); su
+     botón abre la solicitud con el nombre en el idioma elegido. */
+  const xpTrip=f.trips.find(tr=>tr.ownSection), xpBtn=document.querySelector('#expedition .js-book');
+  if(xpTrip&&xpBtn) xpBtn.dataset.name=t(xpTrip.name);
   initTripCarousels();
   const cal=document.getElementById('fishCalendar');
   if(cal){
