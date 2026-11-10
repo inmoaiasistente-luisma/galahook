@@ -158,5 +158,33 @@ ok('50 admin.html: estilos .fin-tabs/.fin-tab (tema claro)', /\.fin-tab\.on\{bac
     labelFor('es', false) === 'Reservar este viaje' && labelFor('en', false) === 'Book this trip');
 }
 
+/* ---------------- paquetes: vuelos NO incluidos ----------------
+   No incluimos el vuelo Quito/Guayaquil ↔ Galápagos ni vuelos entre islas.
+   En los Island Hopper se cruza entre islas en lancha; volar en aerolínea
+   local entre islas es opcional, con tarifa adicional. */
+{
+  const vm = require('vm');
+  const box = { window: {} };
+  vm.runInNewContext(read('assets/js/content.js') + ';' + read('assets/js/details.js'), box);
+  const C = box.window.GHA_DEFAULT, D = box.window.GHA_DETAILS.packages;
+  const FLY = /flight|vuelo/i;
+  const both = function (x, en, es) { return en.test(x.en) && es.test(x.es); };
+  ok('53 ningún paquete dice que incluye vuelo',
+    C.packages.length === 5 && C.packages.every(function (p) { return !p.includes.some(function (i) { return FLY.test(i.en) || FLY.test(i.es); }); }) &&
+    Object.keys(D).every(function (k) { return !D[k].included.some(function (i) { return FLY.test(i.en) || FLY.test(i.es); }); }));
+  ok('54 cada paquete lista el vuelo a Galápagos como NO incluido',
+    C.packages.every(function (p) { return D[p.id] && D[p.id].notIncluded.some(function (i) { return both(i, /flight/i, /vuelo/i) && both(i, /Gal[áa]pagos/, /Gal[áa]pagos/) && both(i, /Quito|UIO/, /Quito|UIO/); }); }));
+  ok('55 Island Hopper: entre islas en lancha; vuelo entre islas opcional con tarifa adicional',
+    ['p8sc', 'p8is'].every(function (id) {
+      const d = D[id];
+      return d.included.some(function (i) { return both(i, /ferr/i, /ferr/i); }) &&
+        d.notIncluded.some(function (i) { return both(i, /between islands/i, /entre islas/i) && both(i, /additional fee/i, /tarifa adicional/i); });
+    }));
+  ok('56 nota de paquetes: vuelos no incluidos, lancha entre islas, aerolínea con tarifa adicional',
+    !/we cover your round-trip flight/i.test(C.pkgNote.en) && !/cubrimos tu vuelo/i.test(C.pkgNote.es) &&
+    both(C.pkgNote, /not included/i, /no est[áa]n incluidos/i) && both(C.pkgNote, /by boat/i, /lancha/i) &&
+    both(C.pkgNote, /additional fee/i, /tarifa adicional/i));
+}
+
 console.log('\n=== RESULTADO BOOKING-FINANCE: ' + pass + ' PASS · ' + fail + ' FAIL ===');
 if (fail > 0) process.exit(1);

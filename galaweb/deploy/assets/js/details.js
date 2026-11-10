@@ -365,6 +365,7 @@ window.GHA_DETAILS = {
         { en: "$200 pp National Park entry fee (cash)", es: "Entrada al Parque Nacional $200 pp (efectivo)" },
         { en: "$20 pp Transit Control Card (cash)", es: "Tarjeta de Control de Tránsito $20 pp (efectivo)" },
         { en: "International flights to Ecuador", es: "Vuelos internacionales hasta Ecuador" },
+        { en: "Round-trip flight Quito (UIO) or Guayaquil (GYE) ↔ Galápagos", es: "Vuelo de ida y vuelta Quito (UIO) o Guayaquil (GYE) ↔ Galápagos" },
         { en: "Travel insurance & gratuities", es: "Seguro de viaje y propinas" }
       ],
       facts: {
@@ -406,6 +407,7 @@ window.GHA_DETAILS = {
         { en: "$200 pp National Park entry fee (cash)", es: "Entrada al Parque Nacional $200 pp (efectivo)" },
         { en: "$20 pp Transit Control Card (cash)", es: "Tarjeta de Control de Tránsito $20 pp (efectivo)" },
         { en: "International flights to Ecuador", es: "Vuelos internacionales hasta Ecuador" },
+        { en: "Round-trip flight Quito (UIO) or Guayaquil (GYE) ↔ Galápagos", es: "Vuelo de ida y vuelta Quito (UIO) o Guayaquil (GYE) ↔ Galápagos" },
         { en: "Travel insurance & gratuities", es: "Seguro de viaje y propinas" }
       ],
       facts: {
@@ -450,6 +452,7 @@ window.GHA_DETAILS = {
         { en: "$200 pp National Park entry fee (cash)", es: "Entrada al Parque Nacional $200 pp (efectivo)" },
         { en: "$20 pp Transit Control Card (cash)", es: "Tarjeta de Control de Tránsito $20 pp (efectivo)" },
         { en: "International flights to Ecuador", es: "Vuelos internacionales hasta Ecuador" },
+        { en: "Round-trip flight Quito (UIO) or Guayaquil (GYE) ↔ Galápagos", es: "Vuelo de ida y vuelta Quito (UIO) o Guayaquil (GYE) ↔ Galápagos" },
         { en: "Travel insurance & gratuities", es: "Seguro de viaje y propinas" }
       ],
       facts: {
@@ -496,6 +499,8 @@ window.GHA_DETAILS = {
         { en: "$200 pp National Park entry fee (cash)", es: "Entrada al Parque Nacional $200 pp (efectivo)" },
         { en: "$20 pp INGALA Transit Control Card (cash)", es: "Tarjeta de Control de Tránsito INGALA $20 pp (efectivo)" },
         { en: "International flights to Ecuador", es: "Vuelos internacionales hasta Ecuador" },
+        { en: "Round-trip flight Quito (UIO) or Guayaquil (GYE) ↔ Galápagos", es: "Vuelo de ida y vuelta Quito (UIO) o Guayaquil (GYE) ↔ Galápagos" },
+        { en: "Flights between islands (optional: local airline for an additional fee)", es: "Vuelos entre islas (opcional: aerolínea local con tarifa adicional)" },
         { en: "Meals not specified in the itinerary", es: "Comidas no especificadas en el itinerario" },
         { en: "Travel insurance & gratuities", es: "Seguro de viaje y propinas" }
       ],
@@ -543,6 +548,8 @@ window.GHA_DETAILS = {
         { en: "$200 pp National Park entry fee (cash)", es: "Entrada al Parque Nacional $200 pp (efectivo)" },
         { en: "$20 pp INGALA Transit Control Card (cash)", es: "Tarjeta de Control de Tránsito INGALA $20 pp (efectivo)" },
         { en: "International flights to Ecuador", es: "Vuelos internacionales hasta Ecuador" },
+        { en: "Round-trip flight Quito (UIO) or Guayaquil (GYE) ↔ Galápagos", es: "Vuelo de ida y vuelta Quito (UIO) o Guayaquil (GYE) ↔ Galápagos" },
+        { en: "Flights between islands (optional: local airline for an additional fee)", es: "Vuelos entre islas (opcional: aerolínea local con tarifa adicional)" },
         { en: "Meals not specified in the itinerary", es: "Comidas no especificadas en el itinerario" },
         { en: "Travel insurance & gratuities", es: "Seguro de viaje y propinas" }
       ],
