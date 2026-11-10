@@ -1,0 +1,92 @@
+/* Página de pesca: tarjetas de charter en 2 columnas y la sección de la
+   "8-Day Galápagos Fishing Expedition". Usa los tokens de site.css;
+   tarjeta crema con texto oscuro, como .pkg. */
+
+/* Charters: ahora son dos tarjetas, centradas */
+.pkg-grid.pkg-grid--two{grid-template-columns:repeat(2,1fr);max-width:880px;margin:0 auto;}
+
+/* ---------- expedición ---------- */
+.xp{margin:56px auto 0;max-width:1120px;background:var(--paper);color:var(--ink);
+  border:1px solid var(--gold);border-radius:var(--radius-lg);overflow:hidden;
+  box-shadow:0 22px 60px -26px rgba(207,159,84,.7);}
+.xp-top{display:grid;grid-template-columns:1.05fr 1fr;}
+.xp-media{position:relative;min-height:460px;}
+.xp-media .trip-car{position:absolute;inset:0;aspect-ratio:auto;border-radius:0;}
+.xp-body{padding:42px 46px;display:flex;flex-direction:column;gap:14px;}
+.xp-flag{align-self:flex-start;margin:0;background:var(--gold);color:var(--deep);font-size:11px;font-weight:800;
+  letter-spacing:.16em;text-transform:uppercase;padding:7px 13px;border-radius:999px;}
+.xp-title{font-family:var(--display);font-weight:800;font-size:clamp(30px,3.3vw,42px);line-height:1.04;
+  letter-spacing:-.015em;margin:0;color:var(--ink);}
+.xp-meta{margin:0;color:var(--sea-deep);font-weight:700;font-size:15px;letter-spacing:.03em;}
+.xp-lead{margin:0;color:var(--ink-soft);font-size:16.5px;line-height:1.55;}
+.xp-price{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin-top:6px;padding:18px 0;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+.xp-price small{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);}
+.xp-price b{font-family:var(--display);font-weight:800;font-size:46px;line-height:1;letter-spacing:-.01em;color:var(--ink);}
+.xp-price span{flex-basis:100%;font-size:15px;font-weight:600;color:var(--ink);}
+.xp-cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;}
+.xp-season{margin:0;display:flex;gap:9px;align-items:center;font-size:14.5px;color:var(--ink-soft);}
+.xp-season::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--gold);flex:0 0 auto;}
+
+.xp-price em{font-style:normal;font-size:15px;font-weight:700;color:var(--ink-soft);}
+
+/* un día en el bote */
+.xp-boat{display:grid;grid-template-columns:auto 1fr;gap:10px 40px;align-items:start;padding:30px 36px;
+  border-top:1px solid var(--line);background:var(--sand);}
+.xp-boat h4{grid-column:1 / -1;margin:0 0 4px;font-family:var(--body);font-weight:800;letter-spacing:.12em;
+  text-transform:uppercase;font-size:12.5px;color:var(--sea-deep);}
+.xp-times{list-style:none;margin:0;padding:0;display:grid;gap:12px;min-width:260px;}
+.xp-times li{display:grid;grid-template-columns:78px 1fr;gap:12px;align-items:baseline;font-size:15px;color:var(--ink);}
+.xp-times b{font-family:var(--display);font-weight:800;font-size:17px;color:var(--ink);}
+.xp-onboard{display:grid;gap:10px;padding-left:40px;border-left:1px solid var(--line);}
+.xp-onboard p{margin:0;font-size:15px;line-height:1.5;color:var(--ink-soft);}
+.xp-onboard b{color:var(--ink);font-weight:800;}
+.xp-note{margin:16px 0 0;padding:12px 14px;border-radius:8px;background:var(--sand);font-size:14px;line-height:1.5;color:var(--ink);}
+
+.xp-grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;border-top:1px solid var(--line);}
+.xp-col{padding:34px 36px;}
+.xp-col + .xp-col{border-left:1px solid var(--line);}
+.xp-col h4{margin:0 0 18px;font-family:var(--body);font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  font-size:12.5px;color:var(--sea-deep);}
+.xp-col h4.xp-h-next{margin-top:30px;}
+
+.xp-days{list-style:none;margin:0;padding:0;display:grid;gap:18px;}
+.xp-days li{display:grid;grid-template-columns:84px 1fr;gap:12px;align-items:baseline;}
+.xp-days .d{white-space:nowrap;font-family:var(--display);font-weight:800;font-size:15px;color:var(--ink);
+  padding-left:12px;border-left:3px solid var(--gold);line-height:1.2;}
+.xp-days p{margin:0;font-size:15px;line-height:1.5;color:var(--ink-soft);}
+
+.xp-list{list-style:none;margin:0;padding:0;display:grid;gap:11px;}
+.xp-list li{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;line-height:1.45;color:var(--ink);}
+.xp-list svg{width:17px;height:17px;flex:0 0 auto;margin-top:2px;}
+.xp-list.yes svg{color:var(--sea);}
+.xp-list.no svg{color:#9a4b3c;}
+
+.xp-spots{display:flex;flex-wrap:wrap;gap:8px;}
+.xp-spots span{border:1.5px solid var(--line);border-radius:40px;padding:6px 13px;font-size:13.5px;font-weight:600;color:var(--ink);background:var(--white);}
+
+@media(max-width:1000px){
+  .xp-grid{grid-template-columns:1fr 1fr;}
+  .xp-col:first-child{grid-column:1 / -1;}
+  .xp-col + .xp-col{border-left:0;}
+  .xp-col:nth-child(2),.xp-col:nth-child(3){border-top:1px solid var(--line);}
+  .xp-col:nth-child(3){border-left:1px solid var(--line);}
+}
+@media(max-width:900px){
+  .xp-top{grid-template-columns:1fr;}
+  .xp-media{min-height:0;aspect-ratio:16/10;}
+  .xp-body{padding:30px 26px;}
+}
+@media(max-width:620px){
+  .pkg-grid.pkg-grid--two{grid-template-columns:1fr;}
+  .xp{margin-top:40px;}
+  .xp-grid{grid-template-columns:1fr;}
+  .xp-col{padding:26px 22px;}
+  .xp-col:nth-child(3){border-left:0;}
+  .xp-days li{grid-template-columns:88px 1fr;}
+  .xp-boat{grid-template-columns:1fr;padding:26px 22px;}
+  .xp-times{min-width:0;}
+  .xp-onboard{padding-left:0;border-left:0;padding-top:14px;border-top:1px solid var(--line);}
+  .xp-price b{font-size:40px;}
+  .xp-cta .btn{width:100%;justify-content:center;}
+}

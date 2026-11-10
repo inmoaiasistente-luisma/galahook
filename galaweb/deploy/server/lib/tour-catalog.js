@@ -39,14 +39,15 @@ const TOURS = {
   private:      { name: 'Private Boat Charter',       priceCents: null,  unit: 'boat',   minGuests: 1, requiresQuote: true,  type: 'tour' },
 
   // ---- Pesca deportiva (boat) ----
-  // Half-Day y Full-Day tienen precio público (ancla derivada de FishingBooker
-  // menos $100) y se cobran por Stripe como cualquier tour. Multi-Day Expedition
-  // sigue sin precio publicado: priceCents=null + requiresQuote=true fuerzan el
-  // flujo de /api/quote-request. (Las reservas históricas conservan su importe;
-  // esto solo cambia el catálogo vigente.)
-  half:       { name: 'Half-Day Charter',     priceCents: 180000, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
-  full:       { name: 'Full-Day Charter',     priceCents: 285000, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
-  expedition: { name: 'Multi-Day Expedition', priceCents: null,   unit: 'boat', minGuests: 1, requiresQuote: true,  type: 'fishing' }
+  // Half-Day y Full-Day tienen precio público (fijado por el owner el
+  // 2026-11-09: $1,900 y $2,900 por bote) y se cobran por Stripe como cualquier
+  // tour. La expedición de 8 días muestra su precio ($24,999 + impuestos por
+  // grupo) en sport-fishing.html, pero se reserva por solicitud: priceCents=null
+  // + requiresQuote=true fuerzan el flujo de /api/quote-request. (Las reservas
+  // históricas conservan su importe; esto solo cambia el catálogo vigente.)
+  half:       { name: 'Half-Day Charter',                   priceCents: 190000, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
+  full:       { name: 'Full-Day Charter',                   priceCents: 290000, unit: 'boat', minGuests: 1, requiresQuote: false, type: 'fishing' },
+  expedition: { name: '8-Day Galápagos Fishing Expedition', priceCents: null,   unit: 'boat', minGuests: 1, requiresQuote: true,  type: 'fishing' }
 };
 
 /** Devuelve una copia inmutable del tour (con su id) o null si no existe. */
