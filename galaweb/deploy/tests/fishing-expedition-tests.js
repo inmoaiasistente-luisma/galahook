@@ -95,5 +95,34 @@ ok('13 estilos de la expedición enlazados en la página',
   fs.existsSync(path.join(BASE, 'assets/css/fishing-expedition.css')) &&
   /\.xp\{/.test(read('assets/css/fishing-expedition.css')) && /\.pkg-grid\.pkg-grid--two\{/.test(read('assets/css/fishing-expedition.css')));
 
+/* ---------------- copia vieja del editor local (admin) ----------------
+   El editor de contenido LOCAL guarda una copia COMPLETA del contenido en el
+   navegador del owner. Esa copia quedó congelada (charters sin fotos propias,
+   la expedición como tarjeta, paquetes con "Vuelo a Galápagos") y tapaba lo
+   publicado solo en su navegador. El catálogo debe salir siempre de content.js. */
+{
+  const app = read('assets/js/app.js').replace(/\r\n/g, '\n');
+  const src = app.slice(app.indexOf("const CKEY='GHA_CONTENT'"), app.indexOf('let S = loadContent();'));
+  const stale = {
+    hero: { title: { en: 'Owner hero', es: 'Hero del owner' } },
+    packages: [{ id: 'p3', price: 3499, name: { en: 'Old', es: 'Viejo' }, includes: [{ en: 'Galápagos flight (GYE/UIO) & all island transport', es: 'Vuelo a Galápagos (GYE/UIO) y todo el transporte en la isla' }] }],
+    tours: [{ id: 'kicker', price: 195, name: { en: 'Old tour', es: 'Tour viejo' } }],
+    fishing: { photos: ['assets/img/old.jpg'], tripCarousel: ['assets/img/fishing-c1.jpg', 'assets/img/fishing-c2.jpg', 'assets/img/fishing-c3.jpg'],
+      trips: [{ id: 'half', price: 1800 }, { id: 'full', price: 2850 }, { id: 'expedition', price: 0, name: { en: 'Multi-Day Expedition', es: 'Expedición de Varios Días' } }] }
+  };
+  const store = { GHA_CONTENT: JSON.stringify(stale) };
+  const ctx = { window: { GHA_DEFAULT: box.window.GHA_DEFAULT }, localStorage: { getItem: function (k) { return k in store ? store[k] : null; } } };
+  let S = null;
+  try { vm.runInNewContext(src + ';out=loadContent();', ctx); S = ctx.out; } catch (e) { S = null; }
+  const D = box.window.GHA_DEFAULT;
+  ok('14 una copia vieja del editor local no tapa los charters, sus fotos ni la expedición',
+    !!S && JSON.stringify(S.fishing) === JSON.stringify(D.fishing) &&
+    S.fishing.trips.find(function (t) { return t.id === 'half'; }).photos[0] === 'assets/img/fishing/01.jpg' &&
+    S.fishing.trips.find(function (t) { return t.id === 'expedition'; }).ownSection === true);
+  ok('15 ni los paquetes ni los tours; el resto de lo editado se respeta',
+    !!S && JSON.stringify(S.packages) === JSON.stringify(D.packages) && JSON.stringify(S.tours) === JSON.stringify(D.tours) &&
+    S.hero.title.en === 'Owner hero');
+}
+
 console.log('\n=== RESULTADO FISHING-EXPEDITION: ' + pass + ' PASS · ' + fail + ' FAIL ===');
 if (fail > 0) process.exit(1);
