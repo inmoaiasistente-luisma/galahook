@@ -60,9 +60,18 @@ function reconcilePrices(S){
   if(S.fishing&&S.fishing.trips) S.fishing.trips.forEach(function(f){ f.price = dfr[f.id]?dfr[f.id].price:0; });
   return S;
 }
+/* El editor de contenido LOCAL del panel guarda una copia COMPLETA del
+   contenido en ese navegador, y esa copia se queda congelada. Así tapaba lo
+   publicado solo para el owner (charters con las mismas 3 fotos, la expedición
+   como tarjeta, paquetes con textos viejos). El catálogo (paquetes, tours y
+   pesca) sale siempre de content.js; el resto de lo editado se respeta. */
+function dropStaleCatalog(stored){
+  if(stored && typeof stored==='object'){ delete stored.packages; delete stored.tours; delete stored.fishing; }
+  return stored;
+}
 function loadContent(){
   let stored=null;
-  try{ stored=JSON.parse(localStorage.getItem(CKEY)||'null'); }catch(e){}
+  try{ stored=dropStaleCatalog(JSON.parse(localStorage.getItem(CKEY)||'null')); }catch(e){}
   const merged = stored ? deepMerge(window.GHA_DEFAULT, stored) : window.GHA_DEFAULT;
   return reconcilePrices(merged);
 }
