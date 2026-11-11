@@ -308,8 +308,9 @@ window.GHA_DEFAULT = {
     },
     photos: ["assets/img/fishing-marlin.jpg","assets/img/fishing-mahi.jpg","assets/img/fishing-release.jpg"],
     species: [
-      { en: "Striped Marlin", es: "Marlín Rayado" },
-      { en: "Blue Marlin", es: "Marlín Azul" },
+      { en: "Black Marlin (200+ lbs)", es: "Marlín Negro (más de 200 libras)" },
+      { en: "Blue Marlin (200+ lbs)", es: "Marlín Azul (más de 200 libras)" },
+      { en: "Striped Marlin (200+ lbs)", es: "Marlín Rayado (más de 200 libras)" },
       { en: "Yellowfin Tuna", es: "Atún Aleta Amarilla" },
       { en: "Wahoo", es: "Wahoo" },
       { en: "Mahi-Mahi (Dorado)", es: "Dorado" },
@@ -327,8 +328,8 @@ window.GHA_DEFAULT = {
       { id: "expedition", ownSection: true, name: { en: "8-Day Galápagos Fishing Expedition", es: "Expedición de Pesca en Galápagos de 8 Días" }, duration: { en: "8 days · 7 nights · per group", es: "8 días · 7 noches · por grupo" }, price: 0, photos: ["assets/img/fishing/15.jpg","assets/img/fishing/16.jpg","assets/img/fishing/17.jpg","assets/img/fishing/18.jpg","assets/img/fishing/19.jpg","assets/img/fishing/20.jpg"] }
     ],
     /* peak = best fishing months, good = decent */
-    calendar: { peak: [10,11,0,1,2,3], good: [4,9], months: ["J","F","M","A","M","J","J","A","S","O","N","D"] },
-    note: { en: "Best season: November – April. All gear, bait, crew and refreshments included. Catch & release for billfish.", es: "Mejor temporada: Noviembre – Abril. Todo el equipo, carnada, tripulación y refrigerios incluidos. Captura y liberación para peces pico." }
+    calendar: { peak: [10,11,0,1,2,3,4,5], good: [9], months: ["J","F","M","A","M","J","J","A","S","O","N","D"] },
+    note: { en: "Best season: November – June. All gear, bait, crew and refreshments included. Catch & release for billfish.", es: "Mejor temporada: Noviembre – Junio. Todo el equipo, carnada, tripulación y refrigerios incluidos. Captura y liberación para peces pico." }
   },
 
   /* ---------------- ABOUT ---------------- */
