@@ -124,5 +124,45 @@ ok('13 estilos de la expedición enlazados en la página',
     S.hero.title.en === 'Owner hero');
 }
 
+/* ---------------- especies con mayúscula y temporada de Marlín ----------------
+   Pedido del owner (2026-11-11): Marlín Negro, Azul y Rayado de más de 200
+   libras; todas las especies con mayúscula; temporada de noviembre a junio. */
+{
+  const C = box.window.GHA_DEFAULT.fishing;
+  const sp = C.species;
+  ok('16 especies: Marlín Negro, Azul y Rayado de más de 200 libras, primero',
+    sp.length === 7 &&
+    sp[0].en === 'Black Marlin (200+ lbs)' && sp[0].es === 'Marlín Negro (más de 200 libras)' &&
+    sp[1].en === 'Blue Marlin (200+ lbs)' && sp[1].es === 'Marlín Azul (más de 200 libras)' &&
+    sp[2].en === 'Striped Marlin (200+ lbs)' && sp[2].es === 'Marlín Rayado (más de 200 libras)');
+  ok('17 temporada de Marlín: noviembre a junio (julio ya no)',
+    JSON.stringify(C.calendar.peak.slice().sort(function (a, b) { return a - b; })) === JSON.stringify([0, 1, 2, 3, 4, 5, 10, 11]) &&
+    C.calendar.good.indexOf(6) < 0 && C.calendar.peak.indexOf(6) < 0 &&
+    /November – June/.test(C.note.en) && /Noviembre – Junio/.test(C.note.es));
+  const LOWER_EN = /(^|[^\w\/-])(marlin|tuna|wahoo|mahi-mahi|yellowtail)\b/;
+  const LOWER_ES = /(^|[^\wáéíóúñ\/-])(marlín|atún|wahoo|dorado|jurel)\b/;
+  const texts = function (h) {
+    const out = []; let m; const re = /(data-en|data-es|content)="([^"]*)"/g;
+    while ((m = re.exec(h))) out.push({ k: m[1], v: m[2] });
+    return out;
+  };
+  const clean = function (h) {
+    return texts(h).every(function (x) { return x.k === 'data-es' ? !LOWER_ES.test(x.v) : !LOWER_EN.test(x.v); });
+  };
+  const fh = read('sport-fishing.html');
+  ok('18 página de pesca: especies con mayúscula en todos los textos',
+    clean(fh) && sp.every(function (s) { return /^[A-ZÁÉÍÓÚ]/.test(s.en) && /^[A-ZÁÉÍÓÚ]/.test(s.es); }));
+  ok('19 página de pesca: temporada de noviembre a junio',
+    !/November through April|noviembre a abril/.test(fh) &&
+    /data-en="Marlin season runs November through June\."/.test(fh) && /data-es="La temporada del Marlín va de noviembre a junio\."/.test(fh) &&
+    /Marlin season runs November through June, slower in the off-months/.test(fh) && /temporada del Marlín va de noviembre a junio y es más floja el resto del año/.test(fh) &&
+    /Black, Blue and Striped Marlin over 200 lbs/.test(fh) && /Marlín Negro, Azul y Rayado de más de 200 libras/.test(fh));
+  const ih = read('index.html');
+  const home = ih.slice(ih.indexOf('data-es="Pesca Deportiva"'), ih.indexOf('Plan a fishing expedition'));
+  ok('20 inicio (bloque de pesca): Marlín Negro, Azul y Rayado y especies con mayúscula',
+    home.length > 0 && clean(home) &&
+    /data-en="Black, Blue &amp; Striped Marlin \(200\+ lbs\)" data-es="Marlín Negro, Azul y Rayado \(más de 200 libras\)"/.test(home));
+}
+
 console.log('\n=== RESULTADO FISHING-EXPEDITION: ' + pass + ' PASS · ' + fail + ' FAIL ===');
 if (fail > 0) process.exit(1);
