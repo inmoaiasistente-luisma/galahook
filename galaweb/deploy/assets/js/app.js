@@ -381,7 +381,7 @@ function buildBookingModal(){
          +'<div class="field"><label id="bkLabDate">Travel date</label><input type="date" id="bkDate" required></div>'
          +'<div class="field" id="bkGuestsWrap"><label id="bkLabGuests">Guests</label><input type="number" id="bkGuests" min="1" max="20" value="2"></div>'
        +'</div>'
-       +'<div class="field" id="bkPromoWrap"><label id="bkLabPromo">Discount code (optional)</label><input id="bkPromoInput" autocomplete="off" maxlength="30" style="text-transform:uppercase"><small class="bk-sub-hint" id="bkPromoHint" style="display:none"></small></div>'
+       +'<div class="field" id="bkPromoWrap"><label id="bkLabPromo">Discount code (optional)</label><input id="bkPromoInput" autocomplete="off" maxlength="30" style="text-transform:uppercase"><small class="bk-sub-hint" id="bkPromoHint" style="display:none"></small><div class="bf-suggest" id="bkPromoSuggest" style="display:none"></div></div>'
        +'<div class="bk-notes" id="bkNotes" style="display:none"></div>'
        +'<div class="bk-pay" id="bkPay">'
          +'<h4 id="bkPayTitle">'+svg('shield')+'Payment</h4>'
@@ -418,6 +418,12 @@ function buildBookingModal(){
   d.querySelector('#bkGuests').addEventListener('input',function(){ updateBkSummary(); refreshPricing(); });
   d.querySelector('#bkPromoInput').addEventListener('input',function(){
     clearTimeout(bkPromoDebounce); bkPromoDebounce=setTimeout(refreshPricing,400);
+  });
+  /* "Aplicar" de la sugerencia Black Friday: pone el código y recalcula. */
+  d.querySelector('#bkPromoSuggest').addEventListener('click',function(e){
+    const b=e.target.closest('.bf-sg-apply'); if(!b) return;
+    const inp=document.getElementById('bkPromoInput'); inp.value=b.dataset.code;
+    clearTimeout(bkPromoDebounce); updateBkSummary(); refreshPricing();
   });
   d.querySelector('#bkDate').addEventListener('change',updateBkSummary);
   // Los campos de tarjeta son Stripe Elements — formateo/validación los maneja Stripe (ver setupPaymentFields).
@@ -507,6 +513,16 @@ function updateBkSummary(){
       hint.style.display=(invalid||qd)?'':'none';
       if(invalid) hint.textContent=es?'Código no válido para esta experiencia.':'That code is not valid for this experience.';
       else if(qd) hint.textContent=es?('Código '+qd.code+' aplicado: '+qd.percent+'% de descuento en tu cotización.'):('Code '+qd.code+' applied: '+qd.percent+'% off your quote.');
+    }
+    /* Black Friday: sugiere el código de esta experiencia (se apaga sola al vencer). */
+    const sug=document.getElementById('bkPromoSuggest');
+    if(sug){
+      const pc=(window.GHAPromo&&S.promo)?GHAPromo.codeFor(S.promo, bkState.tourId):null;
+      const showSug=!!pc && typedCode.toUpperCase()!==pc.code;
+      sug.style.display=showSug?'':'none';
+      if(showSug) sug.innerHTML='<span class="bf-sg-badge">Black Friday</span><span>'
+        +(es?('Usa <b>'+esc(pc.code)+'</b> y ahorra '+pc.pct+'% · viaja hasta el 31 dic 2027'):('Use <b>'+esc(pc.code)+'</b> to save '+pc.pct+'% · travel through Dec 31, 2027'))
+        +'</span><button type="button" class="bf-sg-apply" data-code="'+esc(pc.code)+'">'+(es?'Aplicar':'Apply')+'</button>';
     }
   }
   document.getElementById('bkSumGuestsRow').style.display=bkState.unit==='boat'?'none':'';
@@ -1095,13 +1111,25 @@ function render(){
   document.querySelectorAll('[data-hero]').forEach(el=>{ el.innerHTML=t(S.hero[el.dataset.hero]); });
   // build wa float fresh (lang msg)
   const old=document.querySelector('.wa-float'); if(old) old.remove(); buildWhatsAppFloat();
+  if(window.GHAPromo) GHAPromo.render(S.promo, L);   // barra Black Friday en el idioma actual
   observeReveals();
+}
+
+/* Barra de promo (Black Friday 2026): módulo aparte (promo-bf.js). Solo se
+   descarga mientras la promo está vigente; al vencer, ni se carga. */
+function loadPromo(){
+  if(!S.promo || document.getElementById('bfJs')) return;
+  if(!(Date.parse(S.promo.endsAt)>Date.now())) return;
+  const s=document.createElement('script'); s.id='bfJs'; s.src='/assets/js/promo-bf.js?v=bf1';
+  s.onload=function(){ if(window.GHAPromo){ GHAPromo.render(S.promo, L); updateBkSummary(); } };
+  document.head.appendChild(s);
 }
 
 /* ---------------- INIT ---------------- */
 function init(){
   initReveal();
   render();
+  loadPromo();
   /* Hidrata los precios de las tarjetas de paquetes desde el servidor
      (Supabase). Solo en páginas con grid; repinta al responder. */
   if(document.getElementById('pkgGrid')) loadLivePackagePrices();

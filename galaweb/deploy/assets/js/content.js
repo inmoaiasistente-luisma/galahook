@@ -157,6 +157,26 @@ window.GHA_DEFAULT = {
     summary: { en: "Discount", es: "Descuento" }
   },
 
+  /* Promo Black Friday 2026 (pedido del owner, 2026-11-26). Los códigos viven
+     en public.discount_rules (el servidor los valida y aplica); esto solo los
+     ANUNCIA (barra de promo-bf.js + sugerencia en el checkout). Todo se apaga
+     solo en endsAt = lunes 30 nov 23:59:59 hora de Galápagos (UTC-6) y se
+     vuelve a precios normales. Lo comprado en este lapso sirve para viajar
+     hasta el 31 dic 2027. */
+  promo: {
+    id: "bf2026",
+    endsAt: "2026-12-01T05:59:59Z",
+    badge: { en: "Black Friday", es: "Black Friday" },
+    until: { en: "book by Mon, Nov 30 · 11:59 pm", es: "compra hasta el lun 30 nov · 11:59 pm" },
+    travel: { en: "Travel through Dec 31, 2027", es: "Viaja hasta el 31 dic 2027" },
+    codes: [
+      { code: "HOOK20", pct: 20, label: { en: "packages & fishing expedition", es: "paquetes y expedición de pesca" },
+        ids: ["p3", "p4", "p7", "p8sc", "p8is", "expedition"] },
+      { code: "HOOK10", pct: 10, label: { en: "tours & fishing charters", es: "tours y charters de pesca" },
+        ids: ["kicker", "t360", "diving", "lobos", "highlands", "punta-pitt", "espanola", "bartolome", "half", "full"] }
+    ]
+  },
+
   mealNote: {
     en: "Breakfast & lunch are included — dinner and alcoholic beverages are not.",
     es: "Desayuno y almuerzo incluidos — la cena y las bebidas alcohólicas no."
