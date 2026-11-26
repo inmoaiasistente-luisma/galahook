@@ -167,7 +167,15 @@ function ymdYearsAgo(n) {
   const terms = read('terms.html'), content = read('assets/js/content.js'), app = read('assets/js/app.js');
   ok('28 terms.html: 15 días o menos sin reembolso', /15 días o menos de anticipación: sin reembolso/.test(terms) && /more than 15 days before the activity: 100% refund/.test(terms));
   ok('29 content.js: políticas con 15 días y cancelDays: 15', /15 días o menos de anticipación: sin reembolso/.test(content) && /cancelDays:\s*15\b/.test(content));
-  ok('30 sin restos de la regla de 30 días en términos/políticas/badge', !/30 d(ías|ays)/.test(terms) && !/30 d(ías|ays)/.test(content) && !/up to 30 days/.test(app) && !/cancelDays\|\|60/.test(app));
+  /* Única excepción permitida (owner, 2026-11-26): la recomendación de RESERVAR el
+     León Dormido con 30 días de anticipación para asegurar el espacio. No es una
+     regla de reembolso; cualquier otro "30 días/days" sigue prohibido. */
+  const contentNoAdvance = content
+    .replace(/Reserva con 30 días de anticipación para asegurar tu espacio\./g, '')
+    .replace(/Te recomendamos reservar con 30 días de anticipación para asegurar tu espacio\./g, '')
+    .replace(/Book 30 days ahead to secure your spot\./g, '')
+    .replace(/We recommend booking 30 days in advance to secure your spot\./g, '');
+  ok('30 sin restos de la regla de 30 días en términos/políticas/badge', !/30 d(ías|ays)/.test(terms) && !/30 d(ías|ays)/.test(contentNoAdvance) && !/up to 30 days/.test(app) && !/cancelDays\|\|60/.test(app));
   ok('31 badge del checkout: "más de N días" (coherente con 15 o menos sin reembolso)', /Cancelación gratis con más de '\+\(S\.meta\.cancelDays\|\|15\)/.test(app));
 
   /* ---- páginas legales: hechos del dueño ---- */

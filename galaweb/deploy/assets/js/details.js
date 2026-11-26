@@ -15,16 +15,16 @@ window.GHA_DETAILS = {
         es: "El snorkel insignia de San Cristóbal. Dos conos de toba se elevan 150 m desde el mar abierto, separados por un canal angosto por donde cruzan los grandes pelágicos — la pared que todos vienen a la isla a ver."
       },
       highlights: [
-        { en: "Snorkel the open-ocean channel between the two monoliths", es: "Snorkel en el canal de mar abierto entre los dos monolitos" },
+        { en: "2 hours of snorkeling at León Dormido, between the two monoliths", es: "2 horas de snorkel en León Dormido, entre los dos monolitos" },
         { en: "Hammerheads, Galápagos sharks, sea turtles & rays", es: "Tiburones martillo, tiburones de Galápagos, tortugas y rayas" },
         { en: "Schools of fish along a dramatic vertical wall", es: "Cardúmenes a lo largo de una espectacular pared vertical" },
-        { en: "Beach stop on the way back to relax & swim", es: "Parada en playa de regreso para relajarse y nadar" }
+        { en: "Beach stop at Playa Manglesito or Playa Puerto Grande", es: "Parada en Playa Manglesito o Playa Puerto Grande" }
       ],
       agenda: [
-        { title: { en: "8:00 AM · Depart Puerto Baquerizo Moreno", es: "8:00 AM · Salida de Puerto Baquerizo Moreno" }, body: { en: "Pickup at the pier and a scenic 40-minute boat ride out to León Dormido with your local guide and crew.", es: "Recogida en el muelle y un paseo escénico de 40 minutos en bote hasta León Dormido con tu guía y tripulación local." } },
-        { title: { en: "Snorkel the channel", es: "Snorkel en el canal" }, body: { en: "Two guided drifts through the channel — wetsuits and snorkel gear included. Keep your eyes on the blue for hammerhead silhouettes.", es: "Dos derivas guiadas por el canal — trajes y equipo de snorkel incluidos. Mantén la vista en el azul para ver siluetas de martillos." } },
-        { title: { en: "Lunch on board", es: "Almuerzo a bordo" }, body: { en: "A fresh lunch is served on the boat while we reposition for the return.", es: "Se sirve un almuerzo fresco en el bote mientras nos reubicamos para el regreso." } },
-        { title: { en: "Beach stop & return", es: "Parada en playa y regreso" }, body: { en: "Stop at an authorized beach to swim and unwind, back in town by late afternoon.", es: "Parada en una playa autorizada para nadar y relajarse, de vuelta en el pueblo al caer la tarde." } }
+        { title: { en: "8:30 AM · Depart Puerto Baquerizo Moreno", es: "8:30 AM · Salida de Puerto Baquerizo Moreno" }, body: { en: "Pickup at the pier and boat ride out to León Dormido with your local guide and crew.", es: "Recogida en el muelle y paseo en bote hasta León Dormido con tu guía y tripulación local." } },
+        { title: { en: "2 hours of snorkeling at León Dormido", es: "2 horas de snorkel en León Dormido" }, body: { en: "About 2 hours of guided snorkeling in the channel and around the rock — wetsuits and snorkel gear included. Keep your eyes on the blue for hammerhead silhouettes.", es: "Unas 2 horas de snorkel guiado en el canal y alrededor de la roca — trajes y equipo de snorkel incluidos. Mantén la vista en el azul para ver siluetas de martillos." } },
+        { title: { en: "Lunch on board", es: "Almuerzo a bordo" }, body: { en: "A fresh lunch is served on the boat while we reposition for the beach.", es: "Se sirve un almuerzo fresco en el bote mientras nos movemos hacia la playa." } },
+        { title: { en: "Beach stop · 2:30 PM back in port", es: "Parada en playa · 2:30 PM regreso al puerto" }, body: { en: "Swim and unwind at Playa Manglesito or Playa Puerto Grande, depending on the day's itinerary. Back in port at 2:30 PM.", es: "Nada y relájate en Playa Manglesito o Playa Puerto Grande, según el itinerario del día. Regreso al puerto a las 2:30 PM." } }
       ],
       included: [
         { en: "Local certified guide & boat crew", es: "Guía local certificado y tripulación" },
@@ -38,7 +38,7 @@ window.GHA_DETAILS = {
         { en: "Gratuities for guide & crew", es: "Propinas para guía y tripulación" }
       ],
       facts: {
-        duration: { en: "6–7 hours", es: "6–7 horas" },
+        duration: { en: "6 hours · 8:30 am – 2:30 pm", es: "6 horas · 8:30 am – 2:30 pm" },
         group: { en: "Max 16 · small groups", es: "Máx 16 · grupos pequeños" },
         level: { en: "Moderate — open-water swimming", es: "Moderado — nado en mar abierto" },
         start: { en: "Puerto Baquerizo Moreno", es: "Puerto Baquerizo Moreno" }
