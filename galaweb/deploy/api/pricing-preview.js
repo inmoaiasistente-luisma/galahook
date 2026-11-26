@@ -13,7 +13,7 @@
 
 const { sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys, isPositiveInt, getTenantId } = require('../server/lib/http');
 const catalog = require('../server/lib/tour-catalog');
-const { computeWebPricing } = require('../server/lib/pricing-engine');
+const { computeWebPricing, resolveQuoteDiscount } = require('../server/lib/pricing-engine');
 const { getPublicNotesForTour } = require('../server/lib/tour-notes');
 const { publicPackagePriceList } = require('../server/lib/package-pricing');
 
@@ -57,9 +57,19 @@ module.exports = async function handler(req, res) {
     let n = { notes: [], notes_version: null, requires_acknowledgement: false };
     try { n = await getPublicNotesForTour(tenant, tour.id); }
     catch (e) { logServer('pricing-preview:notes', e && e.message); }
+    /* Código de descuento en cotización: solo se valida (sin precio) para
+       que el modal diga "aplicado: X %" o "no válido" antes de enviar. */
+    let qd = null;
+    const qGuests = isPositiveInt(body.guests) ? body.guests : 1;
+    if (typeof body.discount_code === 'string' && body.discount_code.length <= MAX_CODE_LEN) {
+      try { qd = await resolveQuoteDiscount({ tenantId: tenant, tourId: tour.id, guests: qGuests, code: body.discount_code }); }
+      catch (e) { logServer('pricing-preview:quote-code', e && e.message); qd = null; }
+    }
     return sendJson(res, 400, {
       error: 'QUOTE_REQUIRED', message: 'This experience requires a quote request',
-      notes: n.notes, notesVersion: n.notes_version, requiresAcknowledgement: n.requires_acknowledgement
+      notes: n.notes, notesVersion: n.notes_version, requiresAcknowledgement: n.requires_acknowledgement,
+      codeInvalid: !!(qd && qd.codeInvalid),
+      quoteDiscount: (qd && !qd.codeInvalid) ? { code: qd.code, percent: qd.percent } : null
     });
   }
   if (!isPositiveInt(body.guests)) return sendError(res, 400, 'INVALID_GUESTS', 'guests must be a positive integer');

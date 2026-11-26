@@ -381,7 +381,7 @@ function buildBookingModal(){
          +'<div class="field"><label id="bkLabDate">Travel date</label><input type="date" id="bkDate" required></div>'
          +'<div class="field" id="bkGuestsWrap"><label id="bkLabGuests">Guests</label><input type="number" id="bkGuests" min="1" max="20" value="2"></div>'
        +'</div>'
-       +'<div class="field" id="bkPromoWrap"><label id="bkLabPromo">Discount code (optional)</label><input id="bkPromoInput" autocomplete="off" maxlength="30" style="text-transform:uppercase"><small class="bk-sub-hint" id="bkPromoHint" style="display:none"></small></div>'
+       +'<div class="field" id="bkPromoWrap"><label id="bkLabPromo">Discount code (optional)</label><input id="bkPromoInput" autocomplete="off" maxlength="30" style="text-transform:uppercase"><small class="bk-sub-hint" id="bkPromoHint" style="display:none"></small><div class="bf-suggest" id="bkPromoSuggest" style="display:none"></div></div>'
        +'<div class="bk-notes" id="bkNotes" style="display:none"></div>'
        +'<div class="bk-pay" id="bkPay">'
          +'<h4 id="bkPayTitle">'+svg('shield')+'Payment</h4>'
@@ -418,6 +418,12 @@ function buildBookingModal(){
   d.querySelector('#bkGuests').addEventListener('input',function(){ updateBkSummary(); refreshPricing(); });
   d.querySelector('#bkPromoInput').addEventListener('input',function(){
     clearTimeout(bkPromoDebounce); bkPromoDebounce=setTimeout(refreshPricing,400);
+  });
+  /* "Aplicar" de la sugerencia Black Friday: pone el código y recalcula. */
+  d.querySelector('#bkPromoSuggest').addEventListener('click',function(e){
+    const b=e.target.closest('.bf-sg-apply'); if(!b) return;
+    const inp=document.getElementById('bkPromoInput'); inp.value=b.dataset.code;
+    clearTimeout(bkPromoDebounce); updateBkSummary(); refreshPricing();
   });
   d.querySelector('#bkDate').addEventListener('change',updateBkSummary);
   // Los campos de tarjeta son Stripe Elements — formateo/validación los maneja Stripe (ver setupPaymentFields).
@@ -496,13 +502,27 @@ function updateBkSummary(){
   document.getElementById('bkSecure').style.display=request?'none':'';
   const promoWrap=document.getElementById('bkPromoWrap');
   if(promoWrap){
-    promoWrap.style.display=request?'none':'';
+    /* También en solicitudes (p. ej. la expedición de 8 días): el código se
+       valida en el servidor y el equipo lo aplica al cotizar. */
+    promoWrap.style.display='';
     const promoInput=document.getElementById('bkPromoInput'), hint=document.getElementById('bkPromoHint');
     const typedCode=promoInput?promoInput.value.trim():'';
     if(hint){
-      const invalid=!request&&!!typedCode&&!!bkPricing.codeInvalid;
-      hint.style.display=invalid?'':'none';
+      const invalid=!!typedCode&&!!bkPricing.codeInvalid;
+      const qd=(request&&typedCode&&!invalid)?bkPricing.quoteDiscount:null;
+      hint.style.display=(invalid||qd)?'':'none';
       if(invalid) hint.textContent=es?'Código no válido para esta experiencia.':'That code is not valid for this experience.';
+      else if(qd) hint.textContent=es?('Código '+qd.code+' aplicado: '+qd.percent+'% de descuento en tu cotización.'):('Code '+qd.code+' applied: '+qd.percent+'% off your quote.');
+    }
+    /* Black Friday: sugiere el código de esta experiencia (se apaga sola al vencer). */
+    const sug=document.getElementById('bkPromoSuggest');
+    if(sug){
+      const pc=(window.GHAPromo&&S.promo)?GHAPromo.codeFor(S.promo, bkState.tourId):null;
+      const showSug=!!pc && typedCode.toUpperCase()!==pc.code;
+      sug.style.display=showSug?'':'none';
+      if(showSug) sug.innerHTML='<span class="bf-sg-badge">Black Friday</span><span>'
+        +(es?('Usa <b>'+esc(pc.code)+'</b> y ahorra '+pc.pct+'% · viaja hasta el 31 dic 2027'):('Use <b>'+esc(pc.code)+'</b> to save '+pc.pct+'% · travel through Dec 31, 2027'))
+        +'</span><button type="button" class="bf-sg-apply" data-code="'+esc(pc.code)+'">'+(es?'Aplicar':'Apply')+'</button>';
     }
   }
   document.getElementById('bkSumGuestsRow').style.display=bkState.unit==='boat'?'none':'';
@@ -535,6 +555,7 @@ function refreshPricing(){
     bkPricing.pending=false;
     const data=(r&&r.data)||{};
     bkPricing.codeInvalid=!!(code && data.codeInvalid);
+    bkPricing.quoteDiscount=(code && data.quoteDiscount && data.quoteDiscount.code)?data.quoteDiscount:null;
     /* Notas: vienen tanto en 200 (pagable) como en 400 QUOTE_REQUIRED. */
     if(data && (Array.isArray(data.notes) || data.notesVersion!=null)){
       bkNotesState={tourId:tourId, notes:data.notes||[], version:data.notesVersion||null, requiresAck:!!data.requiresAcknowledgement};
@@ -558,7 +579,7 @@ function openBooking(opts){
   const general=!opts.name;
   bkSubmitting=false; bkResetRequestId();
   if(window.GHAPayments) GHAPayments.unmount();   // re-montaje limpio en cada apertura (sin duplicados)
-  bkPricing.applied=null; bkPricing.pending=false; bkPricing.codeInvalid=false;
+  bkPricing.applied=null; bkPricing.pending=false; bkPricing.codeInvalid=false; bkPricing.quoteDiscount=null;
   clearTimeout(bkPromoDebounce);
   const promoReset=document.getElementById('bkPromoInput'); if(promoReset) promoReset.value='';
   bkNotesState={tourId:null, notes:[], version:null, requiresAck:false}; renderBkNotes();
@@ -574,7 +595,7 @@ function openBooking(opts){
     sel.innerHTML=html; selWrap.style.display='';
     const first=items[0];
     if(first) bkState={tourId:first.tourId, name:first.label, price:first.price, unit:first.unit, min:first.min||1, requiresQuote:false};
-    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={tourId:o.dataset.tourId, name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1, requiresQuote:!(+o.dataset.price>0)}; bkPricing.applied=null; bkPricing.codeInvalid=false; bkResetRequestId(); syncGuestsMin(); updateBkSummary(); setupPaymentFields(); refreshPricing(); };
+    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={tourId:o.dataset.tourId, name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1, requiresQuote:!(+o.dataset.price>0)}; bkPricing.applied=null; bkPricing.codeInvalid=false; bkPricing.quoteDiscount=null; bkResetRequestId(); syncGuestsMin(); updateBkSummary(); setupPaymentFields(); refreshPricing(); };
   } else { selWrap.style.display='none'; }
   const dt=document.getElementById('bkDate'); dt.min=new Date().toISOString().slice(0,10); dt.value='';
   syncGuestsMin();
@@ -624,6 +645,7 @@ function bkErrorMessage(code, es){
     case 'GUESTS_TOO_MANY':          return es?'Demasiados viajeros.':'Too many travelers.';
     case 'QUOTE_REQUIRED':           return es?'Esta experiencia es por cotización.':'This experience is quote-only.';
     case 'PAYMENT_REQUIRED':         return es?'Esta experiencia requiere pago.':'This experience requires payment.';
+    case 'DISCOUNT_CODE_NOT_VALID': case 'INVALID_DISCOUNT_CODE': return es?'Código no válido para esta experiencia. Corrígelo o bórralo.':'That code is not valid for this experience. Fix it or clear it.';
     case 'INTERNAL_ERROR': case 'CONFIG_UNAVAILABLE': return normalizeStripeError({type:'api_error'}, es);
     default:                         return es?'No se pudo completar. Intenta de nuevo.':'Could not complete. Please try again.';
   }
@@ -681,7 +703,9 @@ function showProcessing(data, name, email, dt, guests, es){
 function showQuoteSuccess(data, name, email, dt, guests, es){
   bkShowSuccessShell();
   document.getElementById('bkSucTitle').textContent= es?'¡Solicitud recibida!':'Request received!';
-  document.getElementById('bkSucMsg').textContent= es?'Recibimos tu solicitud. Recibirás un correo de confirmación en breve.':'We received your request. A confirmation email will arrive shortly.';
+  const qd=data&&data.quoteDiscount&&data.quoteDiscount.code?data.quoteDiscount:null;
+  document.getElementById('bkSucMsg').textContent= (es?'Recibimos tu solicitud. Recibirás un correo de confirmación en breve.':'We received your request. A confirmation email will arrive shortly.')
+    +(qd?(es?(' Tu código '+qd.code+' ('+qd.percent+'% de descuento) quedó registrado y se aplicará en tu cotización.'):(' Your code '+qd.code+' ('+qd.percent+'% off) is saved and will be applied to your quote.')):'');
   bkRenderRecap(data, dt, guests, es, false, '');
 }
 async function submitBooking(){
@@ -700,9 +724,9 @@ async function submitBooking(){
   const payload={ request_id:bkEnsureRequestId(), tour_id:bkState.tourId, booking_date:dt, guests:guests, customer_name:name, customer_email:email };
   if(notes) payload.notes=notes;
   if(bkNotesState.requiresAck) payload.notes_ack={ acknowledged:true, version:bkNotesState.version };
-  if(!bkState.requiresQuote){
+  {
     const promoEl=document.getElementById('bkPromoInput'); const code=promoEl?promoEl.value.trim():'';
-    if(code) payload.discount_code=code;
+    if(code) payload.discount_code=code;              // pago y cotización (el servidor lo valida)
   }
 
   bkSubmitting=true; setPayBusy(true);
@@ -1087,13 +1111,25 @@ function render(){
   document.querySelectorAll('[data-hero]').forEach(el=>{ el.innerHTML=t(S.hero[el.dataset.hero]); });
   // build wa float fresh (lang msg)
   const old=document.querySelector('.wa-float'); if(old) old.remove(); buildWhatsAppFloat();
+  if(window.GHAPromo) GHAPromo.render(S.promo, L);   // barra Black Friday en el idioma actual
   observeReveals();
+}
+
+/* Barra de promo (Black Friday 2026): módulo aparte (promo-bf.js). Solo se
+   descarga mientras la promo está vigente; al vencer, ni se carga. */
+function loadPromo(){
+  if(!S.promo || document.getElementById('bfJs')) return;
+  if(!(Date.parse(S.promo.endsAt)>Date.now())) return;
+  const s=document.createElement('script'); s.id='bfJs'; s.src='/assets/js/promo-bf.js?v=bf2';
+  s.onload=function(){ if(window.GHAPromo){ GHAPromo.render(S.promo, L); updateBkSummary(); } };
+  document.head.appendChild(s);
 }
 
 /* ---------------- INIT ---------------- */
 function init(){
   initReveal();
   render();
+  loadPromo();
   /* Hidrata los precios de las tarjetas de paquetes desde el servidor
      (Supabase). Solo en páginas con grid; repinta al responder. */
   if(document.getElementById('pkgGrid')) loadLivePackagePrices();
@@ -1181,7 +1217,12 @@ if(document.readyState!=='loading') init(); else document.addEventListener('DOMC
   }
   function disarm(){ if(timer){ clearTimeout(timer); timer=null; } window.removeEventListener('scroll', onScroll); }
   function arm(){ timer=setTimeout(trigger, 22000); window.addEventListener('scroll', onScroll, {passive:true}); }  // 22 s o 45 % de scroll
-  function trigger(){ if(shown) return; shown=true; disarm(); try{ localStorage.setItem(K_NUDGE, String(now())); }catch(e){} render(); }
+  function trigger(){
+    if(shown) return;
+    /* No encimarse con el popup de Black Friday: reintenta cuando se cierre. */
+    if(document.getElementById('bfPop')){ disarm(); timer=setTimeout(trigger, 8000); return; }
+    shown=true; disarm(); try{ localStorage.setItem(K_NUDGE, String(now())); }catch(e){} render();
+  }
 
   function injectStyles(){
     if(document.getElementById('ghn-css')) return;

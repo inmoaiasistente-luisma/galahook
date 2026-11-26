@@ -186,12 +186,18 @@ function ownerBookingNotification(b) {
 }
 
 /* --- 3. Cliente: cotización recibida (sin QR) --- */
-function customerQuoteAcknowledgement(b) {
+function customerQuoteAcknowledgement(b, ctx) {
   const subject = 'We received your request — ' + (b.booking_code || '');
+  /* Código de descuento validado en la solicitud (p. ej. HOOK20): se confirma
+     al cliente que su cotización lo incluirá. */
+  const qd = ctx && ctx.quoteDiscount;
+  const qdEn = qd ? ('Your discount code ' + qd.code + ' (' + qd.percent + '% off) is saved on this request — your quote will include it.') : null;
+  const qdEs = qd ? ('Tu código de descuento ' + qd.code + ' (' + qd.percent + '% de descuento) quedó registrado en esta solicitud: tu cotización lo incluirá.') : null;
   const html = shell(subject,
     h1('Request received', 'Solicitud recibida')
     + para('Thank you, ' + (b.customer_name || '') + '. We received your request and our team will contact you shortly with a personalized quote.',
            'Gracias, ' + (b.customer_name || '') + '. Recibimos tu solicitud y nuestro equipo te contactará en breve con una cotización personalizada.')
+    + (qd ? para(qdEn, qdEs) : '')
     + rows(bookingPairs(b, { name: true }))
     + para('This is not a confirmed or paid booking yet.',
            'Esta solicitud todavía no es una reserva confirmada ni pagada.'));
@@ -201,6 +207,7 @@ function customerQuoteAcknowledgement(b) {
     'Tour: ' + (b.tour_name || ''),
     'Date / Fecha: ' + (b.booking_date || ''),
     'Guests / Pax: ' + (b.guests || ''), '',
+    qdEn, qdEs, qd ? '' : null,
     'This is not a confirmed or paid booking yet.',
     'Esta solicitud todavía no es una reserva confirmada ni pagada.', '',
     replyTo() ? ('Contact / Contacto: ' + replyTo()) : null

@@ -209,18 +209,18 @@ async function sendBookingEmail(o) {
 }
 
 /** Envia cliente + interno sin que un fallo afecte al llamador. */
-async function notifyBooking(booking, customerType, ownerType) {
+async function notifyBooking(booking, customerType, ownerType, ctx) {
   const out = { customer: null, owner: null };
   try {
     const customer = normalizeEmail((booking && booking.customer_email) || '');
     out.customer = customer
-      ? await sendBookingEmail({ booking: booking, type: customerType, recipient: customer })
+      ? await sendBookingEmail({ booking: booking, type: customerType, recipient: customer, ctx: ctx })
       : { skipped: true, reason: 'no_recipient' };
   } catch (e) { out.customer = { failed: true }; }
   try {
     const notify = normalizeEmail(getMailConfig().notifyTo || '');
     out.owner = notify
-      ? await sendBookingEmail({ booking: booking, type: ownerType, recipient: notify })
+      ? await sendBookingEmail({ booking: booking, type: ownerType, recipient: notify, ctx: ctx })
       : { skipped: true, reason: 'no_internal_recipient' };
   } catch (e) { out.owner = { failed: true }; }
   return out;
