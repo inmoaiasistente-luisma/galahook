@@ -1,18 +1,22 @@
 /* =========================================================
-   Barra de promoción — Black Friday 2026 (pedido del owner,
-   2026-11-26). SOLO anuncia: los descuentos los valida y aplica
-   el servidor (public.discount_rules). La barra y la sugerencia
-   del checkout se apagan solas al pasar promo.endsAt (lunes 30
-   nov 23:59:59 hora de Galápagos) y la página vuelve a lo normal.
-   La carga app.js (loadPromo) solo mientras la promo está vigente.
+   Promo Black Friday 2026 (pedido del owner, 2026-11-26):
+   barra animada arriba + popup (una vez por sesión). SOLO
+   anuncia: los descuentos los valida y aplica el servidor
+   (public.discount_rules). Todo se apaga solo al pasar
+   promo.endsAt (lunes 30 nov 23:59:59 hora de Galápagos) y la
+   página vuelve a lo normal. app.js (loadPromo) solo carga este
+   archivo mientras la promo está vigente.
    API: window.GHAPromo.render(cfg, lang) · .codeFor(cfg, tourId)
         · .active(cfg) · .timeLeft(cfg, lang) · .barHtml(cfg, lang)
+        · .popHtml(cfg, lang) · .openPop()
    ========================================================= */
 (function () {
   'use strict';
 
-  var DISMISS_KEY = 'gha_promo_dismissed';
-  var timer = null, bound = false, state = { cfg: null, lang: 'en' };
+  var DISMISS_KEY = 'gha_promo_dismissed';   // barra cerrada en esta sesión
+  var POP_KEY = 'gha_promo_pop_seen';        // popup ya mostrado en esta sesión
+  var timer = null, bound = false, popTimer = null;
+  var state = { cfg: null, lang: 'en' };
 
   function tr(v, lang) {
     if (v == null) return '';
@@ -24,6 +28,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
 
   function active(cfg, now) {
     if (!cfg || !cfg.endsAt || !cfg.codes || !cfg.codes.length) return false;
@@ -41,36 +46,130 @@
     return null;
   }
 
-  function timeLeft(cfg, lang, now) {
+  function parts(cfg, now) {
     var ms = Date.parse(cfg.endsAt) - (now == null ? Date.now() : now);
-    if (!(ms > 0)) return '';
-    var m = Math.floor(ms / 60000), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
-    return (lang === 'es' ? 'Termina en ' : 'Ends in ') + (d ? d + 'd ' : '') + ((d || h) ? h + 'h ' : '') + mm + 'm';
+    if (!(ms > 0)) return null;
+    var s = Math.floor(ms / 1000);
+    return { d: Math.floor(s / 86400), h: Math.floor((s % 86400) / 3600), m: Math.floor((s % 3600) / 60), s: s % 60 };
+  }
+  function timeLeft(cfg, lang, now) {
+    var p = parts(cfg, now);
+    if (!p) return '';
+    return (lang === 'es' ? 'Termina en ' : 'Ends in ') + (p.d ? p.d + 'd ' : '') + ((p.d || p.h) ? p.h + 'h ' : '') + p.m + 'm ' + pad(p.s) + 's';
   }
 
+  /* ---------------- barra ---------------- */
   function barHtml(cfg, lang, now) {
+    var es = lang === 'es';
     var offers = cfg.codes.map(function (c) {
       return '<span class="bf-offer"><b class="bf-pct">−' + esc(c.pct) + '%</b> ' + esc(tr(c.label, lang))
         + ' <button type="button" class="bf-code" data-code="' + esc(c.code) + '" title="'
-        + esc(lang === 'es' ? 'Copiar código' : 'Copy code') + '">' + esc(c.code) + '</button></span>';
+        + esc(es ? 'Copiar código' : 'Copy code') + '">' + esc(c.code) + '</button></span>';
     }).join('');
     return '<div class="bf-in">'
-      + '<span class="bf-badge">' + esc(tr(cfg.badge, lang)) + '</span>'
+      + '<button type="button" class="bf-badge" id="bfOpen" title="' + esc(es ? 'Ver la promo' : 'See the deal') + '">' + esc(tr(cfg.badge, lang)) + '</button>'
       + offers
       + '<span class="bf-when"><span class="bf-left" id="bfLeft" title="' + esc(tr(cfg.until, lang)) + '">' + esc(timeLeft(cfg, lang, now)) + '</span>'
       + '<span class="bf-dl"> · ' + esc(tr(cfg.until, lang)) + '</span></span>'
       + '<span class="bf-travel">' + esc(tr(cfg.travel, lang)) + '</span>'
       + '</div>'
-      + '<button type="button" class="bf-x" id="bfClose" aria-label="' + esc(lang === 'es' ? 'Cerrar' : 'Close') + '">&times;</button>';
+      + '<button type="button" class="bf-x" id="bfClose" aria-label="' + esc(es ? 'Cerrar' : 'Close') + '">&times;</button>';
   }
 
+  /* ---------------- popup ---------------- */
+  function popHtml(cfg, lang, now) {
+    var es = lang === 'es';
+    var p = parts(cfg, now) || { d: 0, h: 0, m: 0, s: 0 };
+    function box(u, n, label) {
+      return '<div class="bfp-box"><b class="bfp-n" data-u="' + u + '">' + (u === 'd' ? n : pad(n)) + '</b><span class="bfp-u">' + label + '</span></div>';
+    }
+    var coupons = cfg.codes.map(function (c, i) {
+      return '<div class="bfp-coupon" style="--i:' + i + '">'
+        + '<div class="bfp-off"><b>' + esc(c.pct) + '%</b><span>OFF</span></div>'
+        + '<div class="bfp-cinfo"><p>' + esc(tr(c.long || c.label, lang)) + '</p>'
+        + '<button type="button" class="bfp-code" data-code="' + esc(c.code) + '">' + esc(c.code) + '</button>'
+        + '<small>' + (es ? 'Toca el código para copiarlo' : 'Tap the code to copy it') + '</small></div></div>';
+    }).join('');
+    return '<div class="bfp-card" role="document">'
+      + '<button type="button" class="bfp-x" aria-label="' + (es ? 'Cerrar' : 'Close') + '">&times;</button>'
+      + '<span class="bfp-kicker">Galápagos Hook Adventure</span>'
+      + '<h2 class="bfp-title" id="bfpTitle">' + esc(tr(cfg.badge, lang)) + '</h2>'
+      + '<p class="bfp-sub">' + esc(tr(cfg.popSub, lang)) + '</p>'
+      + '<div class="bfp-coupons">' + coupons + '</div>'
+      + '<div class="bfp-clock">' + box('d', p.d, es ? 'días' : 'days') + box('h', p.h, es ? 'horas' : 'hrs')
+      + box('m', p.m, 'min') + box('s', p.s, es ? 'seg' : 'sec') + '</div>'
+      + '<p class="bfp-travel">' + esc(tr(cfg.popTravel, lang)) + '</p>'
+      + '<div class="bfp-ctas"><a class="bfp-cta" href="/packages.html">' + (es ? 'Ver paquetes' : 'See packages') + '</a>'
+      + '<a class="bfp-cta ghost" href="/tours.html">' + (es ? 'Ver tours' : 'See tours') + '</a></div>'
+      + '<button type="button" class="bfp-later">' + (es ? 'Ahora no' : 'Not now') + '</button>'
+      + '</div>';
+  }
+
+  function popSeen(cfg) {
+    try { return sessionStorage.getItem(POP_KEY) === cfg.id; } catch (e) { return true; }  // sin storage: no insistir
+  }
+  function onPopKey(e) { if (e.key === 'Escape') closePop(); }
+  function closePop() {
+    var back = document.getElementById('bfPop');
+    if (!back) return;
+    back.classList.remove('on');
+    document.removeEventListener('keydown', onPopKey);
+    document.documentElement.style.overflow = '';
+    setTimeout(function () { if (back.parentNode) back.parentNode.removeChild(back); }, 320);
+  }
+  function bindPop(back) {
+    back.querySelector('.bfp-x').addEventListener('click', closePop);
+    back.querySelector('.bfp-later').addEventListener('click', closePop);
+    back.querySelectorAll('.bfp-code').forEach(function (btn) {
+      btn.addEventListener('click', function () { copy(btn.dataset.code, btn, state.lang); });
+    });
+    back.querySelectorAll('.bfp-cta').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        if (a.pathname === location.pathname) { e.preventDefault(); closePop(); }   // ya está en esa página
+      });
+    });
+  }
+  function openPop() {
+    var cfg = state.cfg;
+    if (!active(cfg) || document.getElementById('bfPop')) return;
+    try { sessionStorage.setItem(POP_KEY, cfg.id); } catch (e) { /* igual se muestra esta vez */ }
+    var back = document.createElement('div');
+    back.id = 'bfPop'; back.className = 'bfp-back';
+    back.setAttribute('role', 'dialog'); back.setAttribute('aria-modal', 'true'); back.setAttribute('aria-labelledby', 'bfpTitle');
+    back.innerHTML = popHtml(cfg, state.lang);
+    back.addEventListener('click', function (e) { if (e.target === back) closePop(); });
+    document.body.appendChild(back);
+    bindPop(back);
+    document.addEventListener('keydown', onPopKey);
+    document.documentElement.style.overflow = 'hidden';
+    void back.offsetWidth;          // fija el estado inicial para que la entrada se anime
+    back.classList.add('on');
+    try { back.querySelector('.bfp-cta').focus({ preventScroll: true }); } catch (e) { /* sin foco */ }
+  }
+  /* Se muestra una vez por sesión, ~1.5 s después de cargar, cuando no hay
+     otra ventana encima (intro del globo, popup de contacto o checkout). */
+  function schedulePop() {
+    if (popTimer || popSeen(state.cfg)) return;
+    function busy() {
+      return document.getElementById('globeIntro') || document.querySelector('.ghn-back')
+        || document.querySelector('#bkDrop.open') || document.querySelector('#dtDrop.open');
+    }
+    function wait() {
+      if (!active(state.cfg) || popSeen(state.cfg)) return;
+      if (busy()) { popTimer = setTimeout(wait, 700); return; }
+      popTimer = setTimeout(function () { if (!busy()) openPop(); else wait(); }, 1500);
+    }
+    popTimer = setTimeout(wait, 400);
+  }
+
+  /* ---------------- comunes ---------------- */
   function dismissed(cfg) {
     try { return sessionStorage.getItem(DISMISS_KEY) === cfg.id; } catch (e) { return false; }
   }
   function ensureCss() {
     if (document.getElementById('bfCss')) return;
     var l = document.createElement('link');
-    l.id = 'bfCss'; l.rel = 'stylesheet'; l.href = '/assets/css/promo-bf.css?v=bf1';
+    l.id = 'bfCss'; l.rel = 'stylesheet'; l.href = '/assets/css/promo-bf.css?v=bf2';
     l.onload = layout;
     document.head.appendChild(l);
   }
@@ -85,13 +184,17 @@
     root.style.setProperty('--bf-top', Math.max(0, h - (window.scrollY || 0)) + 'px');
   }
 
-  function remove() {
+  function removeBar() {
     var b = document.getElementById('bfBar'), root = document.documentElement;
     if (b) b.remove();
     root.classList.remove('bf-on');
     root.style.removeProperty('--bf-h');
     root.style.removeProperty('--bf-top');
+  }
+  function stopAll() {
+    removeBar(); closePop();
     if (timer) { clearInterval(timer); timer = null; }
+    if (popTimer) { clearTimeout(popTimer); popTimer = null; }
   }
 
   function copy(code, btn, lang) {
@@ -107,38 +210,57 @@
     done();
   }
 
+  /* Cada segundo: cuenta regresiva de la barra y del popup; al vencer, todo se va. */
+  function tick() {
+    if (!active(state.cfg)) { stopAll(); return; }
+    var el = document.getElementById('bfLeft');
+    if (el) el.textContent = timeLeft(state.cfg, state.lang);
+    var pop = document.getElementById('bfPop');
+    var p = pop && parts(state.cfg);
+    if (p) {
+      pop.querySelectorAll('.bfp-n').forEach(function (n) {
+        var u = n.dataset.u, v = u === 'd' ? String(p.d) : pad(p[u]);
+        if (n.textContent !== v) { n.textContent = v; n.classList.remove('tick'); void n.offsetWidth; n.classList.add('tick'); }
+      });
+    }
+  }
+
   function render(cfg, lang) {
     state.cfg = cfg; state.lang = lang || 'en';
-    if (!active(cfg) || dismissed(cfg)) { remove(); return; }
+    if (!active(cfg)) { stopAll(); return; }
     ensureCss();
-    var b = document.getElementById('bfBar');
-    if (!b) {
-      b = document.createElement('div');
-      b.id = 'bfBar'; b.className = 'bf-bar'; b.setAttribute('role', 'region'); b.setAttribute('aria-label', 'Black Friday');
-      document.body.insertBefore(b, document.body.firstChild);
+    if (!dismissed(cfg)) {
+      var b = document.getElementById('bfBar');
+      if (!b) {
+        b = document.createElement('div');
+        b.id = 'bfBar'; b.className = 'bf-bar'; b.setAttribute('role', 'region'); b.setAttribute('aria-label', 'Black Friday');
+        document.body.insertBefore(b, document.body.firstChild);
+      }
+      b.innerHTML = barHtml(cfg, state.lang);
+      document.documentElement.classList.add('bf-on');
+      b.querySelectorAll('.bf-code').forEach(function (btn) {
+        btn.addEventListener('click', function () { copy(btn.dataset.code, btn, state.lang); });
+      });
+      document.getElementById('bfOpen').addEventListener('click', openPop);
+      document.getElementById('bfClose').addEventListener('click', function () {
+        try { sessionStorage.setItem(DISMISS_KEY, cfg.id); } catch (e) { /* solo se cierra en esta vista */ }
+        removeBar();
+      });
+      layout();
+    } else {
+      removeBar();
     }
-    b.innerHTML = barHtml(cfg, state.lang);
-    document.documentElement.classList.add('bf-on');
-    b.querySelectorAll('.bf-code').forEach(function (btn) {
-      btn.addEventListener('click', function () { copy(btn.dataset.code, btn, state.lang); });
-    });
-    document.getElementById('bfClose').addEventListener('click', function () {
-      try { sessionStorage.setItem(DISMISS_KEY, cfg.id); } catch (e) { /* solo se cierra en esta vista */ }
-      remove();
-    });
-    layout();
+    /* Popup abierto + cambio de idioma: se repinta en el idioma nuevo. */
+    var pop = document.getElementById('bfPop');
+    if (pop) { pop.innerHTML = popHtml(cfg, state.lang); bindPop(pop); pop.querySelector('.bfp-card').style.transition = 'none'; }
     if (!bound) {
       bound = true;
       window.addEventListener('scroll', layout, { passive: true });
       window.addEventListener('resize', layout);
     }
-    if (timer) clearInterval(timer);
-    timer = setInterval(function () {
-      if (!active(state.cfg)) { remove(); return; }            // venció: vuelve a la normalidad
-      var el = document.getElementById('bfLeft');
-      if (el) el.textContent = timeLeft(state.cfg, state.lang);
-    }, 30000);
+    if (!timer) timer = setInterval(tick, 1000);
+    schedulePop();
   }
 
-  window.GHAPromo = { render: render, codeFor: codeFor, active: active, timeLeft: timeLeft, barHtml: barHtml };
+  window.GHAPromo = { render: render, codeFor: codeFor, active: active, timeLeft: timeLeft, barHtml: barHtml, popHtml: popHtml, openPop: openPop };
 })();

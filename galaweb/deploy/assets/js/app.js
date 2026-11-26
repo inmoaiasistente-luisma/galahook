@@ -1120,7 +1120,7 @@ function render(){
 function loadPromo(){
   if(!S.promo || document.getElementById('bfJs')) return;
   if(!(Date.parse(S.promo.endsAt)>Date.now())) return;
-  const s=document.createElement('script'); s.id='bfJs'; s.src='/assets/js/promo-bf.js?v=bf1';
+  const s=document.createElement('script'); s.id='bfJs'; s.src='/assets/js/promo-bf.js?v=bf2';
   s.onload=function(){ if(window.GHAPromo){ GHAPromo.render(S.promo, L); updateBkSummary(); } };
   document.head.appendChild(s);
 }
@@ -1217,7 +1217,12 @@ if(document.readyState!=='loading') init(); else document.addEventListener('DOMC
   }
   function disarm(){ if(timer){ clearTimeout(timer); timer=null; } window.removeEventListener('scroll', onScroll); }
   function arm(){ timer=setTimeout(trigger, 22000); window.addEventListener('scroll', onScroll, {passive:true}); }  // 22 s o 45 % de scroll
-  function trigger(){ if(shown) return; shown=true; disarm(); try{ localStorage.setItem(K_NUDGE, String(now())); }catch(e){} render(); }
+  function trigger(){
+    if(shown) return;
+    /* No encimarse con el popup de Black Friday: reintenta cuando se cierre. */
+    if(document.getElementById('bfPop')){ disarm(); timer=setTimeout(trigger, 8000); return; }
+    shown=true; disarm(); try{ localStorage.setItem(K_NUDGE, String(now())); }catch(e){} render();
+  }
 
   function injectStyles(){
     if(document.getElementById('ghn-css')) return;

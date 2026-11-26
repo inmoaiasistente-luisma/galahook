@@ -51,11 +51,11 @@ const es = G.barHtml(P, 'es', BEFORE), en = G.barHtml(P, 'en', BEFORE);
 ok('9 la barra (es) muestra los dos códigos, sus % y qué cubren',
   /HOOK20/.test(es) && /HOOK10/.test(es) && /−20%/.test(es) && /−10%/.test(es) && /paquetes y expedición de pesca/.test(es) && /tours y charters de pesca/.test(es));
 ok('10 la barra (es) dice cuándo termina y que se viaja hasta el 31 dic 2027',
-  /Termina en 3d 14h 59m/.test(es) && /compra hasta el lun 30 nov · 11:59 pm/.test(es) && /Viaja hasta el 31 dic 2027/.test(es));
-ok('11 la barra (en) en inglés', /Ends in 3d 14h 59m/.test(en) && /Travel through Dec 31, 2027/.test(en) && /packages &amp; fishing expedition/.test(en));
+  /Termina en 3d 14h 59m 59s/.test(es) && /compra hasta el lun 30 nov · 11:59 pm/.test(es) && /Viaja hasta el 31 dic 2027/.test(es));
+ok('11 la barra (en) en inglés', /Ends in 3d 14h 59m 59s/.test(en) && /Travel through Dec 31, 2027/.test(en) && /packages &amp; fishing expedition/.test(en));
 ok('12 cuenta regresiva: días/horas/minutos y vacía al terminar',
-  G.timeLeft(P, 'es', Date.parse('2026-11-30T05:59:59Z')) === 'Termina en 1d 0h 0m' &&
-  G.timeLeft(P, 'en', Date.parse('2026-12-01T05:29:59Z')) === 'Ends in 30m' && G.timeLeft(P, 'es', AFTER) === '');
+  G.timeLeft(P, 'es', Date.parse('2026-11-30T05:59:59Z')) === 'Termina en 1d 0h 0m 00s' &&
+  G.timeLeft(P, 'en', Date.parse('2026-12-01T05:29:59Z')) === 'Ends in 30m 00s' && G.timeLeft(P, 'es', AFTER) === '');
 ok('13 los códigos se pueden copiar (botón) y la barra se puede cerrar', /class="bf-code" data-code="HOOK20"/.test(es) && /id="bfClose"/.test(es));
 
 /* ---------------- integración en app.js ---------------- */
@@ -70,6 +70,31 @@ const css = read('assets/css/promo-bf.css');
 ok('17 alto contraste: fondo negro con texto claro y códigos oscuros sobre crema',
   /\.bf-bar\{[^}]*background:#0b0b0b;color:#f7f3eb/.test(css) && /\.bf-code\{[^}]*color:#0b0b0b;background:#f7f3eb/.test(css));
 ok('18 el header fijo baja lo que mide la barra (no se encima)', /html\.bf-on \.site-header\{top:var\(--bf-top,0px\);\}/.test(css) && /html\.bf-on body\{padding-top:var\(--bf-h,0px\);\}/.test(css));
+
+/* ---------------- popup (una vez por sesión) ---------------- */
+const pes = G.popHtml(P, 'es', BEFORE), pen = G.popHtml(P, 'en', BEFORE);
+ok('19 popup (es): título, los dos cupones con su % y qué cubren, y los códigos para copiar',
+  /class="bfp-title"[^>]*>Black Friday</.test(pes) && /<b>20%<\/b>/.test(pes) && /<b>10%<\/b>/.test(pes) &&
+  /Paquetes de varios días y expedición de pesca de 8 días/.test(pes) && /Tours de día y charters de pesca deportiva/.test(pes) &&
+  /class="bfp-code" data-code="HOOK20"/.test(pes) && /class="bfp-code" data-code="HOOK10"/.test(pes));
+ok('20 popup (es): fecha límite, cuenta regresiva de 4 casillas y viaje hasta el 31 dic 2027',
+  /Solo hasta el lunes 30 de noviembre · 11:59 pm \(hora de Galápagos\)/.test(pes) && (pes.match(/class="bfp-n"/g) || []).length === 4 &&
+  /data-u="d">3</.test(pes) && /Compra ahora y viaja hasta el 31 de diciembre de 2027\./.test(pes));
+ok('21 popup: botones a paquetes y tours, y "Ahora no"; también en inglés',
+  /href="\/packages\.html"/.test(pes) && /href="\/tours\.html"/.test(pes) && /Ahora no/.test(pes) &&
+  /See packages/.test(pen) && /Book now and travel through December 31, 2027\./.test(pen) && /Not now/.test(pen));
+const src = read('assets/js/promo-bf.js');
+ok('22 el popup sale una vez por sesión y espera a que no haya otra ventana encima (intro, contacto, checkout)',
+  /POP_KEY = 'gha_promo_pop_seen'/.test(src) && /sessionStorage\.setItem\(POP_KEY/.test(src) &&
+  /getElementById\('globeIntro'\)/.test(src) && /querySelector\('\.ghn-back'\)/.test(src) && /querySelector\('#bkDrop\.open'\)/.test(src));
+ok('23 el botón BLACK FRIDAY de la barra vuelve a abrir el popup',
+  /id="bfOpen"/.test(es) && /getElementById\('bfOpen'\)\.addEventListener\('click', openPop\)/.test(src));
+ok('24 el popup de contacto no se encima con el de Black Friday',
+  /if\(document\.getElementById\('bfPop'\)\)\{ disarm\(\); timer=setTimeout\(trigger, 8000\); return; \}/.test(app));
+ok('25 animado (brillo, pulso, entrada) pero sin animación si el visitante pide movimiento reducido',
+  /@keyframes bfShine/.test(css) && /@keyframes bfPulse/.test(css) && /@keyframes bfpShimmer/.test(css) && /@keyframes bfpIn/.test(css) &&
+  /@media \(prefers-reduced-motion:reduce\)\{[\s\S]*animation:none !important/.test(css));
+ok('26 al vencer se quita todo (barra y popup) sin recargar', /if \(!active\(state\.cfg\)\) \{ stopAll\(\); return; \}/.test(src));
 
 console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
 process.exit(fail ? 1 : 0);
