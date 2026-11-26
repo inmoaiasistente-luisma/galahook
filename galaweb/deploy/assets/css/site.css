@@ -308,6 +308,9 @@ ul{margin:0;padding:0;list-style:none;}
 .pkg-includes{padding:6px 28px 24px;border-top:1px solid var(--line);margin:0 0 auto;}
 .pkg-includes li{display:flex;gap:11px;align-items:flex-start;padding:8px 0;font-size:14.5px;color:var(--ink-soft);}
 .pkg-includes li svg{width:17px;height:17px;color:var(--sea);flex-shrink:0;margin-top:2px;}
+.pkg-includes li.pkg-scope{margin:4px 0 6px;padding:11px 13px;background:#fbf5e8;border:1px solid var(--line);border-left:3px solid var(--gold,#c79a3a);border-radius:10px;color:var(--ink);line-height:1.45;}
+.pkg-includes li.pkg-scope svg{color:var(--ink);}
+.pkg-includes li.pkg-scope b{font-weight:700;}
 .pkg-note{display:flex;gap:9px;align-items:flex-start;margin:0 28px 22px;padding:11px 13px;background:var(--sand,#f6f1e7);border-radius:10px;font-size:12.5px;line-height:1.45;color:var(--ink-soft);}
 .pkg-note svg{width:15px;height:15px;flex-shrink:0;margin-top:1px;color:var(--sea);}
 .dt-policy{margin:0 28px 22px;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
