@@ -271,6 +271,7 @@ function tourCard(tr){
       +'<h3>'+t(tr.name)+'</h3>'
       +'<div class="tcard-meta"><span>'+svg('clock')+t(tr.duration)+'</span></div>'
       +'<p>'+t(tr.blurb)+'</p>'
+      +(tr.note?'<div class="tcard-note">'+svg('boat')+'<span><b>'+t(tr.note.title)+'.</b> '+t(tr.note.short)+'</span></div>':'')
       +'<div class="tcard-foot">'
         +'<div class="price'+(quote?' quote':'')+'">'+(quote
             ? '<small>'+ (L==='es'?'Precio':'Price') +'</small><b>'+t(tr.priceLabel)+'</b>'
@@ -793,6 +794,7 @@ function openDetail(type, id){
     +galHTML
     +'<div class="dt-body"><div class="dt-main">'
       +'<p class="dt-intro">'+t(det1.intro||src.blurb)+'</p>'
+      +(src.note?'<div class="dt-rosita dt-note">'+svg('boat')+'<div><b>'+t(src.note.title)+'</b><p>'+t(src.note.body)+'</p></div></div>':'')
       +highHTML+itinHTML+choiceHTML+inclHTML+polHTML
     +'</div><aside class="dt-side"><div class="dt-card">'
       +'<div class="dt-price'+(quote?' quote':'')+'">'+priceHTML+'</div>'
