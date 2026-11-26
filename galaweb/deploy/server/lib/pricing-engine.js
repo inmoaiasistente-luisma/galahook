@@ -190,4 +190,34 @@ async function computeAgencyCost(tenantId, tourId, guests) {
   return { costCents: null, costSettings: null };
 }
 
-module.exports = { computeWebPricing, computeAgencyCost, pickRule, discountForRule };
+/* ---- código de descuento en experiencias por COTIZACIÓN ---------------
+   (p. ej. la expedición de pesca de 8 días). No hay precio ni cobro: solo
+   se valida el código y se devuelve el % para que el equipo lo aplique al
+   cotizar. Solo cuentan reglas DE CANJE (con code) y de porcentaje; una
+   regla automática nunca "aplica" a una cotización.
+   Devuelve null si no se escribió código; si no, { rule, codeInvalid, code, percent }. */
+function pickQuoteRule(rules, tourId, guests, nowIso, code) {
+  const normCode = normalizeDiscountCode(code);
+  if (!normCode) return null;
+  const coded = (rules || []).filter(function (r) {
+    return r && r.code != null && r.code !== '' && r.discount_type === 'percentage';
+  });
+  const rule = pickRule(coded, tourId, guests, nowIso, normCode);
+  if (!rule) return { rule: null, codeInvalid: true, code: normCode, percent: null };
+  return { rule: rule, codeInvalid: false, code: normalizeDiscountCode(rule.code), percent: Number(rule.percentage_bps) / 100 };
+}
+
+async function resolveQuoteDiscount(o) {
+  const normCode = normalizeDiscountCode(o && o.code);
+  if (!normCode) return null;
+  const nowIso = ((o && o.now) || new Date()).toISOString();
+  let rules = [];
+  try {
+    const res = await getSupabase().from('discount_rules').select('*')
+      .eq('tenant_id', o.tenantId).eq('active', true);
+    if (!res.error && Array.isArray(res.data)) rules = res.data;
+  } catch (e) { rules = []; }                    // sin reglas → el código no es válido
+  return pickQuoteRule(rules, o.tourId, o.guests, nowIso, normCode);
+}
+
+module.exports = { computeWebPricing, computeAgencyCost, pickRule, discountForRule, pickQuoteRule, resolveQuoteDiscount };

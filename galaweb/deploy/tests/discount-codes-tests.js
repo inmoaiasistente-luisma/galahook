@@ -73,7 +73,10 @@ ok('24 admin.js: tabla de reglas muestra el código o "Automática"', /rule\.cod
 /* --- H) estructura: el modal de reserva tiene el campo para el cliente --- */
 const appJs = read('assets/js/app.js');
 ok('25 app.js: el modal tiene el input bkPromoInput', /id="bkPromoInput"/.test(appJs));
-ok('26 app.js: el campo se oculta en experiencias de solo-cotización', /promoWrap\.style\.display=request\?'none':''/.test(appJs));
+/* 2026-11-26: el owner pidió que HOOK20 valga en la expedición (por cotización), así que el
+   campo ya no se oculta en solicitudes (ver expedition-promo-code-tests.js). */
+ok('26 app.js: el campo de código se muestra también en solicitudes por cotización',
+  /promoWrap\.style\.display='';/.test(appJs) && !/promoWrap\.style\.display=request\?'none':''/.test(appJs));
 ok('27 app.js: refreshPricing envía discount_code cuando hay algo escrito', /reqBody\.discount_code\s*=\s*code/.test(appJs));
 ok('28 app.js: el cobro real (create-payment-intent) también envía discount_code', /payload\.discount_code\s*=\s*code/.test(appJs));
 ok('29 app.js: muestra aviso de código no válido', /Código no válido|not valid for this experience/.test(appJs));

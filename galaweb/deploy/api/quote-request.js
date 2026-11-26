@@ -16,6 +16,7 @@ const { notifyBooking } = require('../server/lib/booking-email-service');
 const catalog = require('../server/lib/tour-catalog');
 const { resolveNotesForBooking } = require('../server/lib/tour-notes');
 const { isStripeTestMode } = require('../server/lib/runtime-mode');
+const { resolveQuoteDiscount } = require('../server/lib/pricing-engine');
 const {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
   isUuid, isEmail, normalizeEmail, isNonEmptyString, isPositiveInt,
@@ -23,8 +24,9 @@ const {
 } = require('../server/lib/http');
 
 const ALLOWED_KEYS = ['request_id', 'tour_id', 'booking_date', 'guests',
-  'customer_name', 'customer_email', 'customer_phone', 'notes', 'notes_ack'];
+  'customer_name', 'customer_email', 'customer_phone', 'notes', 'notes_ack', 'discount_code'];
 const MAX_GUESTS = 20;
+const MAX_DISCOUNT_CODE_LEN = 30;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_CODE_TRIES = 6;
 
@@ -90,6 +92,9 @@ module.exports = async function handler(req, res) {
     if (notes != null && (typeof notes !== 'string' || notes.length > 1000)) {
       return sendError(res, 400, 'INVALID_NOTES', 'notes is too long');
     }
+    if (body.discount_code != null && (typeof body.discount_code !== 'string' || body.discount_code.length > MAX_DISCOUNT_CODE_LEN)) {
+      return sendError(res, 400, 'INVALID_DISCOUNT_CODE', 'discount_code is invalid');
+    }
 
     const emailNorm = normalizeEmail(customer_email);
     const expected = { tour_id, booking_date, guests, emailNorm };
@@ -116,6 +121,22 @@ module.exports = async function handler(req, res) {
     } catch (e) { logServer('notes', e && e.message); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to load booking notes'); }
     if (notesResolved.error) return sendError(res, 400, notesResolved.error, 'Please review and accept the important notes');
 
+    /* Código de descuento (p. ej. HOOK20 en la expedición): no hay cobro, así
+       que solo se valida y queda registrado para que el equipo lo aplique al
+       cotizar: discount_rule_id + una línea al inicio de las notas (visible en
+       el panel y en el correo interno). Un código que no aplica se rechaza
+       para que el cliente no crea que lo tiene. */
+    let quoteDiscount = null;
+    if (body.discount_code != null && String(body.discount_code).trim() !== '') {
+      let qd = null;
+      try { qd = await resolveQuoteDiscount({ tenantId: tenant, tourId: tour.id, guests: guests, code: body.discount_code }); }
+      catch (e) { logServer('quote-request:code', e && e.message); qd = null; }
+      if (!qd || qd.codeInvalid) return sendError(res, 400, 'DISCOUNT_CODE_NOT_VALID', 'That discount code is not valid for this experience');
+      quoteDiscount = { code: qd.code, percent: qd.percent, ruleId: qd.rule.id };
+    }
+    const codeLine = quoteDiscount ? ('Código de descuento ' + quoteDiscount.code + ' (' + quoteDiscount.percent + '%)') : '';
+    const storedNotes = codeLine ? (codeLine + (notes ? ' — ' + notes : '')) : (notes || null);
+
     const year = todayInGalapagos().slice(0, 4);
     let insertConflict = false;
     for (let attempt = 0; attempt < MAX_CODE_TRIES; attempt++) {
@@ -132,7 +153,8 @@ module.exports = async function handler(req, res) {
         customer_name: customer_name.trim(),
         customer_email: emailNorm,
         customer_phone: customer_phone || null,
-        notes: notes || null,
+        notes: storedNotes,
+        discount_rule_id: quoteDiscount ? quoteDiscount.ruleId : null,
         amount_cents: null,
         currency: catalog.CURRENCY,
         payment_status: 'not_required',
@@ -146,9 +168,11 @@ module.exports = async function handler(req, res) {
       if (!error) {
         /* Correos (sin QR). Un fallo NO invalida la cotización ya creada:
            queda registrado como failed y se puede reintentar desde el panel. */
-        try { await notifyBooking(inserted, 'customer_quote_acknowledgement', 'owner_quote_notification'); }
+        const mailCtx = quoteDiscount ? { quoteDiscount: { code: quoteDiscount.code, percent: quoteDiscount.percent } } : undefined;
+        try { await notifyBooking(inserted, 'customer_quote_acknowledgement', 'owner_quote_notification', mailCtx); }
         catch (e) { logServer('quote-request', 'notify failed'); }
-        return sendJson(res, 200, { bookingCode: inserted.booking_code, status: 'quote_received' });
+        return sendJson(res, 200, { bookingCode: inserted.booking_code, status: 'quote_received',
+          quoteDiscount: mailCtx ? mailCtx.quoteDiscount : null });
       }
       if (error.code === '23505') {
         const blob = (error.message || '') + ' ' + (error.details || '');

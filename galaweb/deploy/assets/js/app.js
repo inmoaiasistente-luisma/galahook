@@ -496,13 +496,17 @@ function updateBkSummary(){
   document.getElementById('bkSecure').style.display=request?'none':'';
   const promoWrap=document.getElementById('bkPromoWrap');
   if(promoWrap){
-    promoWrap.style.display=request?'none':'';
+    /* También en solicitudes (p. ej. la expedición de 8 días): el código se
+       valida en el servidor y el equipo lo aplica al cotizar. */
+    promoWrap.style.display='';
     const promoInput=document.getElementById('bkPromoInput'), hint=document.getElementById('bkPromoHint');
     const typedCode=promoInput?promoInput.value.trim():'';
     if(hint){
-      const invalid=!request&&!!typedCode&&!!bkPricing.codeInvalid;
-      hint.style.display=invalid?'':'none';
+      const invalid=!!typedCode&&!!bkPricing.codeInvalid;
+      const qd=(request&&typedCode&&!invalid)?bkPricing.quoteDiscount:null;
+      hint.style.display=(invalid||qd)?'':'none';
       if(invalid) hint.textContent=es?'Código no válido para esta experiencia.':'That code is not valid for this experience.';
+      else if(qd) hint.textContent=es?('Código '+qd.code+' aplicado: '+qd.percent+'% de descuento en tu cotización.'):('Code '+qd.code+' applied: '+qd.percent+'% off your quote.');
     }
   }
   document.getElementById('bkSumGuestsRow').style.display=bkState.unit==='boat'?'none':'';
@@ -535,6 +539,7 @@ function refreshPricing(){
     bkPricing.pending=false;
     const data=(r&&r.data)||{};
     bkPricing.codeInvalid=!!(code && data.codeInvalid);
+    bkPricing.quoteDiscount=(code && data.quoteDiscount && data.quoteDiscount.code)?data.quoteDiscount:null;
     /* Notas: vienen tanto en 200 (pagable) como en 400 QUOTE_REQUIRED. */
     if(data && (Array.isArray(data.notes) || data.notesVersion!=null)){
       bkNotesState={tourId:tourId, notes:data.notes||[], version:data.notesVersion||null, requiresAck:!!data.requiresAcknowledgement};
@@ -558,7 +563,7 @@ function openBooking(opts){
   const general=!opts.name;
   bkSubmitting=false; bkResetRequestId();
   if(window.GHAPayments) GHAPayments.unmount();   // re-montaje limpio en cada apertura (sin duplicados)
-  bkPricing.applied=null; bkPricing.pending=false; bkPricing.codeInvalid=false;
+  bkPricing.applied=null; bkPricing.pending=false; bkPricing.codeInvalid=false; bkPricing.quoteDiscount=null;
   clearTimeout(bkPromoDebounce);
   const promoReset=document.getElementById('bkPromoInput'); if(promoReset) promoReset.value='';
   bkNotesState={tourId:null, notes:[], version:null, requiresAck:false}; renderBkNotes();
@@ -574,7 +579,7 @@ function openBooking(opts){
     sel.innerHTML=html; selWrap.style.display='';
     const first=items[0];
     if(first) bkState={tourId:first.tourId, name:first.label, price:first.price, unit:first.unit, min:first.min||1, requiresQuote:false};
-    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={tourId:o.dataset.tourId, name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1, requiresQuote:!(+o.dataset.price>0)}; bkPricing.applied=null; bkPricing.codeInvalid=false; bkResetRequestId(); syncGuestsMin(); updateBkSummary(); setupPaymentFields(); refreshPricing(); };
+    sel.onchange=()=>{ const o=sel.selectedOptions[0]; bkState={tourId:o.dataset.tourId, name:o.textContent.split(' — ')[0], price:+o.dataset.price, unit:o.dataset.unit, min:+o.dataset.min||1, requiresQuote:!(+o.dataset.price>0)}; bkPricing.applied=null; bkPricing.codeInvalid=false; bkPricing.quoteDiscount=null; bkResetRequestId(); syncGuestsMin(); updateBkSummary(); setupPaymentFields(); refreshPricing(); };
   } else { selWrap.style.display='none'; }
   const dt=document.getElementById('bkDate'); dt.min=new Date().toISOString().slice(0,10); dt.value='';
   syncGuestsMin();
@@ -624,6 +629,7 @@ function bkErrorMessage(code, es){
     case 'GUESTS_TOO_MANY':          return es?'Demasiados viajeros.':'Too many travelers.';
     case 'QUOTE_REQUIRED':           return es?'Esta experiencia es por cotización.':'This experience is quote-only.';
     case 'PAYMENT_REQUIRED':         return es?'Esta experiencia requiere pago.':'This experience requires payment.';
+    case 'DISCOUNT_CODE_NOT_VALID': case 'INVALID_DISCOUNT_CODE': return es?'Código no válido para esta experiencia. Corrígelo o bórralo.':'That code is not valid for this experience. Fix it or clear it.';
     case 'INTERNAL_ERROR': case 'CONFIG_UNAVAILABLE': return normalizeStripeError({type:'api_error'}, es);
     default:                         return es?'No se pudo completar. Intenta de nuevo.':'Could not complete. Please try again.';
   }
@@ -681,7 +687,9 @@ function showProcessing(data, name, email, dt, guests, es){
 function showQuoteSuccess(data, name, email, dt, guests, es){
   bkShowSuccessShell();
   document.getElementById('bkSucTitle').textContent= es?'¡Solicitud recibida!':'Request received!';
-  document.getElementById('bkSucMsg').textContent= es?'Recibimos tu solicitud. Recibirás un correo de confirmación en breve.':'We received your request. A confirmation email will arrive shortly.';
+  const qd=data&&data.quoteDiscount&&data.quoteDiscount.code?data.quoteDiscount:null;
+  document.getElementById('bkSucMsg').textContent= (es?'Recibimos tu solicitud. Recibirás un correo de confirmación en breve.':'We received your request. A confirmation email will arrive shortly.')
+    +(qd?(es?(' Tu código '+qd.code+' ('+qd.percent+'% de descuento) quedó registrado y se aplicará en tu cotización.'):(' Your code '+qd.code+' ('+qd.percent+'% off) is saved and will be applied to your quote.')):'');
   bkRenderRecap(data, dt, guests, es, false, '');
 }
 async function submitBooking(){
@@ -700,9 +708,9 @@ async function submitBooking(){
   const payload={ request_id:bkEnsureRequestId(), tour_id:bkState.tourId, booking_date:dt, guests:guests, customer_name:name, customer_email:email };
   if(notes) payload.notes=notes;
   if(bkNotesState.requiresAck) payload.notes_ack={ acknowledged:true, version:bkNotesState.version };
-  if(!bkState.requiresQuote){
+  {
     const promoEl=document.getElementById('bkPromoInput'); const code=promoEl?promoEl.value.trim():'';
-    if(code) payload.discount_code=code;
+    if(code) payload.discount_code=code;              // pago y cotización (el servidor lo valida)
   }
 
   bkSubmitting=true; setPayBusy(true);
