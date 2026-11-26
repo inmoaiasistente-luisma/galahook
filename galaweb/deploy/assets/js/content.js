@@ -214,6 +214,17 @@ window.GHA_DEFAULT = {
       blurb: {
         en: "Snorkel the legendary channel between two towering tuff cones — hammerheads, Galápagos sharks, sea turtles and rays glide beneath you.",
         es: "Bucea en el legendario canal entre dos imponentes conos de toba — tiburones martillo, tiburones de Galápagos, tortugas y rayas se deslizan bajo tus pies."
+      },
+      /* Nota de disponibilidad (pedido del owner, 2026-11-25): la lancha de
+         este tour por lo general sale en charters de buceo. Se muestra en la
+         tarjeta (title + short) y en la ventana "Ver más" (title + body). */
+      note: {
+        title: { en: "Subject to boat availability", es: "Sujeto a disponibilidad de la lancha" },
+        short: { en: "This tour depends heavily on the boat, which usually runs diving charters.", es: "Este tour depende mucho de la lancha, que por lo general sale en charters de buceo." },
+        body: {
+          en: "This tour depends heavily on boat availability, since the boat usually runs diving charters. If it isn't available on your date, we'll let you know within 24 hours of your booking so you can pick another date or get a refund.",
+          es: "Este tour depende mucho de la disponibilidad de la lancha, que por lo general sale en charters de buceo. Si en tu fecha no está disponible, te avisamos dentro de las 24 horas de tu reserva para que elijas otra fecha o recibas el reembolso."
+        }
       }
     },
     {
