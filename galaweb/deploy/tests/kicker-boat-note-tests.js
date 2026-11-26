@@ -81,5 +81,32 @@ const css = read('assets/css/site.css');
 ok('13 la nota usa texto oscuro (--ink) sobre fondo claro',
   /\.tcard-note\{[^}]*color:var\(--ink\)/.test(css) && /\.dt-note p\{color:var\(--ink\);\}/.test(css));
 
+/* ---------------- horario e itinerario (owner, 2026-11-26) ----------------
+   Sale 8:30 am, regresa al puerto 2:30 pm; 2 horas de snorkel en el León;
+   playa Manglesito o Puerto Grande según el día; reservar con 30 días. */
+const dbox = { window: {} };
+vm.runInNewContext(read('assets/js/details.js'), dbox);
+const D = dbox.window.GHA_DETAILS.tours.kicker;
+const dtxt = JSON.stringify(D);
+ok('14 duración: 6 horas, de 8:30 am a 2:30 pm (tarjeta y ventana "Ver más")',
+  kicker.duration.es === '6 horas · 8:30 am – 2:30 pm' && kicker.duration.en === '6 hours · 8:30 am – 2:30 pm' &&
+  D.facts.duration.es === kicker.duration.es && D.facts.duration.en === kicker.duration.en);
+ok('15 itinerario: sale 8:30 AM, 2 horas de snorkel en el León, regreso al puerto 2:30 PM',
+  /^8:30 AM/.test(D.agenda[0].title.es) && /^8:30 AM/.test(D.agenda[0].title.en) &&
+  /2 horas de snorkel en León Dormido/.test(D.agenda[1].title.es) && /2 hours of snorkeling/.test(D.agenda[1].title.en) &&
+  /2:30 PM/.test(D.agenda[3].title.es) && /Regreso al puerto a las 2:30 PM/.test(D.agenda[3].body.es) && /Back in port at 2:30 PM/.test(D.agenda[3].body.en));
+ok('16 la playa es Manglesito o Puerto Grande, según el itinerario del día',
+  /Playa Manglesito o Playa Puerto Grande, según el itinerario del día/.test(D.agenda[3].body.es) &&
+  /Playa Manglesito or Playa Puerto Grande, depending on the day's itinerary/.test(D.agenda[3].body.en) &&
+  /Manglesito/.test(D.highlights[3].es) && /Puerto Grande/.test(D.highlights[3].en));
+ok('17 ya no quedan los datos viejos (8:00 AM, 6–7 horas, 40 minutos, playa genérica)',
+  !/8:00 AM|6–7|40 min|playa autorizada|authorized beach/.test(dtxt) && !/6–7/.test(JSON.stringify(kicker)));
+ok('18 se recomienda reservar con 30 días de anticipación (tarjeta y ventana)',
+  /30 días de anticipación/.test(n.short.es) && /30 días de anticipación/.test(n.body.es) &&
+  /30 days ahead/.test(n.short.en) && /30 days in advance/.test(n.body.en));
+ok('19 la portada ya no dice 6–7 horas para el León Dormido',
+  /un tour de 6 horas desde San Cristóbal \(8:30 am – 2:30 pm\)/.test(read('index.html')) && !/6–7 hour/.test(read('index.html')));
+ok('20 el buceo en Kicker Rock no cambia', /6–7 horas · 2 tanques/.test(JSON.stringify(tour('diving').duration)));
+
 console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
 process.exit(fail ? 1 : 0);

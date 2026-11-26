@@ -234,7 +234,7 @@ window.GHA_DEFAULT = {
     {
       id: "kicker", cat: "snorkeling", img: "assets/img/kicker-sunrise.jpg",
       name: { en: "Kicker Rock — León Dormido", es: "Kicker Rock — León Dormido" },
-      duration: { en: "6–7 hours", es: "6–7 horas" }, tag: { en: "Snorkeling", es: "Snorkel" },
+      duration: { en: "6 hours · 8:30 am – 2:30 pm", es: "6 horas · 8:30 am – 2:30 pm" }, tag: { en: "Snorkeling", es: "Snorkel" },
       price: 195, priceLabel: { en: "per person", es: "por persona" },
       blurb: {
         en: "Snorkel the legendary channel between two towering tuff cones — hammerheads, Galápagos sharks, sea turtles and rays glide beneath you.",
@@ -245,10 +245,10 @@ window.GHA_DEFAULT = {
          tarjeta (title + short) y en la ventana "Ver más" (title + body). */
       note: {
         title: { en: "Subject to boat availability", es: "Sujeto a disponibilidad de la lancha" },
-        short: { en: "This tour depends heavily on the boat, which usually runs diving charters.", es: "Este tour depende mucho de la lancha, que por lo general sale en charters de buceo." },
+        short: { en: "This tour depends heavily on the boat, which usually runs diving charters. Book 30 days ahead to secure your spot.", es: "Este tour depende mucho de la lancha, que por lo general sale en charters de buceo. Reserva con 30 días de anticipación para asegurar tu espacio." },
         body: {
-          en: "This tour depends heavily on boat availability, since the boat usually runs diving charters. If it isn't available on your date, we'll let you know within 24 hours of your booking so you can pick another date or get a refund.",
-          es: "Este tour depende mucho de la disponibilidad de la lancha, que por lo general sale en charters de buceo. Si en tu fecha no está disponible, te avisamos dentro de las 24 horas de tu reserva para que elijas otra fecha o recibas el reembolso."
+          en: "This tour depends heavily on boat availability, since the boat usually runs diving charters. We recommend booking 30 days in advance to secure your spot. If it isn't available on your date, we'll let you know within 24 hours of your booking so you can pick another date or get a refund.",
+          es: "Este tour depende mucho de la disponibilidad de la lancha, que por lo general sale en charters de buceo. Te recomendamos reservar con 30 días de anticipación para asegurar tu espacio. Si en tu fecha no está disponible, te avisamos dentro de las 24 horas de tu reserva para que elijas otra fecha o recibas el reembolso."
         }
       }
     },
