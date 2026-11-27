@@ -106,6 +106,12 @@ function dueFor(booking, todayYmd) {
 
   const type = typeForDays(days);
   if (!type) return { due: false, days: days, type: null, reason: 'not_a_reminder_day' };
+
+  /* Depósito con saldo pendiente: el aviso de pago del barrido reemplaza los
+     correos de 7 y 5 días; no se promete un viaje que aún no está pagado. */
+  if (booking.payment_plan === 'deposit' && booking.payment_status !== 'paid' && (days === 7 || days === 5)) {
+    return { due: false, days: days, type: null, reason: 'balance_pending' };
+  }
   return { due: true, days: days, type: type, reason: null };
 }
 
