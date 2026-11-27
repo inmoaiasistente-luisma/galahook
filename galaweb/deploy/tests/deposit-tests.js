@@ -105,7 +105,7 @@ console.log('\n--- 2 · migración ---');
     cols.every(function (c) { return new RegExp('add column if not exists\\s+' + c + '\\b').test(low); }));
   ok('2.2 payment_plan not null default full + check',
     /add column if not exists\s+payment_plan\s+text\s+not null\s+default\s+'full'/.test(low) &&
-    /chk_payment_plan[\s\S]{0,80}in\s*\(\s*'full'\s*,\s*'deposit'\s*\)/.test(low));
+    /in\s*\(\s*'full'\s*,\s*'deposit'\s*\)/.test(block('chk_payment_plan')));
   ok('2.3 tipos de columnas',
     /deposit_cents\s+int/.test(low) && /balance_cents\s+int/.test(low) &&
     /balance_due_date\s+date/.test(low) && /deposit_refundable_until\s+date/.test(low) &&
@@ -116,6 +116,7 @@ console.log('\n--- 2 · migración ---');
   const da = block('chk_deposit_amounts');
   ok('2.5 chk_deposit_amounts: solo exige cuando plan=deposit', /check\s*\(\s*payment_plan\s*<>\s*'deposit'\s+or/.test(da));
   ok('2.6 chk_deposit_amounts: montos > 0, suma = total, fecha de saldo',
+    /deposit_cents\s+is not null/.test(da) && /balance_cents\s+is not null/.test(da) &&
     /deposit_cents\s*>\s*0/.test(da) && /balance_cents\s*>\s*0/.test(da) &&
     /deposit_cents\s*\+\s*balance_cents\s*=\s*amount_cents/.test(da) && /balance_due_date\s+is not null/.test(da));
   ok('2.7 chk_payment_status incluye deposit_paid y los valores previos',

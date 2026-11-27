@@ -61,7 +61,9 @@ alter table public.bookings
 alter table public.bookings
   add constraint chk_deposit_amounts check (
     payment_plan <> 'deposit'
-    or (deposit_cents > 0
+    or (deposit_cents is not null
+        and balance_cents is not null
+        and deposit_cents > 0
         and balance_cents > 0
         and deposit_cents + balance_cents = amount_cents
         and balance_due_date is not null));
