@@ -83,5 +83,62 @@ console.log('\n--- 1 · política ---');
   ok('1.32 basura null', P.verifyBalanceToken('') === null && P.verifyBalanceToken(null) === null && P.verifyBalanceToken('a.b.c') === null);
 }
 
+/* ---------------- 2 · migración ---------------- */
+console.log('\n--- 2 · migración ---');
+{
+  const fs = require('fs'), path = require('path');
+  const dir = path.join(__dirname, '..', 'supabase', 'migrations');
+  const sql = fs.readFileSync(path.join(dir, '0028_booking_deposits.sql'), 'utf8');
+  const low = sql.toLowerCase();
+  const old19 = fs.readFileSync(path.join(dir, '0019_phase9_audit_docs_reminders.sql'), 'utf8');
+  // texto de un constraint recreado: desde "add constraint <name>" hasta el siguiente ";"
+  function block(name) {
+    const i = low.indexOf('add constraint ' + name);
+    return i < 0 ? '' : low.slice(i, low.indexOf(';', i));
+  }
+
+  const cols = ['payment_plan', 'deposit_cents', 'balance_cents', 'balance_due_date', 'deposit_refundable_until',
+    'balance_refundable_until', 'deposit_paid_at', 'balance_paid_at', 'balance_payment_intent_id',
+    'balance_payment_method', 'balance_offline_note', 'deposit_terms_version', 'deposit_terms_accepted_at',
+    'auto_cancelled_at', 'cancel_reason', 'needs_review_reason'];
+  ok('2.1 todas las columnas con add column if not exists',
+    cols.every(function (c) { return new RegExp('add column if not exists\\s+' + c + '\\b').test(low); }));
+  ok('2.2 payment_plan not null default full + check',
+    /add column if not exists\s+payment_plan\s+text\s+not null\s+default\s+'full'/.test(low) &&
+    /chk_payment_plan[\s\S]{0,80}in\s*\(\s*'full'\s*,\s*'deposit'\s*\)/.test(low));
+  ok('2.3 tipos de columnas',
+    /deposit_cents\s+int/.test(low) && /balance_cents\s+int/.test(low) &&
+    /balance_due_date\s+date/.test(low) && /deposit_refundable_until\s+date/.test(low) &&
+    /balance_refundable_until\s+date/.test(low) && /deposit_paid_at\s+timestamptz/.test(low) &&
+    /balance_paid_at\s+timestamptz/.test(low) && /balance_payment_intent_id\s+text\s+unique/.test(low));
+  ok('2.4 chk_balance_payment_method',
+    /chk_balance_payment_method[\s\S]{0,120}'stripe'\s*,\s*'cash'\s*,\s*'transfer'/.test(low));
+  const da = block('chk_deposit_amounts');
+  ok('2.5 chk_deposit_amounts: solo exige cuando plan=deposit', /check\s*\(\s*payment_plan\s*<>\s*'deposit'\s+or/.test(da));
+  ok('2.6 chk_deposit_amounts: montos > 0, suma = total, fecha de saldo',
+    /deposit_cents\s*>\s*0/.test(da) && /balance_cents\s*>\s*0/.test(da) &&
+    /deposit_cents\s*\+\s*balance_cents\s*=\s*amount_cents/.test(da) && /balance_due_date\s+is not null/.test(da));
+  ok('2.7 chk_payment_status incluye deposit_paid y los valores previos',
+    /'deposit_paid'/.test(block('chk_payment_status')) &&
+    ['pending', 'processing', 'paid', 'failed', 'refunded', 'not_required'].every(function (v) { return block('chk_payment_status').indexOf("'" + v + "'") >= 0; }));
+  const rp = block('chk_request_payment');
+  ok('2.8 chk_request_payment incluye deposit_paid y conserva ramas',
+    /'deposit_paid'/.test(rp) && /request_type\s*=\s*'quote'/.test(rp) && /request_type\s*=\s*'booking'/.test(rp) &&
+    /amount_cents\s+is null/.test(rp) && /amount_cents\s*>\s*0/.test(rp));
+  const types9 = ['customer_deposit_confirmation', 'owner_deposit_notification', 'balance_reminder_d7', 'balance_reminder_d6',
+    'customer_deposit_cancelled', 'owner_deposit_cancelled', 'customer_balance_receipt', 'owner_balance_received', 'owner_payment_review'];
+  const nt = block('chk_email_notification_type');
+  ok('2.9 los 9 tipos nuevos de notificación', types9.every(function (t) { return nt.indexOf("'" + t + "'") >= 0; }));
+  const m19 = old19.slice(old19.indexOf('add constraint chk_email_notification_type'));
+  const oldTypes = (m19.slice(0, m19.indexOf(';')).match(/'[a-z0-9_]+'/g) || []).map(function (s) { return s.slice(1, -1); });
+  ok('2.10 los tipos previos (0019) siguen incluidos', oldTypes.length === 15 && oldTypes.every(function (t) { return nt.indexOf("'" + t + "'") >= 0; }));
+  ok('2.11 constraints recreados con drop constraint if exists',
+    ['chk_payment_status', 'chk_request_payment', 'chk_email_notification_type'].every(function (n) { return low.indexOf('drop constraint if exists ' + n) >= 0; }));
+  ok('2.12 índice (tenant_id, payment_plan, payment_status, booking_date)',
+    /create index if not exists\s+\w+\s+on public\.bookings\s*\(\s*tenant_id\s*,\s*payment_plan\s*,\s*payment_status\s*,\s*booking_date\s*\)/.test(low));
+  ok('2.13 sin drop table ni delete from', !/drop table/.test(low) && !/delete\s+from/.test(low));
+  ok('2.14 cabecera: aplicar en Preview, luego en Producción ANTES del merge', /aplicar en preview, luego en producci[oó]n antes del merge/.test(low));
+}
+
 console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
 process.exit(fail ? 1 : 0);
