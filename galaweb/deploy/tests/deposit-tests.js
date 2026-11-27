@@ -338,7 +338,156 @@ console.log('\n--- 3 · correos ---');
   r3 = await call(previewHandler, { tour_id: 'kicker', guests: 2, booking_date: shiftYmd(today, -3) });
   ok('4.17 preview con fecha mala o pasada: sin deposit y sin error',
     r.status === 200 && !('deposit' in r.data) && r3.status === 200 && !('deposit' in r3.data));
+
+  /* ---------------- 5 · saldo ---------------- */
+  console.log('\n--- 5 · saldo ---');
+  const tok = P.signBalanceToken;
+  function dep(extra) {
+    n++;
+    return Object.assign({ id: '10000000-0000-4000-8000-' + String(300000000000 + n), tenant_id: 'hook-adventure', booking_code: 'HA-2027-SALDO' + n,
+      tour_name: 'León Dormido', booking_date: shiftYmd(today, 40), guests: 2, amount_cents: 39000, currency: 'usd',
+      payment_plan: 'deposit', deposit_cents: 11700, balance_cents: 27300, balance_due_date: shiftYmd(today, 34),
+      payment_status: 'deposit_paid', booking_status: 'confirmed', balance_payment_intent_id: null,
+      customer_name: 'Ana Pérez', customer_email: 'ana@example.com', customer_phone: '+593999' }, extra || {});
+  }
+  function seed(row) { fresh(); rows().push(row); return row; }
+  const info = function (t) { return call(createHandler, { mode: 'balance_info', token: t }); };
+  const pay = function (t) { return call(createHandler, { mode: 'balance', token: t }); };
+
+  // 5.1 balance_info
+  let s = seed(dep());
+  r = await info(tok(s.id));
+  ok('5.1 balance_info: resumen con state=due y sin datos personales',
+    r.status === 200 && r.data.state === 'due' && r.data.bookingCode === s.booking_code && r.data.tourName === 'León Dormido'
+    && r.data.bookingDate === s.booking_date && r.data.guests === 2 && r.data.totalCents === 39000 && r.data.depositCents === 11700
+    && r.data.balanceCents === 27300 && r.data.balanceDueDate === s.balance_due_date && r.data.currency === 'usd'
+    && Object.keys(r.data).every(function (k) { return k.indexOf('customer_') !== 0 && !/email|phone/i.test(k); })
+    && JSON.stringify(r.data).indexOf('ana@example.com') < 0 && JSON.stringify(r.data).indexOf('Pérez') < 0 && STRIPE.creates.length === 0);
+
+  // 5.2 balance crea el PI del saldo
+  r = await pay(tok(s.id));
+  const bc = STRIPE.creates[0] || { params: { metadata: {} }, opts: {} };
+  ok('5.2 balance: PI por balance_cents, kind=balance, idempotencyKey por fila',
+    r.status === 200 && STRIPE.creates.length === 1 && bc.params.amount === 27300 && bc.params.currency === 'usd'
+    && bc.params.metadata.kind === 'balance' && bc.params.metadata.booking_id === s.id && bc.params.metadata.booking_code === s.booking_code
+    && bc.params.metadata.tenant_id === 'hook-adventure' && bc.opts.idempotencyKey === 'create-balance-pi:' + s.id);
+  ok('5.3 balance: respuesta con clientSecret/chargeCents y fila guardada con el PI',
+    r.data.clientSecret === 'cs_1' && r.data.chargeCents === 27300 && r.data.bookingCode === s.booking_code && r.data.currency === 'usd'
+    && r.data.tourName === 'León Dormido' && s.balance_payment_intent_id === 'pi_1' && !('amountCents' in r.data)
+    && JSON.stringify(r.data).indexOf('ana@example.com') < 0);
+
+  // 5.4 segunda llamada reutiliza
+  r = await pay(tok(s.id));
+  ok('5.4 segunda llamada reutiliza el PI (retrieve, sin segundo create)',
+    r.status === 200 && r.data.clientSecret === 'cs_old' && STRIPE.creates.length === 1 && STRIPE.retrieves.length === 1 && STRIPE.retrieves[0] === 'pi_1');
+
+  // 5.5-5.8 PI existente: estados
+  STRIPE.status = 'succeeded';
+  r = await pay(tok(s.id));
+  ok('5.5 PI succeeded → alreadyPaid con bookingCode', r.status === 200 && r.data.alreadyPaid === true && r.data.bookingCode === s.booking_code && !('clientSecret' in r.data));
+  STRIPE.status = 'canceled';
+  r = await pay(tok(s.id));
+  ok('5.6 PI canceled → 409 PAYMENT_ATTEMPT_CANCELED', r.status === 409 && r.data.error === 'PAYMENT_ATTEMPT_CANCELED');
+  STRIPE.status = 'weird';
+  r = await pay(tok(s.id));
+  ok('5.7 PI en estado raro → 409 PAYMENT_ATTEMPT_UNAVAILABLE', r.status === 409 && r.data.error === 'PAYMENT_ATTEMPT_UNAVAILABLE');
+  STRIPE.status = 'processing';
+  r = await pay(tok(s.id));
+  ok('5.8 PI processing se reanuda', r.status === 200 && r.data.clientSecret === 'cs_old' && STRIPE.creates.length === 1);
+
+  // 5.9 pagado
+  s = seed(dep({ payment_status: 'paid' }));
+  r = await info(tok(s.id));
+  r2 = await pay(tok(s.id));
+  ok('5.9 reserva pagada: info state=paid y balance alreadyPaid, sin Stripe',
+    r.status === 200 && r.data.state === 'paid' && r2.status === 200 && r2.data.alreadyPaid === true && r2.data.bookingCode === s.booking_code
+    && STRIPE.creates.length === 0 && STRIPE.retrieves.length === 0);
+
+  // 5.10-5.11 cancelada / reembolsada
+  s = seed(dep({ booking_status: 'cancelled' }));
+  r = await info(tok(s.id)); r2 = await pay(tok(s.id));
+  ok('5.10 cancelada: info state=cancelled y balance 409 BOOKING_CANCELLED',
+    r.status === 200 && r.data.state === 'cancelled' && r2.status === 409 && r2.data.error === 'BOOKING_CANCELLED' && STRIPE.creates.length === 0);
+  s = seed(dep({ payment_status: 'refunded' }));
+  r2 = await pay(tok(s.id));
+  ok('5.11 reembolsada → 409 BOOKING_CANCELLED', r2.status === 409 && r2.data.error === 'BOOKING_CANCELLED');
+
+  // 5.12 plan full
+  s = seed(dep({ payment_plan: 'full', payment_status: 'paid' }));
+  r = await info(tok(s.id)); r2 = await pay(tok(s.id));
+  ok('5.12 reserva full: 409 BALANCE_NOT_DUE en ambos modos',
+    r.status === 409 && r.data.error === 'BALANCE_NOT_DUE' && r2.status === 409 && r2.data.error === 'BALANCE_NOT_DUE' && STRIPE.creates.length === 0);
+
+  // 5.13 depósito sin pagar
+  const notPaid = [];
+  for (const st of ['pending', 'processing', 'failed']) {
+    s = seed(dep({ payment_status: st, booking_status: 'pending_payment' }));
+    notPaid.push(await pay(tok(s.id)));
+  }
+  ok('5.13 depósito no pagado (pending/processing/failed) → 409 BALANCE_NOT_DUE',
+    notPaid.every(function (x) { return x.status === 409 && x.data.error === 'BALANCE_NOT_DUE'; }) && STRIPE.creates.length === 0);
+
+  // 5.14 tokens malos
+  s = seed(dep());
+  const good = tok(s.id);
+  const tampered = good.slice(0, -2) + (good.slice(-2) === 'AA' ? 'BB' : 'AA');
+  const ghost = tok('10000000-0000-4000-8000-999999999999');
+  const bad = [];
+  for (const t of [tampered, ghost, 'basura', '', null, 123]) { bad.push(await pay(t)); bad.push(await info(t)); }
+  ok('5.14 token manipulado, de fila inexistente o inválido → 400 INVALID_TOKEN',
+    bad.every(function (x) { return x.status === 400 && x.data.error === 'INVALID_TOKEN'; }) && STRIPE.creates.length === 0);
+
+  // 5.15 otro tenant
+  s = seed(dep({ tenant_id: 'otro-tenant' }));
+  r = await pay(tok(s.id));
+  ok('5.15 fila de otro tenant → 400 INVALID_TOKEN', r.status === 400 && r.data.error === 'INVALID_TOKEN' && STRIPE.creates.length === 0);
+
+  // 5.16 pago anticipado permitido (T+60)
+  s = seed(dep({ booking_date: shiftYmd(today, 60), balance_due_date: shiftYmd(today, 54) }));
+  r = await pay(tok(s.id));
+  ok('5.16 pago anticipado (viaje a T+60) permitido', r.status === 200 && r.data.clientSecret === 'cs_1' && STRIPE.creates[0].params.amount === 27300);
+
+  // 5.17 cuerpo y modo
+  s = seed(dep());
+  r = await call(createHandler, { mode: 'balance', token: tok(s.id), customer_email: 'x@y.com' });
+  r2 = await call(createHandler, { mode: 'balance_info', token: tok(s.id), amount: 1 });
+  r3 = await call(createHandler, { mode: 'cobrar', token: tok(s.id) });
+  ok('5.17 modo con claves extra → 400 INVALID_BODY; modo desconocido → 400 INVALID_MODE',
+    r.status === 400 && r.data.error === 'INVALID_BODY' && r2.status === 400 && r2.data.error === 'INVALID_BODY'
+    && r3.status === 400 && r3.data.error === 'INVALID_MODE' && STRIPE.creates.length === 0);
+
+  // 5.18 falta QR_SIGNING_SECRET → 500, no INVALID_TOKEN
+  const goodTok = tok(s.id);
+  delete process.env.QR_SIGNING_SECRET;
+  r = await pay(goodTok); r2 = await info(goodTok);
+  process.env.QR_SIGNING_SECRET = 't';
+  ok('5.18 sin QR_SIGNING_SECRET → 500 INTERNAL_ERROR (no INVALID_TOKEN)',
+    r.status === 500 && r.data.error === 'INTERNAL_ERROR' && r2.status === 500 && r2.data.error === 'INTERNAL_ERROR');
+
+  // 5.19 carrera: otro proceso guardó su PI antes → se reutiliza el guardado
+  s = seed(dep());
+  const origCreate = fakeStripe.paymentIntents.create;
+  fakeStripe.paymentIntents.create = async function (params, opts) {
+    s.balance_payment_intent_id = 'pi_rival';
+    return origCreate(params, opts);
+  };
+  r = await pay(tok(s.id));
+  fakeStripe.paymentIntents.create = origCreate;
+  ok('5.19 carrera al guardar: no pisa el PI ya guardado y reutiliza ese',
+    r.status === 200 && s.balance_payment_intent_id === 'pi_rival' && STRIPE.retrieves.indexOf('pi_rival') >= 0 && r.data.clientSecret === 'cs_old');
+
+  // 5.20 error de Stripe al crear
+  s = seed(dep());
+  fakeStripe.paymentIntents.create = async function () { throw new Error('stripe down'); };
+  r = await pay(tok(s.id));
+  fakeStripe.paymentIntents.create = origCreate;
+  ok('5.20 error de Stripe → 500 INTERNAL_ERROR y la reserva no cambia',
+    r.status === 500 && r.data.error === 'INTERNAL_ERROR' && s.balance_payment_intent_id === null && s.payment_status === 'deposit_paid');
+
+  // 5.21 modo sin token
+  r = await call(createHandler, { mode: 'balance_info' });
+  ok('5.21 modo sin token → 400 INVALID_TOKEN', r.status === 400 && r.data.error === 'INVALID_TOKEN');
 })().then(function () {
   console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);
-}, function (e) { console.log('FAIL  sección 4 lanzó: ' + (e && e.stack || e)); process.exit(1); });
+}, function (e) { console.log('FAIL  sección 4/5 lanzó: ' + (e && e.stack || e)); process.exit(1); });

@@ -16,6 +16,7 @@ const catalog = require('../server/lib/tour-catalog');
 const { computeWebPricing } = require('../server/lib/pricing-engine');
 const { resolveNotesForBooking } = require('../server/lib/tour-notes');
 const depositPolicy = require('../server/lib/deposit-policy');
+const { handleBalanceRequest } = require('../server/lib/balance-payment');
 const { isStripeTestMode } = require('../server/lib/runtime-mode');
 const {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
@@ -25,7 +26,7 @@ const {
 
 const ALLOWED_KEYS = ['request_id', 'tour_id', 'booking_date', 'guests',
   'customer_name', 'customer_email', 'customer_phone', 'notes', 'notes_ack', 'discount_code',
-  'payment_plan', 'deposit_ack'];
+  'payment_plan', 'deposit_ack', 'mode', 'token'];
 const MAX_GUESTS = 20;
 const MAX_CODE_LEN = 30;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I ambiguos
@@ -79,6 +80,11 @@ module.exports = async function handler(req, res) {
     let body;
     try { body = await readJsonBody(req); }
     catch (e) { return sendError(res, 400, 'INVALID_JSON', 'Request body must be valid JSON'); }
+
+    /* Modo saldo: se despacha ANTES de validar la reserva (el cliente solo envía mode + token). */
+    if (body && typeof body === 'object' && !Array.isArray(body) && body.mode !== undefined) {
+      return await handleBalanceRequest(body, res, { supabase: getSupabase(), stripe: getStripe(), tenant: tenant });
+    }
 
     if (rejectUnknownKeys(body, ALLOWED_KEYS)) {
       return sendError(res, 400, 'INVALID_BODY', 'Unexpected or invalid fields');
