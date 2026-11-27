@@ -774,3 +774,8 @@ select option:disabled{ color:rgba(251,248,241,.5); }
 .saldo-result .bk-recap{text-align:left;margin:20px auto;}
 .saldo-msg{margin:6px 0 12px;padding:10px 12px;border-radius:8px;background:#fdecea;color:#7a1f14;font-size:14px;font-weight:600;}
 @media (max-width:600px){.saldo-card{padding:20px 16px;}}
+/* Cabecera compacta (p. ej. /saldo): el pago queda en la primera pantalla del móvil. */
+.pagehero.pagehero-compact{min-height:0;}
+.pagehero-compact .pagehero-inner{padding:104px 0 26px;}
+.pagehero-compact h1{font-size:clamp(30px,5vw,44px);line-height:1.05;}
+.pagehero-compact .breadcrumb{margin-bottom:6px;}

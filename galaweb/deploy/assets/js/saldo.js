@@ -2,10 +2,10 @@
    GALÁPAGOS HOOK ADVENTURE — página /saldo (pago del 70 %)
    ---------------------------------------------------------
    El enlace del correo es  /saldo#t=<token>.  El token viaja en el
-   FRAGMENTO de la URL (no llega a los logs del servidor). Aquí se lee
-   SOLO de location.hash, se borra de la barra con history.replaceState
-   y se guarda únicamente en una variable de este script: nunca en
-   almacenamiento del navegador, cookies ni consola.
+   FRAGMENTO de la URL (no llega a los logs del servidor ni al Referer).
+   Aquí se lee SOLO de location.hash y el fragmento se queda en la barra,
+   para que recargar o volver atrás siga funcionando. Nunca se guarda en
+   almacenamiento del navegador ni cookies, ni se imprime en consola.
 
    Flujo: balance_info → (pagar) → balance → confirmCardPayment.
    El navegador manda exactamente {mode, token}; el monto lo calcula
@@ -24,10 +24,9 @@
   var shownLang = null;
   var G = window.GHADeposit;
 
-  /* ---- token: solo del fragmento; después se limpia la barra ---- */
+  /* ---- token: solo del fragmento (location.hash), que se conserva ---- */
   function readToken() {
     var m = /(?:^#|&)t=([^&]+)/.exec(location.hash || "");
-    try { history.replaceState(null, "", "/saldo"); } catch (e) { /* noop */ }
     return (m && /^\S{1,600}$/.test(m[1])) ? m[1] : null;
   }
 
@@ -71,7 +70,7 @@
       + (retry ? '<button type="button" class="btn btn-ink" id="saldoRetry">' + esc(T("saldoRetry")) + "</button>" : "") + "</div>";
   }
   function dueForm(info) {
-    return '<div class="saldo-card"><h2>' + esc(T("saldoTitle")) + '</h2><p class="saldo-lead">' + esc(T("saldoLead")) + "</p>" + summary(info) + "</div>"
+    return '<div class="saldo-card"><p class="saldo-lead">' + esc(T("saldoLead")) + "</p>" + summary(info) + "</div>"
       + '<form class="saldo-card" id="saldoForm" novalidate>'
       + "<h3>" + esc(T("saldoPayTitle")) + "</h3>"
       + '<div class="field"><label for="saldoCardName">' + esc(T("saldoCardName")) + '</label><input id="saldoCardName" autocomplete="cc-name"></div>'
@@ -86,7 +85,11 @@
       + '<p class="bk-secure">🔒 ' + esc(T("saldoSecure")) + "</p></form>";
   }
 
+  /* Título de la pestaña en el idioma actual (se llama al pintar y al cambiar de idioma). */
+  function setTitle() { document.title = T("saldoTitle") + " — Galápagos Hook Adventure"; }
+
   function draw() {
+    setTitle();
     shownLang = lang();
     var keepName = ($("saldoCardName") || {}).value || "";
     var info = view.info || {}, html = "";
@@ -177,6 +180,7 @@
   /* El cambio de idioma lo hace app.js; aquí solo se repinta con el idioma nuevo. */
   document.addEventListener("click", function (e) {
     var b = e.target && e.target.closest ? e.target.closest("[data-lang]") : null;
+    if (b) setTitle();
     if (b && !busy && lang() !== shownLang) draw();
   });
 

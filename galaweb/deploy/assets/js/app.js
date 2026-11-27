@@ -126,7 +126,7 @@ function buildHeader(){
         +'<button data-lang="en" class="'+(L==='en'?'on':'')+'">EN</button>'
         +'<button data-lang="es" class="'+(L==='es'?'on':'')+'">ES</button>'
      +'</div>'
-     +'<button type="button" class="btn btn-gold btn-sm js-book" data-name="" data-price="0" data-unit="person" data-en="Book Now" data-es="Reservar">'+(L==='es'?'Reservar':'Book Now')+'</button>'
+     +(document.body.dataset.page==='saldo'?'':'<button type="button" class="btn btn-gold btn-sm js-book" data-name="" data-price="0" data-unit="person" data-en="Book Now" data-es="Reservar">'+(L==='es'?'Reservar':'Book Now')+'</button>')   // /saldo: sin checkout (comparte Stripe con la página)
      +'<button class="nav-toggle" id="navToggle" aria-label="Menu"><span></span><span></span><span></span></button>'
    +'</div>'
   +'</div>';
@@ -453,7 +453,20 @@ function applyBookingLang(){
   if(pol) pol.innerHTML=es
     ?('Cancelación con más de '+cd+' días de anticipación: reembolso del 100%. Con '+cd+' días o menos: <b>sin reembolso</b>. Al reservar aceptas los <a href="terms.html" target="_blank" rel="noopener">Términos y Condiciones</a>.')
     :('Cancel more than '+cd+' days before: 100% refund. '+cd+' days or less: <b>no refund</b>. By booking you accept the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>.');
+  const t2=document.getElementById('bkT2');
+  bkPolicyOrig={pol:pol?pol.innerHTML:'', t2:t2?t2.textContent:''};   // textos de pago completo, para restaurarlos tal cual
   renderBkNotes();   // relocaliza cabecera y casilla de notas
+}
+/* Con depósito, la política y la insignia lateral deben decir la regla del depósito (no la de 15 días). */
+let bkPolicyOrig=null;
+function setBkPolicy(dep){
+  const pol=document.getElementById('bkPolicy'), t2=document.getElementById('bkT2'); if(!pol||!t2) return;
+  if(dep && window.GHADeposit){
+    const G=GHADeposit, es=L==='es';
+    const terms=es?' Al reservar aceptas los <a href="terms.html" target="_blank" rel="noopener">Términos y Condiciones</a>.':' By booking you accept the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>.';
+    pol.innerHTML=G.fill(G.tx(S,'policyBox',L),{refund:G.date(dep.depositRefundableUntil,L)})+terms;
+    t2.textContent=G.tx(S,'badgeDeposit',L);
+  } else if(bkPolicyOrig){ pol.innerHTML=bkPolicyOrig.pol; t2.textContent=bkPolicyOrig.t2; }
 }
 /* Renderiza las notas importantes activas del tour y, si corresponde, la
    casilla obligatoria de aceptación (conserva su estado al re-renderizar). */
@@ -535,6 +548,7 @@ function updateBkSummary(){
   const dep=request?null:bkCurrentDeposit(sp, document.getElementById('bkDate').value);
   renderBkPlan(dep);   // si ya no es elegible, GHADeposit vuelve a 'full' y borra la aceptación
   const depPlan=!!(dep&&dep.eligible&&window.GHADeposit&&GHADeposit.plan()==='deposit');
+  setBkPolicy(depPlan?dep:null);
   const pb=document.getElementById('bkPayBtn'); pb.disabled=false; if(pb.dataset.idle) delete pb.dataset.idle;
   /* El botón muestra lo que se cobra HOY: el depósito si el plan es 'deposit', el total si no. */
   pb.textContent= request?(es?'Enviar solicitud':'Send request'):((es?'Pagar ':'Pay ')+(depPlan?GHADeposit.money(dep.depositCents):money2(amount)));
@@ -587,6 +601,8 @@ function refreshPricing(){
   }).catch(function(){ if(mySeq!==bkPricing.seq) return; bkPricing.pending=false; bkPricing.applied=null; updateBkSummary(); });
 }
 function openBooking(opts){
+  /* /saldo (pago del saldo) usa los mismos Stripe Elements: el checkout nunca debe abrirse ahí. */
+  if(document.body.dataset.page==='saldo') return;
   /* HOTFIX contención: no abrir checkout de paquetes mientras el precio se estabiliza. */
   if(PKG_CHECKOUT_PAUSED && isPackageTour(opts&&opts.tourId)){
     if(window.GHA&&GHA.toast) GHA.toast(L==='es'?'Precio temporalmente no disponible. Contáctenos para completar su reserva.':'Price temporarily unavailable. Contact us to complete your reservation.');
@@ -1170,6 +1186,7 @@ function render(){
 /* Barra de promo (Black Friday 2026): módulo aparte (promo-bf.js). Solo se
    descarga mientras la promo está vigente; al vencer, ni se carga. */
 function loadPromo(){
+  if(document.body.dataset.page==='saldo') return;   // /saldo: sin barra ni popup de promo
   if(!S.promo || document.getElementById('bfJs')) return;
   if(!(Date.parse(S.promo.endsAt)>Date.now())) return;
   const s=document.createElement('script'); s.id='bfJs'; s.src='/assets/js/promo-bf.js?v=bf2';
@@ -1249,7 +1266,7 @@ if(document.readyState!=='loading') init(); else document.addEventListener('DOMC
 
   // Solo páginas públicas de marketing.
   var path=(location.pathname||'/').toLowerCase();
-  var BLOCK=['/admin','/passengers','/checkin','/lock','/tarjeta'];
+  var BLOCK=['/admin','/passengers','/checkin','/lock','/tarjeta','/saldo'];
   for(var i=0;i<BLOCK.length;i++){ if(path.indexOf(BLOCK[i])===0) return; }
 
   var first=0, lastNudge=0;

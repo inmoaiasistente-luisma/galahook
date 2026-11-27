@@ -135,7 +135,8 @@ const saldoJs = exists('assets/js/saldo.js') ? read('assets/js/saldo.js') : '';
 ok('36 saldo.js existe', !!saldoJs);
 ok('37 el token se lee solo de location.hash', /location\.hash/.test(saldoJs) && !/location\.search|URLSearchParams|document\.cookie/.test(saldoJs));
 ok('38 saldo.js no usa localStorage ni sessionStorage', !!saldoJs && !/localStorage|sessionStorage/.test(saldoJs));
-ok('39 saldo.js limpia el token de la barra con history.replaceState', /history\.replaceState\([^)]*\/saldo/.test(saldoJs));
+/* Fix ronda 1 (I1): el fragmento se CONSERVA para que recargar o volver atrás siga funcionando. */
+ok('39 saldo.js NO borra el fragmento (sin history.replaceState) y lo lee solo de location.hash', !!saldoJs && !/history\.replaceState/.test(saldoJs) && /location\.hash/.test(saldoJs));
 ok('40 saldo.js manda exactamente {mode, token} a create-payment-intent',
   /\/api\/create-payment-intent/.test(saldoJs) && /\{\s*mode:\s*mode\s*,\s*token:\s*token\s*\}/.test(saldoJs) && /["']balance_info["']/.test(saldoJs) && /["']balance["']/.test(saldoJs));
 ok('41 saldo.js confirma con GHAPayments.confirmCardPayment', /GHAPayments\.confirmCardPayment/.test(saldoJs) && /GHAPayments\.mount/.test(saldoJs));
@@ -160,6 +161,35 @@ ok('50 saldo.html tiene el contenedor #saldoRoot', /id="saldoRoot"/.test(sal));
 const vj = JSON.parse(read('vercel.json'));
 ok('51 vercel.json reescribe /saldo → /saldo.html', vj.rewrites.some(function (r) { return r.source === '/saldo' && r.destination === '/saldo.html'; }));
 ok('52 no se agregó ningún archivo bajo api/ para el saldo', !exists('api/saldo.js'));
+
+/* ---------------- 6 · Fix ronda 1 ---------------- */
+/* I2: en /saldo el checkout nunca se abre y no hay popups autónomos */
+ok('53 openBooking es no-op en /saldo', /function openBooking\(opts\)\{[^]{0,260}dataset\.page==='saldo'\) return;/.test(app));
+ok('54 el botón "Reservar" del header no se pinta en /saldo', /dataset\.page==='saldo'\?'':'<button type="button" class="btn btn-gold btn-sm js-book"/.test(app));
+ok('55 la barra/popup Black Friday no carga en /saldo', /function loadPromo\(\)\{\s*if\(document\.body\.dataset\.page==='saldo'\) return;/.test(app));
+ok('56 el aviso a visitantes recurrentes (nudge) excluye /saldo', /var BLOCK=\[[^\]]*'\/saldo'[^\]]*\]/.test(app));
+ok('57 saldo.html no carga promo-bf.js', !/promo-bf/.test(sal));
+
+/* C1: política e insignia con la regla del depósito, y restauración exacta */
+ok('58 S.deposit.policyBox y badgeDeposit existen en EN y ES con el texto pedido',
+  D.policyBox && D.badgeDeposit && D.policyBox.es === 'Depósito: reembolsable si cancelas con más de 30 días de anticipación (hasta el {refund}). Saldo: una vez pagado, sigue la regla de 15 días.' &&
+  D.badgeDeposit.es === 'Depósito reembolsable con más de 30 días de anticipación' && /\{refund\}/.test(D.policyBox.en) && D.badgeDeposit.en.length > 10);
+ok('59 app.js cambia #bkPolicy y #bkT2 con el plan depósito y restaura los originales', /function setBkPolicy\(dep\)/.test(app) && /setBkPolicy\(depPlan\?dep:null\)/.test(app) && /bkPolicyOrig=\{pol:/.test(app) && /pol\.innerHTML=bkPolicyOrig\.pol; t2\.textContent=bkPolicyOrig\.t2/.test(app));
+ok('60 la política con depósito conserva la frase de Términos (ES y EN)', /Al reservar aceptas los <a href="terms\.html"[^]{0,120}Términos y Condiciones<\/a>\.':' By booking you accept the <a href="terms\.html"/.test(app));
+if (G) {
+  const txt = G.fill(G.tx(S, 'policyBox', 'es'), { refund: G.date('2027-02-02', 'es') });
+  ok('61 la política con depósito se rellena con la fecha límite de reembolso', /hasta el 2 feb 2027/.test(txt) && !/\{refund\}/.test(txt));
+} else ok('61 política rellenada', false);
+
+/* C2: español natural en la línea de "no elegible" */
+ok('62 notEligible ES corregido', D.notEligible && D.notEligible.es === 'Pagas el 100 % ahora. El depósito del 30 % solo se ofrece si faltan más de 30 días para tu viaje.');
+ok('63 notEligible EN natural', D.notEligible && /more than 30 days away/.test(D.notEligible.en));
+
+/* C3: cabecera compacta, un solo título, título de la pestaña localizado */
+ok('64 saldo.html usa la cabecera compacta y un único h1', /class="pagehero pagehero-compact"/.test(sal) && (sal.match(/<h1/g) || []).length === 1);
+ok('65 saldo.js no repite el título "Paga tu saldo" en la tarjeta', !/<h2>' \+ esc\(T\("saldoTitle"\)\)/.test(saldoJs));
+ok('66 saldo.js localiza document.title y lo actualiza al cambiar de idioma', /document\.title\s*=\s*T\("saldoTitle"\)/.test(saldoJs) && /if \(b\) setTitle\(\)/.test(saldoJs));
+ok('67 el CSS tiene la cabecera compacta', /\.pagehero\.pagehero-compact\{min-height:0;\}/.test(read('assets/css/site.css')));
 
 console.log('\n' + pass + ' PASS · ' + fail + ' FAIL');
 process.exit(fail ? 1 : 0);
