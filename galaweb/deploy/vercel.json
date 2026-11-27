@@ -7,6 +7,7 @@
   "rewrites": [
     { "source": "/trivia/(.*)", "destination": "/trivia/index.html" },
     { "source": "/tarjeta", "destination": "/tarjeta.html" },
+    { "source": "/saldo", "destination": "/saldo.html" },
     { "source": "/resena", "destination": "/resena.html" },
     { "source": "/api/admin-login", "destination": "/api/admin-router?action=login" },
     { "source": "/api/admin-page-views", "destination": "/api/admin-router?action=page-views" },

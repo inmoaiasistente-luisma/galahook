@@ -170,7 +170,11 @@ function ymdYearsAgo(n) {
   /* Única excepción permitida (owner, 2026-11-26): la recomendación de RESERVAR el
      León Dormido con 30 días de anticipación para asegurar el espacio. No es una
      regla de reembolso; cualquier otro "30 días/days" sigue prohibido. */
-  const contentNoAdvance = content
+  /* Tarea 10 del depósito (2026-11-27): el bloque S.deposit SÍ nombra "30 días" a propósito
+     (el depósito se reembolsa si cancelas con más de 30 días; el saldo/depósito se explican
+     ahí). No es la antigua regla de reembolso, así que ese bloque se excluye de esta búsqueda. */
+  const contentNoDeposit = content.replace(/\/\* -+ DEPÓSITO DEL 30 %[\s\S]*?\r?\n  \},\r?\n/, '');
+  const contentNoAdvance = contentNoDeposit
     .replace(/Reserva con 30 días de anticipación para asegurar tu espacio\./g, '')
     .replace(/Te recomendamos reservar con 30 días de anticipación para asegurar tu espacio\./g, '')
     .replace(/Book 30 days ahead to secure your spot\./g, '')

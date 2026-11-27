@@ -748,3 +748,29 @@ select option:disabled{ color:rgba(251,248,241,.5); }
   .dt-checks,.dt-incl{grid-template-columns:1fr;}
   .dt-card{position:static;}
 }
+
+/* ---- Depósito del 30 % en el checkout (#bkPlan) y página /saldo ---- */
+.bk-plan{margin:14px 0 4px;}
+.bk-plan-box{border:1px solid var(--line);border-radius:10px;background:#fbf5e8;padding:13px 15px;color:var(--ink);}
+.bk-plan-head{font-weight:800;color:var(--ink);font-size:11px;letter-spacing:.09em;text-transform:uppercase;margin-bottom:9px;}
+.bk-plan-opt{display:flex;align-items:flex-start;gap:10px;padding:8px 0;color:var(--ink);font-size:14px;cursor:pointer;}
+.bk-plan-opt input{width:20px;height:20px;flex:0 0 auto;margin-top:1px;accent-color:var(--gold-soft);}
+.bk-plan-opt b{display:block;font-weight:700;color:var(--ink);}
+.bk-plan-opt small{display:block;margin-top:2px;font-size:13px;line-height:1.45;color:var(--ink-soft);}
+.bk-plan-today{margin:6px 0 0;padding-top:10px;border-top:1px solid var(--line);font-weight:800;color:var(--ink);font-size:15px;}
+.bk-plan-more{margin-top:10px;}
+.bk-plan-more p{margin:0 0 8px;font-size:13px;line-height:1.5;color:var(--ink);}
+.bk-plan-na{margin:0;font-size:13px;line-height:1.5;color:var(--ink);}
+.saldo{max-width:640px;margin:0 auto;}
+.saldo-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px 28px;margin-bottom:18px;color:var(--ink);}
+.saldo-card h2{font-family:var(--display);font-size:26px;margin:0 0 8px;color:var(--ink);}
+.saldo-card h3{font-family:var(--display);font-size:20px;margin:0 0 14px;color:var(--ink);}
+.saldo-lead,.saldo-card p{color:var(--ink);font-size:15.5px;line-height:1.65;}
+.saldo-recap{margin:18px 0 0;max-width:none;}
+.saldo-loading p{margin:0;text-align:center;}
+.saldo-result{text-align:center;}
+.saldo-result .tick{width:70px;height:70px;border-radius:50%;background:#e3f2e9;color:#1f8a5b;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;}
+.saldo-result .tick svg{width:36px;height:36px;}
+.saldo-result .bk-recap{text-align:left;margin:20px auto;}
+.saldo-msg{margin:6px 0 12px;padding:10px 12px;border-radius:8px;background:#fdecea;color:#7a1f14;font-size:14px;font-weight:600;}
+@media (max-width:600px){.saldo-card{padding:20px 16px;}}
