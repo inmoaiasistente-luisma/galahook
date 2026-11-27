@@ -10,6 +10,7 @@
    ========================================================= */
 
 const reminders = require('./pretrip-reminders');
+const { buildDepositTemplates } = require('./deposit-email-templates');
 
 const BRAND = 'Galápagos Hook Adventure';
 const INK = '#11302f', GOLD = '#cf9f54', PAPER = '#fbf8f1', SOFT = '#3c534f', LINE = '#e2ddd0';
@@ -531,5 +532,8 @@ const TEMPLATES = {
   pretrip_reminder_d1: { build: buildPretripReminder(1), qr: true },
   pretrip_reminder_d0: { build: buildPretripReminder(0), qr: true }
 };
+
+/* Plantillas del depósito 30 % (módulo aparte; helpers inyectados para evitar require circular). */
+Object.assign(TEMPLATES, buildDepositTemplates({ shell, h1, rows, para, ctaButton, money, esc, textBlock, bookingPairs, replyTo, siteUrl, qrBlock, adminLink, methodLabel }));
 
 module.exports = { TEMPLATES, esc, money, methodLabel, bookingMessage, MESSAGE_TITLES };

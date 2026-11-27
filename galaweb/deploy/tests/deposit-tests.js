@@ -141,5 +141,58 @@ console.log('\n--- 2 · migración ---');
   ok('2.14 cabecera: aplicar en Preview, luego en Producción ANTES del merge', /aplicar en preview, luego en producci[oó]n antes del merge/.test(low));
 }
 
+/* ---------------- 3 · correos ---------------- */
+console.log('\n--- 3 · correos ---');
+{
+  process.env.EMAIL_REPLY_TO = 'hola@example.test';
+  process.env.PUBLIC_SITE_URL = 'https://example.test';
+  const ET = require('../server/lib/email-templates');
+  const T = ET.TEMPLATES;
+  const names9 = ['customer_deposit_confirmation', 'balance_reminder_d7', 'balance_reminder_d6', 'customer_deposit_cancelled',
+    'customer_balance_receipt', 'owner_deposit_notification', 'owner_balance_received', 'owner_deposit_cancelled', 'owner_payment_review'];
+  const b = { booking_code: 'HA-2027-ABCDEF', amount_cents: 120000, deposit_cents: 36000, balance_cents: 84000, balance_due_date: '2027-03-04',
+    booking_date: '2027-03-10', deposit_refundable_until: '2027-02-07', currency: 'usd', customer_name: 'Ana', customer_email: 'a@x.test',
+    tour_name: 'Tour', guests: 2, balance_payment_method: 'cash' };
+  const ctx = { balanceUrl: 'https://example.test/saldo#t=abc', qrUrl: 'https://example.test/qr/1', cid: 'qr1' };
+
+  ok('3.1 los 9 tipos existen con build()', names9.every(function (n) { return T[n] && typeof T[n].build === 'function'; }));
+  ok('3.2 cada uno devuelve subject, html y text no vacíos', names9.every(function (n) {
+    const r = T[n].build(b, ctx); return r.subject && r.html && r.text;
+  }));
+  ok('3.3 solo customer_deposit_confirmation lleva QR', names9.every(function (n) { return T[n].qr === (n === 'customer_deposit_confirmation'); }));
+  const c = T.customer_deposit_confirmation.build(b, ctx);
+  ok('3.4 confirmación: montos, fecha límite y enlace de saldo',
+    ['$360.00', '$840.00', '2027-03-04', ctx.balanceUrl].every(function (s) { return c.html.indexOf(s) >= 0; }));
+  ok('3.5 confirmación: reglas ES/EN (30 días o menos, cancelación automática)',
+    c.html.indexOf('con 30 días o menos') >= 0 && /30 days or less/.test(c.html) && /cancelada automáticamente/.test(c.html) && /Pagar saldo/.test(c.html) && /Pay balance/.test(c.html));
+  ok('3.6 confirmación: QR solo si hay qrUrl', c.html.indexOf('cid:qr1') >= 0 && T.customer_deposit_confirmation.build(b, {}).html.indexOf('cid:') < 0);
+  ok('3.7 d7 y d6 llevan el enlace de saldo y la fecha',
+    ['balance_reminder_d7', 'balance_reminder_d6'].every(function (n) { const r = T[n].build(b, ctx); return r.html.indexOf(ctx.balanceUrl) >= 0 && r.text.indexOf('2027-03-04') >= 0; }));
+  const d6 = T.balance_reminder_d6.build(b, ctx);
+  ok('3.8 d6: último día ES/EN', d6.text.indexOf('hoy es el último día') >= 0 && d6.text.indexOf('today is the last day') >= 0);
+  const can = T.customer_deposit_cancelled.build(b, ctx);
+  ok('3.9 cancelación: depósito no reembolsable y contacto',
+    can.text.indexOf('no es reembolsable') >= 0 && can.text.indexOf('non-refundable') >= 0 && can.text.indexOf('hola@example.test') >= 0 && can.html.indexOf('hola@example.test') >= 0);
+  ok('3.10 recibo de saldo: pagado por completo',
+    /fully paid/.test(T.customer_balance_receipt.build(b, ctx).text) && /pagada por completo/.test(T.customer_balance_receipt.build(b, ctx).text));
+  const on = T.owner_deposit_notification.build(b, ctx);
+  ok('3.11 owner depósito: código, montos, vencimiento y panel',
+    ['HA-2027-ABCDEF', '$360.00', '$840.00', '2027-03-04', '/admin.html'].every(function (s) { return on.html.indexOf(s) >= 0; }) && on.text.indexOf('2027-03-04') >= 0);
+  ok('3.12 owner saldo recibido: método solo si existe',
+    T.owner_balance_received.build(b, ctx).html.indexOf('Efectivo') >= 0 && T.owner_balance_received.build(Object.assign({}, b, { balance_payment_method: null }), ctx).html.indexOf('Método') < 0);
+  ok('3.13 owner cancelado: depósito retenido', /retenido/.test(T.owner_deposit_cancelled.build(b, ctx).text));
+  const pr = T.owner_payment_review.build(b, ctx);
+  ok('3.14 owner revisión: pago posterior a la cancelación, sin reactivar',
+    /DESPUÉS/.test(pr.text) && /reembolsar o reactivar/.test(pr.text) && /no se reactiv/i.test(pr.text));
+  const evil = Object.assign({}, b, { customer_name: '<script>x</script>' });
+  ok('3.15 html escapa customer_name en los 9', names9.every(function (n) { return T[n].build(evil, ctx).html.indexOf('<script>x') < 0; }));
+  const old = ['customer_booking_confirmation', 'owner_booking_notification', 'customer_quote_acknowledgement', 'owner_quote_notification',
+    'customer_agency_confirmation', 'owner_agency_notification', 'customer_passenger_form_invitation', 'owner_passenger_form_submitted',
+    'customer_passenger_form_changes_requested', 'customer_passenger_form_completed', 'pretrip_reminder_d7', 'pretrip_reminder_d5',
+    'pretrip_reminder_d3', 'pretrip_reminder_d1', 'pretrip_reminder_d0'];
+  ok('3.16 TEMPLATES conserva las claves previas con su build', old.every(function (n) { return T[n] && typeof T[n].build === 'function'; })
+    && T.customer_booking_confirmation.build({ booking_code: 'X' }, {}).subject.indexOf('confirmed') >= 0 && Object.keys(T).length === 24);
+}
+
 console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
 process.exit(fail ? 1 : 0);
