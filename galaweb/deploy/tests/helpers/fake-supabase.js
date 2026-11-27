@@ -29,6 +29,7 @@ function createFakeSupabase(seed) {
       upsert(payload, opts) { state.op = 'upsert'; state.payload = payload; state.conflict = opts && opts.onConflict; return q; },
       delete() { state.op = 'delete'; return q; },
       eq(k, v) { state.filters.push(function (r) { return r[k] === v; }); return q; },
+      in(k, arr) { state.filters.push(function (r) { return arr.indexOf(r[k]) !== -1; }); return q; },
       gte(k, v) { state.filters.push(function (r) { return r[k] >= v; }); return q; },
       lt(k, v) { state.filters.push(function (r) { return r[k] < v; }); return q; },
       not(k, op, v) { state.filters.push(function (r) { return r[k] !== v; }); return q; },

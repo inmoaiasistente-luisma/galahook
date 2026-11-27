@@ -111,7 +111,7 @@ const vercel = read('vercel.json');
 const fsum = read('server/admin-handlers/finance-summary.js');
 ok('46 finance-summary: costo conocido SOLO si cost_status confirmed',
   /cost_cents != null && r\.cost_status === 'confirmed'/.test(fsum) &&
-  /cost_status/.test(fsum.slice(fsum.indexOf('.select('), fsum.indexOf('.eq('))) &&
+  /cost_status/.test(fsum.slice(fsum.indexOf('.select('), fsum.indexOf(".in('payment_status'"))) && // Tarea 9 (depósito 30 %): el select ahora termina en .in(), no en .eq()
   /bookings_without_confirmed_costs/.test(fsum));
 
 /* ---------------- venta manual: sale_source ---------------- */
