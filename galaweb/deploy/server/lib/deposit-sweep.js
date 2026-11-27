@@ -47,6 +47,16 @@ async function remind(b, action, deps, out) {
   else if (r && r.failed) out.failed++;
 }
 
+/* Resultado de un envío: sent | duplicate | failed | skipped | unknown. */
+function outcome(r) {
+  if (!r) return 'unknown';
+  if (r.sent) return 'sent';
+  if (r.duplicate) return 'duplicate';
+  if (r.failed) return 'failed';
+  if (r.skipped) return 'skipped';
+  return 'unknown';
+}
+
 async function cancelUnpaid(b, deps, out) {
   /* 1) Si hay un pago de saldo en Stripe, mirarlo ANTES de tocar la reserva. */
   if (b.balance_payment_intent_id) {
@@ -66,31 +76,41 @@ async function cancelUnpaid(b, deps, out) {
   }
 
   /* 2) Cancelación condicional: solo si nadie más la movió. */
-  const { data, error } = await deps.supabase.from('bookings')
+  /* Guarda del PI: si apareció uno (o cambió) después de leer la fila, el
+     cliente puede estar pagando; 0 filas y se revisa en Stripe la próxima vez. */
+  let upd = deps.supabase.from('bookings')
     .update({ booking_status: 'cancelled', cancel_reason: 'balance_unpaid', auto_cancelled_at: new Date().toISOString() })
     .eq('id', b.id)
     .eq('tenant_id', b.tenant_id)
     .eq('payment_status', 'deposit_paid')
     .eq('booking_status', 'confirmed')
-    .is('balance_paid_at', null)
-    .select();
+    .is('balance_paid_at', null);
+  upd = b.balance_payment_intent_id
+    ? upd.eq('balance_payment_intent_id', b.balance_payment_intent_id)
+    : upd.is('balance_payment_intent_id', null);
+  const { data, error } = await upd.select();
   if (error) { logServer('deposit-sweep', 'cancel booking: ' + error.message); out.failed++; return; }
   if (!data || data.length !== 1) return;               // otro escritor ganó: sin correo, sin contar
 
-  await deps.notifyBooking(data[0], 'customer_deposit_cancelled', 'owner_deposit_cancelled');
+  const n = await deps.notifyBooking(data[0], 'customer_deposit_cancelled', 'owner_deposit_cancelled');
+  const notify = { customer: outcome(n && n.customer), owner: outcome(n && n.owner) };
+  if (notify.customer !== 'sent' && notify.customer !== 'duplicate' || notify.owner !== 'sent' && notify.owner !== 'duplicate') {
+    logServer('deposit-sweep', 'aviso de cancelación incompleto en reserva ' + b.id + ' (cliente: ' + notify.customer + ', dueño: ' + notify.owner + ')');
+    out.notifyFailed++;                                 // sin reenvío automático: el owner reenvía desde el panel
+  }
   await deps.audit({
     action: 'booking.auto_cancel', entity_type: 'booking', entity_id: b.id,
     before: { booking_status: 'confirmed', payment_status: 'deposit_paid' },
-    after: { booking_status: 'cancelled', cancel_reason: 'balance_unpaid' }
+    after: { booking_status: 'cancelled', cancel_reason: 'balance_unpaid', notify: notify }
   });
   out.cancelled++;
 }
 
 /**
- * @returns {Promise<{reminded:number, cancelled:number, skippedProcessing:number, failed:number}>}
+ * @returns {Promise<{reminded:number, cancelled:number, skippedProcessing:number, failed:number, notifyFailed:number}>}
  */
 async function runDepositSweep(deps) {
-  const out = { reminded: 0, cancelled: 0, skippedProcessing: 0, failed: 0 };
+  const out = { reminded: 0, cancelled: 0, skippedProcessing: 0, failed: 0, notifyFailed: 0 };
   const rows = (deps && deps.rows) || [];
   for (let i = 0; i < rows.length; i++) {
     const b = rows[i];

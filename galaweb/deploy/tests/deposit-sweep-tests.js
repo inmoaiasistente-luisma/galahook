@@ -54,10 +54,10 @@ function mkHarness(rowsSeed, piMap, opts) {
   }
   async function notifyBooking(b, c, ow, ctx) {
     const k = b.id + '|' + c;
-    if (ledger[k]) return { duplicate: true };
+    if (ledger[k]) return { customer: { duplicate: true }, owner: { duplicate: true } };
     ledger[k] = true;
     notifies.push([b, c, ow, ctx]);
-    return {};
+    return o.notifyResult || { customer: { sent: true }, owner: { sent: true } };
   }
   async function audit(e) { audits.push(e); }
   return { sb, emails, notifies, audits, stripeCalls, stripe, sendBookingEmail, notifyBooking, audit };
@@ -263,6 +263,44 @@ async function main() {
     ok('7.16e summary.deposit', /summary\.deposit\s*=/.test(src));
   }
 
+  /* 7.18 la fila vieja no tenía PI pero la DB ya tiene uno (cliente pagando): 0 filas, sin correo */
+  {
+    const b = mkBooking();
+    const h = mkHarness([b], {});
+    const stale = Object.assign({}, b);                     // leída antes de que apareciera el PI
+    b.balance_payment_intent_id = 'pi_late';                // el cliente abrió /saldo
+    const r = await run(h, [stale]);
+    ok('7.18 PI aparecido tras la lectura: no cancela, sin correo ni auditoría',
+      r.cancelled === 0 && b.booking_status === 'confirmed' && h.notifies.length === 0 && h.audits.length === 0);
+  }
+  /* 7.18b la fila vieja tenía PI y cambió en la DB: tampoco cancela */
+  {
+    const b = mkBooking({ balance_payment_intent_id: 'pi_old' });
+    const h = mkHarness([b], { pi_old: 'canceled' });
+    const stale = Object.assign({}, b);
+    b.balance_payment_intent_id = 'pi_new';
+    const r = await run(h, [stale]);
+    ok('7.18b PI distinto al leído: 0 filas, no cancela', r.cancelled === 0 && b.booking_status === 'confirmed' && h.notifies.length === 0);
+  }
+
+  /* 7.19 aviso de cancelación fallido: se cuenta, se registra, la reserva sigue cancelada */
+  {
+    const b = mkBooking();
+    const h = mkHarness([b], {}, { notifyResult: { customer: { failed: true }, owner: { sent: true } } });
+    const before = logs.length;
+    const r = await run(h, [b]);
+    ok('7.19 notifyFailed 1, reserva cancelada y contada', r.notifyFailed === 1 && r.cancelled === 1 && b.booking_status === 'cancelled');
+    ok('7.19b línea de log capturada con el id', logs.slice(before).some(function (l) { return l.indexOf('b1') !== -1 && /aviso/i.test(l); }));
+    ok('7.19c auditoría con el resultado de los avisos',
+      h.audits.length === 1 && h.audits[0].after.notify && h.audits[0].after.notify.customer === 'failed' && h.audits[0].after.notify.owner === 'sent');
+    const b2 = mkBooking({ id: 'b2' });
+    const h2 = mkHarness([b2], {});
+    const r2 = await run(h2, [b2]);
+    ok('7.19d avisos correctos: notifyFailed 0', r2.notifyFailed === 0 && r2.cancelled === 1);
+  }
+
+  ok('7.17 los fallos esperados quedaron registrados en el log', logs.length >= 5);
+
   console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);
 }
@@ -270,8 +308,6 @@ async function main() {
 main().catch(function (e) {
   fail++;
   console.log('FAIL  excepción no controlada: ' + ((e && e.stack) || e));
-  ok('7.17 los fallos esperados quedaron registrados en el log', logs.length >= 5);
-
   console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(1);
 });
