@@ -92,7 +92,7 @@ module.exports = async function handler(req, res) {
     if (booking.deleted_at) return sendError(res, 400, 'QR_INVALID', 'Invalid code');
 
     const okState = booking.request_type === 'booking'
-      && booking.payment_status === 'paid'
+      && ['paid', 'deposit_paid'].indexOf(booking.payment_status) !== -1   // depósito 30 %
       && QR_BOOKING_STATUSES.indexOf(booking.booking_status) !== -1;
     if (!okState) return sendError(res, 409, 'BOOKING_NOT_CONFIRMED', 'This booking is not valid for check-in');
 

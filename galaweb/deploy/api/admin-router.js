@@ -50,6 +50,7 @@ ROUTES['finance-settings-save'] = require('../server/admin-handlers/finance-sett
 // Finanzas reales por reserva (Fase 9, Etapa 3)
 ROUTES['booking-finance'] = require('../server/admin-handlers/booking-finance');
 ROUTES['booking-cost-line-add'] = require('../server/admin-handlers/booking-cost-line-add');
+ROUTES['booking-balance-offline'] = require('../server/admin-handlers/booking-balance-offline');   // depósito 30 %
 ROUTES['booking-cost-line-delete'] = require('../server/admin-handlers/booking-cost-line-delete');
 ROUTES['booking-costs-confirm'] = require('../server/admin-handlers/booking-costs-confirm');
 ROUTES['booking-comms'] = require('../server/admin-handlers/booking-comms');
