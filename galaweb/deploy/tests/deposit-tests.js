@@ -487,6 +487,11 @@ console.log('\n--- 3 · correos ---');
   // 5.21 modo sin token
   r = await call(createHandler, { mode: 'balance_info' });
   ok('5.21 modo sin token → 400 INVALID_TOKEN', r.status === 400 && r.data.error === 'INVALID_TOKEN');
+
+  // 5.22 sin mode, una clave `token` suelta sigue siendo INVALID_BODY (checkout sin cambios)
+  fresh();
+  r = await call(createHandler, body({ token: 'x' }));
+  ok('5.22 sin mode + token suelto → 400 INVALID_BODY, sin fila ni Stripe', r.status === 400 && r.data.error === 'INVALID_BODY' && rows().length === 0 && STRIPE.creates.length === 0);
 })().then(function () {
   console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);

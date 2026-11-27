@@ -26,7 +26,7 @@ const {
 
 const ALLOWED_KEYS = ['request_id', 'tour_id', 'booking_date', 'guests',
   'customer_name', 'customer_email', 'customer_phone', 'notes', 'notes_ack', 'discount_code',
-  'payment_plan', 'deposit_ack', 'mode', 'token'];
+  'payment_plan', 'deposit_ack'];
 const MAX_GUESTS = 20;
 const MAX_CODE_LEN = 30;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I ambiguos
