@@ -84,7 +84,8 @@ async function cancelUnpaid(b, deps, out) {
     .eq('tenant_id', b.tenant_id)
     .eq('payment_status', 'deposit_paid')
     .eq('booking_status', 'confirmed')
-    .is('balance_paid_at', null);
+    .is('balance_paid_at', null)
+    .is('auto_cancelled_at', null);
   upd = b.balance_payment_intent_id
     ? upd.eq('balance_payment_intent_id', b.balance_payment_intent_id)
     : upd.is('balance_payment_intent_id', null);

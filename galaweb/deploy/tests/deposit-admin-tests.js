@@ -86,7 +86,7 @@ function dep(over) { return Object.assign({}, DEP, over || {}); }
     ok('21.' + i + ' alerta EN ' + r, en.reasonText(r) !== es.reasonText(r) && /REVIEW/.test(en.alertHtml(dep({ needs_review_reason: r }))));
     ok('22.' + i + ' marcador en la fila ' + r, /dep-review/.test(es.reviewMarker(dep({ needs_review_reason: r }))));
   });
-  ok('23 alerta: textos clave', /reembolsas en Stripe o la reactivas/.test(es.reasonText('balance_paid_after_cancel'))
+  ok('23 alerta: textos clave', /reembolsar el saldo en Stripe, o reactivar la reserva/.test(es.reasonText('balance_paid_after_cancel'))
     && /otro medio Y además se pagó en Stripe/.test(es.reasonText('balance_paid_twice'))
     && /no aplicó automáticamente/.test(es.reasonText('refund_review')));
   ok('24 sin motivo: sin alerta ni marcador', es.alertHtml(DEP) === '' && es.reviewMarker(DEP) === '');
@@ -194,9 +194,9 @@ function dep(over) { return Object.assign({}, DEP, over || {}); }
   ok('66 admin.js: crea la instancia con las dependencias', /window\.ghaAdminDeposit\(\{/.test(adminJs) && /canWrite:canWrite/.test(adminJs) && /apiPost:apiPost/.test(adminJs));
   ok('67 admin-deposit.js: escapa con escapeHtml y no usa innerHTML sin escapar la nota', /esc\(b\.balance_offline_note\)/.test(depSrc));
   ok('68 admin-deposit.js < 500 líneas', depSrc.split('\n').length < 500);
-  ok('69 admin.html: admin-deposit.js antes de admin.js, con cache-buster', html.indexOf('assets/js/admin-deposit.js?v=dep30') !== -1
-    && html.indexOf('assets/js/admin-deposit.js?v=dep30') < html.indexOf('assets/js/admin.js?v='));
-  ok('70 admin.html: admin.js?v=dep30', /assets\/js\/admin\.js\?v=dep30/.test(html) && !/reviews26/.test(html));
+  ok('69 admin.html: admin-deposit.js antes de admin.js, con cache-buster', html.indexOf('assets/js/admin-deposit.js?v=dep31') !== -1
+    && html.indexOf('assets/js/admin-deposit.js?v=dep31') < html.indexOf('assets/js/admin.js?v='));
+  ok('70 admin.html: admin.js?v=dep31', /assets\/js\/admin\.js\?v=dep31/.test(html) && !/reviews26/.test(html));
 
   console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);

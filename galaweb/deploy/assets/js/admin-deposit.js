@@ -7,8 +7,8 @@
 
   var REASONS = {
     balance_paid_after_cancel: [
-      'El cliente pagó el saldo después de cancelarse la reserva. Decide si reembolsas en Stripe o la reactivas; no se cambió nada automáticamente.',
-      'The customer paid the balance after the booking was cancelled. Decide whether to refund in Stripe or reactivate it; nothing was changed automatically.'],
+      'El cliente pagó el saldo después de cancelarse la reserva (el pago quedó registrado). Tienes dos opciones: reembolsar el saldo en Stripe, o reactivar la reserva cambiando su estado a Confirmada. Después marca la alerta como revisada.',
+      'The customer paid the balance after the booking was cancelled (the payment was recorded). You have two options: refund the balance in Stripe, or reactivate the booking by changing its status to Confirmed. Then mark the alert as reviewed.'],
     balance_paid_twice: [
       'El saldo se marcó como pagado por otro medio Y además se pagó en Stripe. Reembolsa el cobro duplicado de Stripe.',
       'The balance was marked as paid by another means AND was also paid in Stripe. Refund the duplicate Stripe charge.'],
@@ -43,13 +43,49 @@
     }
     function reasonText(reason) { var r = REASONS[reason]; return r ? t(r[0], r[1]) : ''; }
 
+    /* Solo el owner puede dar por revisada una alerta (misma regla que la acción offline). */
+    function canClearReview(b) {
+      return typeof deps.canWrite === 'function' && !!deps.canWrite() && !!b && !!REASONS[b.needs_review_reason];
+    }
     /* Alerta roja cuando el sistema necesita que el owner decida algo. */
     function alertHtml(b) {
       var txt = b && reasonText(b.needs_review_reason);
       if (!txt) return '';
+      var btn = canClearReview(b)
+        ? '<div style="margin-top:8px"><button type="button" class="mini-btn" data-dep-review-clear '
+          + 'style="background:#fff;color:#7a1010;border:1px solid #7a1010;font-weight:700">' + t('Marcar como revisado', 'Mark as reviewed') + '</button></div>'
+        : '';
       return '<div class="dep-alert" role="alert" style="background:var(--a-bad-bg);border:1px solid var(--a-bad-bd);'
         + 'color:var(--a-bad-tx);font-weight:600;border-radius:8px;padding:10px 12px;margin:0 0 12px;line-height:1.45">'
-        + '<b>' + t('REVISAR', 'REVIEW') + '</b> · ' + esc(txt) + '</div>';
+        + '<b>' + t('REVISAR', 'REVIEW') + '</b> · ' + esc(txt) + btn + '</div>';
+    }
+    /* Marca la alerta como revisada: POST → resultado {kind, message}. */
+    function submitReviewClear(b) {
+      return deps.apiPost('/api/admin-booking-review-clear', { booking_id: b.id }).then(function (r) {
+        if (r.status === 401) return { kind: 'unauthorized' };
+        if (r.ok && r.data && r.data.ok) return { kind: 'ok', message: t('Alerta marcada como revisada', 'Alert marked as reviewed') };
+        var code = r.data && (r.data.code || r.data.error);
+        if (r.status === 409 && (code === 'NOTHING_TO_REVIEW' || !code)) return { kind: 'nothing', message: t('Esta alerta ya estaba revisada', 'This alert was already reviewed') };
+        if (r.status === 403) return { kind: 'forbidden', message: t('Solo el owner puede hacer esto.', 'Only the owner can do this.') };
+        return { kind: 'error', message: failMsg() };
+      }).catch(function () { return { kind: 'error', message: failMsg() }; });
+    }
+    /* Conecta el botón de la alerta dentro de `host`; `onDone` refresca el panel. */
+    function bindReviewClear(host, b, onDone) {
+      var btn = host && host.querySelector('[data-dep-review-clear]');
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        var ask = typeof deps.confirm === 'function' ? deps.confirm : null;
+        if (ask && !ask(t('¿Marcar esta alerta como revisada? Confirma que ya hiciste lo necesario (reembolso o reactivación).',
+          'Mark this alert as reviewed? Confirm you already did what was needed (refund or reactivation).'))) return;
+        btn.disabled = true;
+        return submitReviewClear(b).then(function (res) {
+          btn.disabled = false;
+          if (res.kind === 'unauthorized') { if (deps.onUnauthorized) deps.onUnauthorized(); return; }
+          if (res.kind === 'ok' || res.kind === 'nothing') { if (deps.adminToast) deps.adminToast(res.message); if (onDone) onDone(res); return; }
+          if (deps.adminToast) deps.adminToast(res.message);
+        });
+      });
     }
     /* Marca visible en la fila de la tabla. */
     function reviewMarker(b) {
@@ -81,6 +117,8 @@
       } else {
         rows += dl(t('Estado del saldo', 'Balance status'), t('Pendiente', 'Pending'));
       }
+      if (b.deposit_refunded_at) rows += dl(t('Reembolso', 'Refund'), t('Depósito reembolsado', 'Deposit refunded') + ' · ' + stamp(b.deposit_refunded_at));
+      if (b.balance_refunded_at) rows += dl(t('Reembolso', 'Refund'), t('Saldo reembolsado', 'Balance refunded') + ' · ' + stamp(b.balance_refunded_at));
       rows += dl(t('Reembolso 30 %', '30 % refund'), t('30 % reembolsable hasta ', '30 % refundable until ') + esc(b.deposit_refundable_until || '—'));
       if (b.balance_paid_at) rows += dl(t('Reembolso 70 %', '70 % refund'), t('70 % reembolsable hasta ', '70 % refundable until ') + esc(b.balance_refundable_until || '—'));
       if (b.cancel_reason === 'balance_unpaid') {
@@ -104,6 +142,10 @@
       return '';
     }
     function notDueMsg() { return t('Esta reserva ya no tiene saldo pendiente', 'This booking has no pending balance anymore'); }
+    function inProgressMsg() {
+      return t('El cliente ya está pagando o pagó el saldo con tarjeta. Revisa Stripe antes de registrarlo.',
+        'The customer is already paying or has paid the balance by card. Check Stripe before recording it.');
+    }
     function failMsg() { return t('No se pudo registrar. Inténtalo nuevamente.', 'Could not save. Please try again.'); }
     /* Envía la acción y resuelve {kind, message}; admin.js refresca después. */
     function submitOffline(b, method, note) {
@@ -113,6 +155,7 @@
         if (r.status === 401) return { kind: 'unauthorized' };
         if (r.ok && r.data && r.data.ok) return { kind: 'ok', message: t('Saldo marcado como pagado', 'Balance marked as paid') };
         var code = r.data && (r.data.code || r.data.error);
+        if (r.status === 409 && code === 'BALANCE_PAYMENT_IN_PROGRESS') return { kind: 'in_progress', message: inProgressMsg() };
         if (r.status === 409 && (code === 'BALANCE_NOT_DUE' || !code)) return { kind: 'not_due', message: notDueMsg() };
         if (r.status === 403) return { kind: 'forbidden', message: t('Solo el owner puede hacer esto.', 'Only the owner can do this.') };
         if (r.status === 400) return { kind: 'invalid', message: t('Datos inválidos. Revisa el método y la nota.', 'Invalid data. Check the method and note.') };
@@ -174,7 +217,8 @@
       isDeposit: isDeposit, payLabel: payLabel, alertHtml: alertHtml, reviewMarker: reviewMarker, tableLine: tableLine,
       detailHtml: detailHtml, canOffline: canOffline, validateOffline: validateOffline, submitOffline: submitOffline,
       buttonLabel: buttonLabel, renderOfflineForm: renderOfflineForm, financeTilesHtml: financeTilesHtml,
-      methodLabel: methodLabel, reminderWarning: reminderWarning, reasonText: reasonText, notDueMsg: notDueMsg
+      methodLabel: methodLabel, reminderWarning: reminderWarning, reasonText: reasonText, notDueMsg: notDueMsg,
+      canClearReview: canClearReview, submitReviewClear: submitReviewClear, bindReviewClear: bindReviewClear
     };
   }
   root.ghaAdminDeposit = make;

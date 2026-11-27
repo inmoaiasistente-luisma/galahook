@@ -137,8 +137,8 @@ const EV_ISO = new Date(1790000000 * 1000).toISOString();
   reset([booking({ payment_status: 'refunded', booking_status: 'cancelled' })]);
   await processEvent(FAKE, piEvent('payment_intent.succeeded', pi('pi_bal', 70000, 'balance')));
   r = row();
-  ok('6.15 saldo tras cancelar: needs_review_reason y estado sin cambios',
-    r.needs_review_reason === 'balance_paid_after_cancel' && r.booking_status === 'cancelled' && r.payment_status === 'refunded' && !r.balance_paid_at);
+  ok('6.15 saldo tras cancelar (refunded): revisión, estado sin cambios y el pago queda registrado (ronda final I3)',
+    r.needs_review_reason === 'balance_paid_after_cancel' && r.booking_status === 'cancelled' && r.payment_status === 'refunded' && r.balance_paid_at === EV_ISO && r.balance_payment_method === 'stripe');
   ok('6.16 saldo tras cancelar: owner_payment_review solo al dueño',
     MAIL.length === 0 && OWNER.length === 1 && OWNER[0].type === 'owner_payment_review' && OWNER[0].recipient === 'owner@example.com');
 
@@ -209,8 +209,8 @@ const EV_ISO = new Date(1790000000 * 1000).toISOString();
 
   reset([booking({ payment_status: 'paid', booking_status: 'confirmed', balance_payment_method: 'stripe' })]);
   await processEvent(FAKE, piEvent('charge.refunded', charge('pi_bal', true, { amount: 70000, amount_refunded: 70000 })));
-  ok('6.29 reembolso total del cargo del saldo: sin cambio de estado + refund_review',
-    row().payment_status === 'paid' && row().booking_status === 'confirmed' && row().needs_review_reason === 'refund_review');
+  ok('6.29 reembolso total del cargo del saldo (depósito vigente): cancelada + deposit_paid + balance_refunded_at (ronda final I2)',
+    row().payment_status === 'deposit_paid' && row().booking_status === 'cancelled' && row().balance_refunded_at === EV_ISO && !row().needs_review_reason);
 
   reset([fullBooking({ payment_status: 'paid', booking_status: 'confirmed' })]);
   await processEvent(FAKE, piEvent('charge.refunded', charge('pi_full', true, { amount: 100000, amount_refunded: 100000 })));
@@ -245,8 +245,8 @@ const EV_ISO = new Date(1790000000 * 1000).toISOString();
   ok('6.34 carrera: la actualización del saldo sobre una reserva recién cancelada lanza (Stripe reintenta)',
     raced && !!m && /expected exactly one row updated, got 0/.test(m) && row().payment_status === 'deposit_paid' && !row().balance_paid_at && MAIL.length === 0);
   await processEvent(FAKE, piEvent('payment_intent.succeeded', pi('pi_bal', 70000, 'balance')));
-  ok('6.35 reintento: toma la rama balance_paid_after_cancel y no marca paid',
-    row().needs_review_reason === 'balance_paid_after_cancel' && row().payment_status === 'deposit_paid' && row().booking_status === 'cancelled' && !row().balance_paid_at);
+  ok('6.35 reintento: toma la rama balance_paid_after_cancel; el pago queda registrado y sigue cancelada (ronda final I3)',
+    row().needs_review_reason === 'balance_paid_after_cancel' && row().payment_status === 'paid' && row().booking_status === 'cancelled' && row().balance_paid_at === EV_ISO && row().balance_payment_method === 'stripe');
 
   /* 6.36-6.39 depósito: processing / failed / canceled solo hacia delante */
   reset([booking({ payment_status: 'deposit_paid', booking_status: 'confirmed', paid_at: 'x' })]);

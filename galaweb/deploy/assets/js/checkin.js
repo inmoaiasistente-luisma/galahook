@@ -72,9 +72,17 @@
   }
   function renderBooking(b) {
     var completed = b.completed === true;
+    /* Depósito 30 %: el saldo aún no se pagó. No bloquea el check-in, pero se avisa claro. */
+    var due = b.balance_due === true;
+    var paidLine = due ? (ES ? 'Depósito pagado' : 'Deposit paid') : (ES ? 'Pago confirmado' : 'Payment confirmed');
     var head = completed
-      ? showState('ck-done', ES ? 'Tour completado' : 'Tour completed', ES ? 'Pago confirmado' : 'Payment confirmed')
-      : showState('ck-ok', ES ? 'Reserva confirmada' : 'Booking confirmed', ES ? 'Pago confirmado' : 'Payment confirmed');
+      ? showState('ck-done', ES ? 'Tour completado' : 'Tour completed', paidLine)
+      : showState('ck-ok', ES ? 'Reserva confirmada' : 'Booking confirmed', paidLine);
+    if (due) {
+      head += '<div class="ck-balance-due" role="alert" style="width:100%;max-width:460px;box-sizing:border-box;background:#fff4d6;color:#5a3b00;'
+        + 'border:2px solid #c98a00;border-radius:12px;padding:14px 16px;margin-bottom:16px;font-weight:800;text-align:center;line-height:1.35">'
+        + esc(ES ? 'Saldo pendiente — cobrar antes del tour' : 'Balance due — collect before the tour') + '</div>';
+    }
 
     var html = head + '<div class="ck-card">'
       + '<div class="ck-code">' + esc(b.booking_code) + '</div>'

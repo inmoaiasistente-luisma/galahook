@@ -57,6 +57,7 @@ function sweepAction(booking, todayYmd, opts) {
   const b = booking || {};
   if (b.payment_plan !== 'deposit' || b.payment_status !== 'deposit_paid' || b.booking_status !== 'confirmed') return none;
   if (b.deleted_at) return none;
+  if (b.auto_cancelled_at) return none;                   // ya autocancelada: nunca se vuelve a barrer
   if (b.request_type && b.request_type !== 'booking') return none;
   if (b.is_test === true && !includeTest) return none;
   const days = daysUntil(todayYmd, b.booking_date);

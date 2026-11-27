@@ -30,7 +30,7 @@ const ADMIN_FIELDS = 'id,booking_code,request_type,tour_id,tour_name,unit,bookin
   'sales_channel,payment_method,created_by_name,sold_at,is_test,' +
   // depósito 30 % (sin el PI del saldo)
   'payment_plan,deposit_cents,balance_cents,balance_due_date,deposit_refundable_until,balance_refundable_until,' +
-  'deposit_paid_at,balance_paid_at,balance_payment_method,balance_offline_note,needs_review_reason,cancel_reason,auto_cancelled_at';
+  'deposit_paid_at,balance_paid_at,balance_payment_method,balance_offline_note,needs_review_reason,cancel_reason,auto_cancelled_at,deposit_refunded_at,balance_refunded_at';
 
 /* Campos operativos (staff). Sin datos financieros ni internos.
    La restricción va en el SELECT: esos campos NO salen de la base de datos. */

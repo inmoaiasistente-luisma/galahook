@@ -18,7 +18,7 @@
    duplicado y no sale ningún correo repetido.
 
    Los recordatorios pre-viaje nunca tocan Stripe, importes ni estados de la
-   reserva. Aparte, al final corre el barrido del saldo del depósito
+   reserva. Aparte, ANTES del escaneo pre-viaje corre el barrido del saldo del depósito
    (server/lib/deposit-sweep.js): recordatorios de saldo a 7 y 6 días y
    cancelación automática a 5 días o menos. Ese barrido NO depende de
    reminders_paused y, si se ejecuta para una sola reserva, solo la mira a ella.
@@ -81,6 +81,39 @@ module.exports = async function handler(req, res) {
   try {
     const supabase = getSupabase();
 
+    const summary = { date: today, scanned: 0, due: 0, sent: 0, duplicate: 0, failed: 0, skipped: 0, stages: {} };
+
+    /* Barrido del saldo del depósito. VA PRIMERO: así un día de recuperación nunca
+       manda "tu viaje es en N días" junto con la cancelación (la reserva cancelada
+       ya no es elegible en el escaneo pre-viaje). Consulta propia (sin cota inferior
+       de fecha: una reserva vencida se cancela igual) y SIN filtrar por
+       reminders_paused. Un fallo aquí no rompe el resumen pre-viaje. */
+    try {
+      const stripe = tryGetStripe();                      // null si Stripe no está configurado
+      let dq = supabase.from('bookings').select('*')
+        .eq('tenant_id', tenant)
+        .eq('payment_plan', 'deposit')
+        .eq('payment_status', 'deposit_paid')
+        .eq('booking_status', 'confirmed')
+        .is('auto_cancelled_at', null)                    // nunca se barre una reserva ya autocancelada
+        .lte('booking_date', rem.shiftYmd(today, 7))
+        .order('booking_date', { ascending: true })       // las más urgentes primero si hay tope
+        .limit(MAX_PER_RUN);
+      if (onlyBookingId) dq = dq.eq('id', onlyBookingId);
+      const dres = await dq;
+      if (dres.error) throw new Error(dres.error.message);
+      const auditSession = session || { user_id: null, email: 'cron', role: null, tenant_id: tenant };
+      summary.deposit = await runDepositSweep({
+        supabase: supabase, stripe: stripe, rows: dres.data || [], today: today,
+        includeTest: isStripeTestMode(),
+        sendBookingEmail: sendBookingEmail, notifyBooking: notifyBooking,
+        audit: function (entry) { return recordAudit(auditSession, entry); }
+      });
+    } catch (e) {
+      logServer('reminders-run', 'deposit sweep: ' + (e && e.message));
+      summary.deposit = { error: true };
+    }
+
     /* select('*') a propósito: la columna reminders_paused llega con la
        migración 0019. Pidiendo columnas concretas, el barrido se caería
        mientras 0019 no esté aplicada; así simplemente no viene el campo
@@ -98,7 +131,7 @@ module.exports = async function handler(req, res) {
     const rows = data || [];
     const due = rem.dueList(rows, today);
 
-    const summary = { date: today, scanned: rows.length, due: due.length, sent: 0, duplicate: 0, failed: 0, skipped: 0, stages: {} };
+    summary.scanned = rows.length; summary.due = due.length;
 
     for (let i = 0; i < due.length; i++) {
       const item = due[i];
@@ -115,33 +148,6 @@ module.exports = async function handler(req, res) {
       else if (r && r.duplicate) summary.duplicate++;
       else if (r && r.failed) summary.failed++;
       else summary.skipped++;
-    }
-
-    /* Barrido del saldo del depósito. Consulta propia (sin cota inferior de
-       fecha: una reserva vencida se cancela igual) y SIN filtrar por
-       reminders_paused. Un fallo aquí no rompe el resumen pre-viaje. */
-    try {
-      const stripe = tryGetStripe();                      // null si Stripe no está configurado
-      let dq = supabase.from('bookings').select('*')
-        .eq('tenant_id', tenant)
-        .eq('payment_plan', 'deposit')
-        .eq('payment_status', 'deposit_paid')
-        .eq('booking_status', 'confirmed')
-        .lte('booking_date', rem.shiftYmd(today, 7))
-        .limit(MAX_PER_RUN);
-      if (onlyBookingId) dq = dq.eq('id', onlyBookingId);
-      const dres = await dq;
-      if (dres.error) throw new Error(dres.error.message);
-      const auditSession = session || { user_id: null, email: 'cron', role: null, tenant_id: tenant };
-      summary.deposit = await runDepositSweep({
-        supabase: supabase, stripe: stripe, rows: dres.data || [], today: today,
-        includeTest: isStripeTestMode(),
-        sendBookingEmail: sendBookingEmail, notifyBooking: notifyBooking,
-        audit: function (entry) { return recordAudit(auditSession, entry); }
-      });
-    } catch (e) {
-      logServer('reminders-run', 'deposit sweep: ' + (e && e.message));
-      summary.deposit = { error: true };
     }
 
     /* La corrida queda auditada aunque no haya salido ningún correo. */

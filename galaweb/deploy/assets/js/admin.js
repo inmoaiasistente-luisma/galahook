@@ -384,7 +384,7 @@ function bkMoney(cents, cur){
 /* ---- badges compactos (color + texto siempre visible) ---- */
 const BK_PAY_KIND ={paid:'ok',deposit_paid:'warn',pending:'warn',processing:'warn',failed:'bad',refunded:'muted',not_required:'info'};
 /* Depósito del 30 %: la lógica de pintado vive en admin-deposit.js (se carga antes). */
-const DEPOSIT=window.ghaAdminDeposit({ES:ES,escapeHtml:escapeHtml,money:bkMoney,fmtDate:bkFmtDate,fmtDT:bkFmtDT,canWrite:canWrite,apiPost:apiPost,adminToast:adminToast,onUnauthorized:onUnauthorized});
+const DEPOSIT=window.ghaAdminDeposit({ES:ES,escapeHtml:escapeHtml,money:bkMoney,fmtDate:bkFmtDate,fmtDT:bkFmtDT,canWrite:canWrite,apiPost:apiPost,adminToast:adminToast,onUnauthorized:onUnauthorized,confirm:function(m){return confirm(m);}});
 function bkPayLabel(s){ return DEPOSIT.payLabel(s); }
 const BK_BOOK_KIND={confirmed:'ok',pending_payment:'warn',new:'info',cancelled:'bad',completed:'muted',failed:'bad'};
 function bkBadge(txt,kind){ return '<span class="bdg bdg-'+(kind||'muted')+'">'+escapeHtml(txt||'')+'</span>'; }
@@ -1142,6 +1142,8 @@ function bkAdminDetail(b, onUpdated){
       +(b.notes?bkDl(ES?'Notas':'Notes', escapeHtml(b.notes)):'')
     +'</div>'
     +DEPOSIT.detailHtml(b);   // alerta roja + bloque del depósito 30 %
+  /* "Marcar como revisado" dentro de la alerta roja (solo owner). */
+  DEPOSIT.bindReviewClear(body,b,function(){ bkCloseModal(); if(onUpdated) onUpdated(b); });
   /* QR y notificaciones: solo para reservas pagadas y confirmadas/completadas.
      Ambos bloques son exclusivos de owner/admin (este detalle no se usa en staff). */
   if(b.payment_status==='paid' && (b.booking_status==='confirmed'||b.booking_status==='completed')){

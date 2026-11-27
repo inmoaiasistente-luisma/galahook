@@ -40,7 +40,10 @@ alter table public.bookings
   add column if not exists deposit_terms_accepted_at timestamptz,
   add column if not exists auto_cancelled_at timestamptz,
   add column if not exists cancel_reason text,
-  add column if not exists needs_review_reason text;
+  add column if not exists needs_review_reason text,
+  -- Reembolsos por cargo: el dinero devuelto de cada parte (depósito / saldo).
+  add column if not exists deposit_refunded_at timestamptz,
+  add column if not exists balance_refunded_at timestamptz;
 
 alter table public.bookings
   drop constraint if exists chk_payment_plan;

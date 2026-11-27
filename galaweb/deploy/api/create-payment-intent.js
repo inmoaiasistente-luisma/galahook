@@ -251,7 +251,7 @@ module.exports = async function handler(req, res) {
         catch (e) { logServer('pi-retrieve', e); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to load payment status'); }
 
         if (pi.status === 'succeeded') {
-          return sendJson(res, 200, { alreadyPaid: true, paymentPlan: rowPlan, bookingCode: row.booking_code, amountCents: row.amount_cents, currency: row.currency, tourName: tour.name });
+          return sendJson(res, 200, { alreadyPaid: true, paymentPlan: rowPlan, bookingCode: row.booking_code, amountCents: row.amount_cents, chargeCents: chargeCents, currency: row.currency, tourName: tour.name });
         }
         if (pi.status === 'canceled') {
           return sendError(res, 409, 'PAYMENT_ATTEMPT_CANCELED', 'This payment attempt was canceled');

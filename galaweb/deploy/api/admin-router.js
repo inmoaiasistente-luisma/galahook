@@ -51,6 +51,7 @@ ROUTES['finance-settings-save'] = require('../server/admin-handlers/finance-sett
 ROUTES['booking-finance'] = require('../server/admin-handlers/booking-finance');
 ROUTES['booking-cost-line-add'] = require('../server/admin-handlers/booking-cost-line-add');
 ROUTES['booking-balance-offline'] = require('../server/admin-handlers/booking-balance-offline');   // depósito 30 %
+ROUTES['booking-review-clear'] = require('../server/admin-handlers/booking-review-clear');   // depósito 30 %: alerta revisada
 ROUTES['booking-cost-line-delete'] = require('../server/admin-handlers/booking-cost-line-delete');
 ROUTES['booking-costs-confirm'] = require('../server/admin-handlers/booking-costs-confirm');
 ROUTES['booking-comms'] = require('../server/admin-handlers/booking-comms');

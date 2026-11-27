@@ -53,8 +53,8 @@ ok('19 CSS: filas altas y a ancho completo (móvil)', /\.admin-nav button\{width
 ok('20 CSS: declutter topbar (nombre y View site fuera en móvil)', /\.top-who,\.top-view\{display:none;\}/.test(html));
 ok('21 CSS: reglas solo dentro de @media max-width:760',
   (function () { const i = html.indexOf('@media(max-width:760px)'); return i !== -1 && html.indexOf('.admin-body.panel-open') > i; })());
-// Tarea 11 (depósito 30 %): el cache-buster de admin.js pasó de reviews26 a dep30 a propósito.
-ok('22 admin.html cache-buster nuevo (dep30)', /admin\.js\?v=dep30/.test(html));
+// Tarea 11 (depósito 30 %): el cache-buster de admin.js pasó de reviews26 a dep30 (y a dep31 en la ronda final) a propósito.
+ok('22 admin.html cache-buster nuevo (dep31)', /admin\.js\?v=dep31/.test(html));
 
 /* =======================================================================
    C) LAYOUT MÓVIL (JS admin.js)

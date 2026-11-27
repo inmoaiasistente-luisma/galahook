@@ -127,10 +127,10 @@ function read(rel) { return fs.readFileSync(path.join(BASE, rel), 'utf8'); }
   ok('6 PI abierto (requires_*) se cancela', r.status === 200 && CANCELLED.join() === 'pi_bal');
   reset([row({ balance_payment_intent_id: 'pi_bal' })]); STRIPE = makeStripe(); PI_STATUS = 'processing';
   r = await call({ booking_id: B1, method: 'cash', note: 'abc' });
-  ok('6b PI processing NO se cancela', r.status === 200 && CANCELLED.length === 0);
+  ok('6b PI processing: 409 BALANCE_PAYMENT_IN_PROGRESS, sin cambios ni cancelación (ronda final M4)', r.status === 409 && r.json.error === 'BALANCE_PAYMENT_IN_PROGRESS' && CANCELLED.length === 0 && FAKE.db.tables.bookings[0].payment_status === 'deposit_paid');
   reset([row({ balance_payment_intent_id: 'pi_bal' })]); STRIPE = makeStripe(); PI_STATUS = 'succeeded';
   r = await call({ booking_id: B1, method: 'cash', note: 'abc' });
-  ok('6c PI succeeded NO se cancela', r.status === 200 && CANCELLED.length === 0);
+  ok('6c PI succeeded: 409 BALANCE_PAYMENT_IN_PROGRESS, sin cambios ni cancelación (ronda final M4)', r.status === 409 && r.json.error === 'BALANCE_PAYMENT_IN_PROGRESS' && CANCELLED.length === 0 && FAKE.db.tables.bookings[0].payment_status === 'deposit_paid');
   reset([row({ balance_payment_intent_id: 'pi_bal' })]); STRIPE = null;
   r = await call({ booking_id: B1, method: 'cash', note: 'abc' });
   ok('6d Stripe sin configurar → 200 igual', r.status === 200 && FAKE.db.tables.bookings[0].payment_status === 'paid');

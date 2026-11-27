@@ -316,9 +316,11 @@ async function depositSucceeded(supabase, event, pi, booking) {
 
   try {
     const row = await freshRow(supabase, booking, fields);
+    /* Si el enlace no se puede construir se omite el ctx: el servicio de correo lo
+       reconstruye y, si tampoco puede, deja el aviso 'failed' (reintentable), nunca sin enlace. */
     let ctx;
     try { ctx = { balanceUrl: balanceUrl(row.id) }; }
-    catch (e) { logSafe('balanceUrl no disponible (se envía sin enlace)', sanitize(e && e.message)); }
+    catch (e) { logSafe('balanceUrl no disponible (el servicio de correo lo reintenta)', sanitize(e && e.message)); }
     await notifyBooking(row, 'customer_deposit_confirmation', 'owner_deposit_notification', ctx);
   } catch (e) {
     logSafe('notify (no afecta al pago)', sanitize(e && e.message));
@@ -331,8 +333,13 @@ async function balanceSucceeded(supabase, event, pi, booking) {
   const col = PI_COLUMN.balance;
 
   // Reserva cancelada/reembolsada: el cliente pagó el saldo igualmente → revisión manual.
+  // El pago queda REGISTRADO (fecha + método): si el dueño reactiva la reserva queda como
+  // una con depósito totalmente pagada; si prefiere reembolsar, aplica la regla del reembolso del saldo.
+  // 'refunded' no se toca; la reserva sigue cancelada.
   if (booking.payment_status === 'refunded' || booking.booking_status === 'cancelled') {
-    await updateBooking(supabase, booking, { needs_review_reason: 'balance_paid_after_cancel' }, col);
+    const late = { needs_review_reason: 'balance_paid_after_cancel', balance_paid_at: eventIso(event, pi), balance_payment_method: 'stripe' };
+    if (booking.payment_status === 'deposit_paid') late.payment_status = 'paid';
+    await updateBooking(supabase, booking, late, col);
     await notifyOwnerReview(supabase, booking, 'balance_paid_after_cancel');
     return;
   }
@@ -389,14 +396,46 @@ async function processRefund(supabase, event) {
   const booking = found[0].booking;
   const kind = found[0].kind;
 
-  if (kind === 'full' || (kind === 'deposit' && booking.payment_status !== 'paid')) {
+  const when = eventIso(event, { created: charge.created });
+
+  // Pago completo: reembolso total = reserva reembolsada y cancelada.
+  if (kind === 'full') {
     await updateBooking(supabase, booking, { payment_status: 'refunded', booking_status: 'cancelled' }, PI_COLUMN[kind]);
     return;
   }
-  // Depósito con saldo pagado, o cargo del saldo: reembolso de UN cargo → decide el dueño.
-  logSafe('refund requiere revisión manual', kind + ' ' + booking.id);
-  await updateBooking(supabase, booking, { needs_review_reason: 'refund_review' }, PI_COLUMN[kind]);
-  await noteLedger(supabase, event, 'refund_review_manual');
+
+  const stripeBalance = booking.balance_payment_method === 'stripe';
+  const offlineBalance = booking.balance_payment_method === 'cash' || booking.balance_payment_method === 'transfer';
+
+  if (kind === 'deposit') {
+    // Se marca refunded SOLO cuando ya no queda nada cobrado (depósito + saldo, spec 5.6).
+    // 'paid' implica saldo cobrado aunque falte la fecha (fila inconsistente): ante la duda, revisión manual.
+    const balanceKept = (!!booking.balance_paid_at || booking.payment_status === 'paid') && !(stripeBalance && booking.balance_refunded_at);
+    if (!balanceKept) {
+      await updateBooking(supabase, booking, { deposit_refunded_at: when, payment_status: 'refunded', booking_status: 'cancelled', needs_review_reason: null }, PI_COLUMN[kind]);
+      return;
+    }
+    // Queda un saldo (Stripe sin reembolsar, efectivo o transferencia): decide el dueño.
+    logSafe('refund del depósito con saldo vigente: revisión manual', booking.id);
+    await updateBooking(supabase, booking, { deposit_refunded_at: when, needs_review_reason: 'refund_review' }, PI_COLUMN[kind]);
+    await noteLedger(supabase, event, 'refund_review_manual');
+    return;
+  }
+
+  // kind === 'balance'
+  if (offlineBalance) {
+    // Este cargo de Stripe era el DUPLICADO del saldo cobrado en efectivo/transferencia: ya se devolvió.
+    const fields = booking.needs_review_reason === 'balance_paid_twice' ? { needs_review_reason: null } : null;
+    if (fields) await updateBooking(supabase, booking, fields, PI_COLUMN[kind]);
+    await noteLedger(supabase, event, 'duplicate_balance_refunded');
+    return;
+  }
+  // 'refunded' implica depósito ya devuelto aunque la columna no exista en filas antiguas.
+  const depositGone = !!booking.deposit_refunded_at || booking.payment_status === 'refunded';
+  const upd = depositGone
+    ? { balance_refunded_at: when, payment_status: 'refunded', booking_status: 'cancelled', needs_review_reason: null }
+    : { balance_refunded_at: when, payment_status: 'deposit_paid', booking_status: 'cancelled', needs_review_reason: null };   // solo se retiene el depósito
+  await updateBooking(supabase, booking, upd, PI_COLUMN[kind]);
 }
 
 /* Solo para pruebas: el export principal (handler de Vercel) no cambia. */

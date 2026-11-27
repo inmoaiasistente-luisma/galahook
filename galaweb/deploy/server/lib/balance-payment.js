@@ -69,10 +69,13 @@ async function createBalancePi(res, supabase, stripe, tenant, row) {
     return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to initialise payment');
   }
 
-  /* Guardado condicional: si otra llamada concurrente ya guardó su PI, no se pisa. */
+  /* Guardado condicional: si otra llamada concurrente ya guardó su PI, no se pisa.
+     Además la reserva debe seguir debiendo el saldo (depósito pagado y no cancelada):
+     si el barrido o el dueño la movieron mientras se creaba el PI, no se guarda. */
   const { data: saved, error: upErr } = await supabase.from('bookings')
     .update({ balance_payment_intent_id: pi.id })
     .eq('id', row.id).eq('tenant_id', tenant).is('balance_payment_intent_id', null)
+    .eq('payment_status', 'deposit_paid').not('booking_status', 'eq', 'cancelled')
     .select('id');
   if (upErr) {
     logServer('balance-pi-save', upErr);
@@ -85,8 +88,18 @@ async function createBalancePi(res, supabase, stripe, tenant, row) {
     });
   }
 
-  // Nadie actualizó: otra llamada guardó antes → releer y reutilizar el guardado.
+  // Nadie actualizó: o la reserva ya no debe el saldo, o otra llamada guardó antes → releer.
   const fresh = await fetchById(supabase, tenant, row.id);
+  if (fresh) {
+    const st = balanceState(fresh);
+    if (st !== 'due') {
+      // Ya no se debe: el PI recién creado no debe quedar cobrable (best-effort).
+      try { await stripe.paymentIntents.cancel(pi.id); } catch (e) { logServer('balance-pi-cancel', e); }
+      if (st === 'cancelled') return sendError(res, 409, 'BOOKING_CANCELLED', 'This booking was cancelled');
+      if (st === 'paid') return sendJson(res, 200, { alreadyPaid: true, bookingCode: fresh.booking_code });
+      return sendError(res, 409, 'BALANCE_NOT_DUE', 'No balance is due for this booking');
+    }
+  }
   if (!fresh || !fresh.balance_payment_intent_id) {
     logServer('balance-pi-save', new Error('conditional update affected no row'));
     return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to complete payment setup');

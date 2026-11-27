@@ -9,6 +9,10 @@
    Única vía de escritura: UPDATE condicional (solo si el saldo está pendiente).
    0 filas → 409 BALANCE_NOT_DUE (reserva completa, ya pagada, cancelada,
    de otro tenant o inexistente: respuesta uniforme).
+   ANTES de escribir, si hay un PaymentIntent del saldo y Stripe está disponible,
+   se consulta: si está 'processing' o 'succeeded' el cliente ya está pagando (o
+   pagó) con tarjeta → 409 BALANCE_PAYMENT_IN_PROGRESS y no se cambia nada.
+   Si la consulta falla, se sigue como antes.
    Después, best-effort: cancela el PaymentIntent del saldo si sigue abierto.
    ========================================================= */
 
@@ -35,6 +39,17 @@ async function cancelOpenBalanceIntent(piId) {
   } catch (e) { logServer('booking-balance-offline', 'cancel PI: ' + (e && e.message)); }
 }
 
+/* ¿El PI del saldo ya está cobrándose o cobrado? Un error de Stripe no bloquea. */
+async function balanceChargeInFlight(piId) {
+  if (!piId) return false;
+  try {
+    const stripe = tryGetStripe();
+    if (!stripe) return false;
+    const pi = await stripe.paymentIntents.retrieve(piId);
+    return !!pi && (pi.status === 'processing' || pi.status === 'succeeded');
+  } catch (e) { logServer('booking-balance-offline', 'retrieve PI: ' + (e && e.message)); return false; }
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Only POST is allowed'); }
   const session = await requireWriter(req, res);   // escritura = SOLO owner
@@ -54,6 +69,13 @@ module.exports = async function handler(req, res) {
 
   try {
     const supabase = getSupabase();
+
+    const cur = await supabase.from('bookings').select('balance_payment_intent_id')
+      .eq('id', body.booking_id).eq('tenant_id', tenant).maybeSingle();
+    if (!cur.error && cur.data && await balanceChargeInFlight(cur.data.balance_payment_intent_id)) {
+      return sendError(res, 409, 'BALANCE_PAYMENT_IN_PROGRESS', 'The customer is already paying or paid the balance by card');
+    }
+
     const upd = await supabase.from('bookings')
       .update({ payment_status: 'paid', balance_paid_at: new Date().toISOString(), balance_payment_method: body.method, balance_offline_note: note })
       .eq('id', body.booking_id).eq('tenant_id', tenant)

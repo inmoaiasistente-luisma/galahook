@@ -130,7 +130,7 @@ module.exports = async function handler(req, res) {
     for (let page = 0; page < MAX_PAGES; page++) {
       // Tarea 9 (depósito 30 %): también 'deposit_paid', no solo 'paid'.
       let query = applyCommonFilters(supabase.from('bookings')
-        .select('id,amount_cents,gross_amount_cents,discount_cents,cost_cents,cost_status,guests,tour_id,tour_name,sales_channel,payment_method,sold_at,paid_at,stripe_payment_intent_id,payment_plan,deposit_cents,balance_cents,balance_paid_at,balance_payment_method,booking_status,payment_status')
+        .select('id,amount_cents,gross_amount_cents,discount_cents,cost_cents,cost_status,guests,tour_id,tour_name,sales_channel,payment_method,sold_at,paid_at,stripe_payment_intent_id,payment_plan,deposit_cents,balance_cents,balance_paid_at,balance_payment_method,deposit_refunded_at,balance_refunded_at,booking_status,payment_status')
         .in('payment_status', ['paid', 'deposit_paid']), tenant, q);
 
       if (startFrom) query = query.gte('paid_at', startFrom);
@@ -156,6 +156,7 @@ module.exports = async function handler(req, res) {
           .select('id,balance_cents,balance_paid_at,balance_payment_method')
           .eq('payment_plan', 'deposit')
           .eq('payment_status', 'paid'), tenant, q)
+          .is('balance_refunded_at', null)                 // un saldo devuelto no es dinero cobrado
           .gte('balance_paid_at', startFrom);
         if (endTo) q2 = q2.lt('balance_paid_at', endTo);
         q2 = q2.order('balance_paid_at', { ascending: true }).range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
@@ -193,6 +194,7 @@ module.exports = async function handler(req, res) {
          (el depósito sigue pagado). NO es venta: ingreso retenido, sin
          cantidad/pax/bruto/neto; su costo solo cuenta si el owner lo confirmó. */
       if (r.payment_plan === 'deposit' && r.booking_status === 'cancelled' && r.payment_status === 'deposit_paid') {
+        if (r.deposit_refunded_at) return;                  // el depósito se devolvió: no se retiene nada
         const dep = Number(r.deposit_cents) || 0;
         agg.retained += dep; agg.retainedCount += 1; agg.collected += dep;
         by_method.stripe.amount_cents += dep; by_method.stripe.count += 1;
@@ -215,11 +217,16 @@ module.exports = async function handler(req, res) {
       counts[ch] += 1; counts.total += 1;
       if (r.payment_plan === 'deposit') {
         /* Depósito: Stripe. Saldo: método real, en la fecha en que se pagó. */
+        /* Solo cuenta el dinero que SIGUE cobrado: una parte reembolsada ya no suma. */
         const dep = Number(r.deposit_cents) || 0, bal = Number(r.balance_cents) || 0;
-        agg.collected += dep;
-        by_method.stripe.amount_cents += dep; by_method.stripe.count += 1;
+        if (!r.deposit_refunded_at) {
+          agg.collected += dep;
+          by_method.stripe.amount_cents += dep; by_method.stripe.count += 1;
+        }
         const paidInRange = r.balance_paid_at && (!startFrom || r.balance_paid_at >= startFrom) && (!endTo || r.balance_paid_at < endTo);
-        if (paidInRange) {
+        if (r.balance_refunded_at) {
+          /* saldo devuelto: ni cobrado ni por cobrar */
+        } else if (paidInRange) {
           agg.collected += bal;
           const bm = mapBalanceMethod(r.balance_payment_method);
           by_method[bm].amount_cents += bal; by_method[bm].count += 1;
