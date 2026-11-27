@@ -194,5 +194,151 @@ console.log('\n--- 3 · correos ---');
     && T.customer_booking_confirmation.build({ booking_code: 'X' }, {}).subject.indexOf('confirmed') >= 0 && Object.keys(T).length === 24);
 }
 
-console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
-process.exit(fail ? 1 : 0);
+/* ---------------- 4 · checkout ---------------- */
+(async function checkoutSection() {
+  console.log('\n--- 4 · checkout ---');
+  const path = require('path');
+  const BASE = path.resolve(__dirname, '..');
+  const { createFakeSupabase } = require('./helpers/fake-supabase');
+  const P = require('../server/lib/deposit-policy');
+  const { shiftYmd } = require('../server/lib/pretrip-reminders');
+  const { todayInGalapagos } = require('../server/lib/http');
+
+  /* dobles solo para esta sección: se registran justo antes de cargar los handlers */
+  let FAKE = createFakeSupabase({});
+  const STRIPE = { creates: [], retrieves: [], cancels: [], status: 'requires_payment_method' };
+  const fakeStripe = { paymentIntents: {
+    create: async function (params, opts) { STRIPE.creates.push({ params: params, opts: opts }); return { id: 'pi_' + STRIPE.creates.length, client_secret: 'cs_' + STRIPE.creates.length, status: 'requires_payment_method' }; },
+    retrieve: async function (id) { STRIPE.retrieves.push(id); return { id: id, client_secret: 'cs_old', status: STRIPE.status }; },
+    cancel: async function (id) { STRIPE.cancels.push(id); return {}; }
+  } };
+  function mockModule(rel, exp) { const f = require.resolve(BASE + rel); require.cache[f] = { id: f, filename: f, loaded: true, exports: exp }; }
+  mockModule('/server/lib/supabase.js', { getSupabase: function () { return FAKE; } });
+  mockModule('/server/lib/stripe.js', { getStripe: function () { return fakeStripe; } });
+  mockModule('/server/lib/tour-notes.js', {
+    getPublicNotesForTour: async function () { return { notes: [], notes_version: null, requires_acknowledgement: false }; },
+    resolveNotesForBooking: async function () { return { snapshot: [], acknowledgedAt: null, acknowledgementVersion: null }; }
+  });
+  process.env.TENANT_ID = 'hook-adventure';
+  const createHandler = require(BASE + '/api/create-payment-intent.js');
+  const previewHandler = require(BASE + '/api/pricing-preview.js');
+
+  function mockRes() { return { statusCode: 200, headers: {}, body: null, setHeader: function (k, v) { this.headers[String(k).toLowerCase()] = v; }, end: function (b) { this.body = b; } }; }
+  async function call(handler, body) {
+    const res = mockRes();
+    await handler({ method: 'POST', headers: {}, body: body }, res);
+    let data = {}; try { data = JSON.parse(res.body); } catch (e) {}
+    return { status: res.statusCode, data: data };
+  }
+  function fresh(rules) {
+    FAKE = createFakeSupabase({ bookings: [], discount_rules: rules || [] });
+    STRIPE.creates = []; STRIPE.retrieves = []; STRIPE.cancels = []; STRIPE.status = 'requires_payment_method';
+  }
+  let n = 0;
+  function uuid() { n++; return '00000000-0000-4000-8000-' + String(200000000000 + n); }
+  const today = todayInGalapagos();
+  const ACK = { accepted: true, version: P.DEPOSIT_TERMS_VERSION };
+  function body(extra) {
+    return Object.assign({ request_id: uuid(), tour_id: 'kicker', booking_date: shiftYmd(today, 40), guests: 2,
+      customer_name: 'Ana Pérez', customer_email: 'ana@example.com' }, extra || {});
+  }
+  const rows = function () { return FAKE.db.tables.bookings; };
+
+  // 4.1-4.4 camino feliz del depósito
+  fresh();
+  let b = body({ payment_plan: 'deposit', deposit_ack: ACK });
+  let r = await call(createHandler, b);
+  let row = rows()[0] || {};
+  const split = P.splitAmounts(row.amount_cents), dd = P.depositDates(b.booking_date);
+  ok('4.1 depósito T+40: fila con plan, importes y 3 fechas congeladas',
+    r.status === 200 && rows().length === 1 && row.payment_plan === 'deposit' && row.deposit_cents === split.depositCents && row.balance_cents === split.balanceCents
+    && row.deposit_cents + row.balance_cents === row.amount_cents && row.amount_cents === 39000
+    && row.balance_due_date === dd.balanceDueDate && row.deposit_refundable_until === dd.depositRefundableUntil && row.balance_refundable_until === dd.balanceRefundableUntil);
+  ok('4.2 depósito: versión de términos y fecha de aceptación guardadas',
+    row.deposit_terms_version === P.DEPOSIT_TERMS_VERSION && typeof row.deposit_terms_accepted_at === 'string' && !isNaN(Date.parse(row.deposit_terms_accepted_at)));
+  const c = STRIPE.creates[0] || { params: { metadata: {} }, opts: {} };
+  ok('4.3 Stripe cobra solo el depósito, kind=deposit e idempotencyKey por fila',
+    STRIPE.creates.length === 1 && c.params.amount === row.deposit_cents && c.params.metadata.kind === 'deposit'
+    && c.params.metadata.booking_id === row.id && c.opts.idempotencyKey === 'create-pi:' + row.id);
+  ok('4.4 respuesta: chargeCents = depósito, amountCents = total, paymentPlan',
+    r.data.chargeCents === row.deposit_cents && r.data.amountCents === row.amount_cents && r.data.paymentPlan === 'deposit' && r.data.clientSecret === 'cs_1');
+
+  // 4.5 demasiado cerca (T+30): sin fila y sin Stripe
+  fresh();
+  r = await call(createHandler, body({ booking_date: shiftYmd(today, 30), payment_plan: 'deposit', deposit_ack: ACK }));
+  ok('4.5 depósito T+30 → 400 DEPOSIT_NOT_ELIGIBLE, sin insert ni Stripe',
+    r.status === 400 && r.data.error === 'DEPOSIT_NOT_ELIGIBLE' && rows().length === 0 && STRIPE.creates.length === 0);
+
+  // 4.6 términos
+  fresh();
+  r = await call(createHandler, body({ payment_plan: 'deposit' }));
+  let r2 = await call(createHandler, body({ payment_plan: 'deposit', deposit_ack: { accepted: true, version: 'vieja' } }));
+  let r3 = await call(createHandler, body({ payment_plan: 'deposit', deposit_ack: { accepted: false, version: P.DEPOSIT_TERMS_VERSION } }));
+  ok('4.6 depósito sin ack, con versión errónea o sin aceptar → 400 DEPOSIT_TERMS_REQUIRED',
+    [r, r2, r3].every(function (x) { return x.status === 400 && x.data.error === 'DEPOSIT_TERMS_REQUIRED'; }) && rows().length === 0 && STRIPE.creates.length === 0);
+
+  // 4.7 plan desconocido
+  r = await call(createHandler, body({ payment_plan: 'cuotas' }));
+  ok('4.7 plan desconocido → 400 INVALID_PAYMENT_PLAN', r.status === 400 && r.data.error === 'INVALID_PAYMENT_PLAN' && rows().length === 0);
+
+  // 4.8 mismo request_id con otro plan
+  fresh();
+  b = body();
+  r = await call(createHandler, b);
+  r2 = await call(createHandler, Object.assign({}, b, { payment_plan: 'deposit', deposit_ack: ACK }));
+  ok('4.8 mismo request_id: full y luego deposit → 409 REQUEST_ID_CONFLICT',
+    r.status === 200 && r2.status === 409 && r2.data.error === 'REQUEST_ID_CONFLICT' && STRIPE.creates.length === 1);
+
+  // 4.9-4.10 pago completo sin cambios
+  fresh();
+  r = await call(createHandler, body());
+  row = rows()[0] || {};
+  ok('4.9 sin payment_plan: fila full sin columnas de depósito, PI = total, kind=full',
+    r.status === 200 && row.payment_plan === 'full' && row.deposit_cents === undefined && row.balance_cents === undefined && row.balance_due_date === undefined
+    && row.deposit_terms_version === undefined && STRIPE.creates[0].params.amount === row.amount_cents && STRIPE.creates[0].params.metadata.kind === 'full'
+    && r.data.chargeCents === row.amount_cents && r.data.amountCents === row.amount_cents && r.data.paymentPlan === 'full');
+  fresh();
+  r = await call(createHandler, body({ payment_plan: 'full', deposit_ack: ACK }));
+  ok('4.10 plan full con deposit_ack: se ignora', r.status === 200 && rows()[0].payment_plan === 'full' && rows()[0].deposit_cents === undefined);
+
+  // 4.11 depósito + HOOK20
+  fresh([{ id: 'r-h20', tenant_id: 'hook-adventure', active: true, tour_id: 'kicker', code: 'HOOK20', discount_type: 'percentage', percentage_bps: 2000,
+    amount_cents: null, min_guests: 1, max_guests: null, starts_at: null, ends_at: null, priority: 0, created_at: '2026-11-26' }]);
+  r = await call(createHandler, body({ payment_plan: 'deposit', deposit_ack: ACK, discount_code: 'hook20' }));
+  row = rows()[0] || {};
+  ok('4.11 depósito + HOOK20: 30 % del total ya descontado',
+    r.status === 200 && row.amount_cents === 31200 && row.deposit_cents === 9360 && row.balance_cents === 21840 && STRIPE.creates[0].params.amount === 9360);
+
+  // 4.12-4.13 reanudar respeta la fila congelada, sin re-evaluar elegibilidad
+  fresh();
+  b = body({ payment_plan: 'deposit', deposit_ack: ACK });
+  await call(createHandler, b);
+  rows()[0].booking_date = shiftYmd(today, 10); // simula que el reintento llega con la fecha ya "cerca"
+  b = Object.assign({}, b, { booking_date: shiftYmd(today, 10) });
+  r = await call(createHandler, b);
+  ok('4.12 reanudar con PI reutilizable: chargeCents del depósito congelado, sin crear otro PI',
+    r.status === 200 && r.data.clientSecret === 'cs_old' && r.data.chargeCents === rows()[0].deposit_cents && r.data.paymentPlan === 'deposit'
+    && r.data.amountCents === rows()[0].amount_cents && STRIPE.creates.length === 1);
+  STRIPE.status = 'succeeded';
+  r = await call(createHandler, b);
+  ok('4.13 alreadyPaid incluye paymentPlan', r.status === 200 && r.data.alreadyPaid === true && r.data.paymentPlan === 'deposit');
+
+  // 4.14-4.17 pricing-preview
+  fresh();
+  r = await call(previewHandler, { tour_id: 'kicker', guests: 2, booking_date: shiftYmd(today, 40) });
+  const dp = r.data.deposit || {};
+  ok('4.14 preview T+40: bloque deposit completo',
+    r.status === 200 && dp.eligible === true && dp.reason === null && dp.pct === 30 && dp.depositCents === 11700 && dp.balanceCents === 27300
+    && dp.balanceDueDate === shiftYmd(today, 34) && dp.depositRefundableUntil === shiftYmd(today, 9) && dp.termsVersion === P.DEPOSIT_TERMS_VERSION);
+  r = await call(previewHandler, { tour_id: 'kicker', guests: 2, booking_date: shiftYmd(today, 10) });
+  ok('4.15 preview T+10: eligible=false, reason=too_close', r.status === 200 && r.data.deposit && r.data.deposit.eligible === false && r.data.deposit.reason === 'too_close');
+  r = await call(previewHandler, { tour_id: 'kicker', guests: 2 });
+  ok('4.16 preview sin booking_date: sin clave deposit', r.status === 200 && !('deposit' in r.data) && r.data.amountCents === 39000);
+  r = await call(previewHandler, { tour_id: 'kicker', guests: 2, booking_date: 'mañana' });
+  r3 = await call(previewHandler, { tour_id: 'kicker', guests: 2, booking_date: shiftYmd(today, -3) });
+  ok('4.17 preview con fecha mala o pasada: sin deposit y sin error',
+    r.status === 200 && !('deposit' in r.data) && r3.status === 200 && !('deposit' in r3.data));
+})().then(function () {
+  console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
+  process.exit(fail ? 1 : 0);
+}, function (e) { console.log('FAIL  sección 4 lanzó: ' + (e && e.stack || e)); process.exit(1); });

@@ -15,6 +15,7 @@ const { getSupabase } = require('../server/lib/supabase');
 const catalog = require('../server/lib/tour-catalog');
 const { computeWebPricing } = require('../server/lib/pricing-engine');
 const { resolveNotesForBooking } = require('../server/lib/tour-notes');
+const depositPolicy = require('../server/lib/deposit-policy');
 const { isStripeTestMode } = require('../server/lib/runtime-mode');
 const {
   sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys,
@@ -23,7 +24,8 @@ const {
 } = require('../server/lib/http');
 
 const ALLOWED_KEYS = ['request_id', 'tour_id', 'booking_date', 'guests',
-  'customer_name', 'customer_email', 'customer_phone', 'notes', 'notes_ack', 'discount_code'];
+  'customer_name', 'customer_email', 'customer_phone', 'notes', 'notes_ack', 'discount_code',
+  'payment_plan', 'deposit_ack'];
 const MAX_GUESTS = 20;
 const MAX_CODE_LEN = 30;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I ambiguos
@@ -56,7 +58,8 @@ function bookingDataMismatch(row, exp) {
     || row.tour_id !== exp.tour_id
     || String(row.booking_date) !== exp.booking_date
     || row.guests !== exp.guests
-    || row.customer_email !== exp.emailNorm;
+    || row.customer_email !== exp.emailNorm
+    || (row.payment_plan || 'full') !== exp.payment_plan;
 }
 
 async function markFailed(supabase, id) {
@@ -113,8 +116,21 @@ module.exports = async function handler(req, res) {
       return sendError(res, 400, 'INVALID_DISCOUNT_CODE', 'discount_code is invalid');
     }
 
+    /* Plan de pago: 'full' (por defecto) o 'deposit' (30 %). El depósito exige
+       aceptar los términos vigentes; con 'full' deposit_ack se ignora. */
+    const paymentPlan = body.payment_plan == null ? 'full' : body.payment_plan;
+    if (paymentPlan !== 'full' && paymentPlan !== 'deposit') {
+      return sendError(res, 400, 'INVALID_PAYMENT_PLAN', 'payment_plan must be full or deposit');
+    }
+    if (paymentPlan === 'deposit') {
+      const dAck = body.deposit_ack;
+      if (!dAck || typeof dAck !== 'object' || dAck.accepted !== true || dAck.version !== depositPolicy.DEPOSIT_TERMS_VERSION) {
+        return sendError(res, 400, 'DEPOSIT_TERMS_REQUIRED', 'Please accept the deposit terms');
+      }
+    }
+
     const emailNorm = normalizeEmail(customer_email);
-    const expected = { tour_id, booking_date, guests, emailNorm };
+    const expected = { tour_id, booking_date, guests, emailNorm, payment_plan: paymentPlan };
 
     const supabase = getSupabase();
     const stripe = getStripe();
@@ -136,6 +152,16 @@ module.exports = async function handler(req, res) {
     let freshlyInserted = false;
 
     if (!row) {
+      /* Elegibilidad del depósito SOLO al crear la fila: un reintento (p. ej. 3-D Secure
+         tras medianoche) respeta el plan y los importes congelados de la fila existente. */
+      let split = null, dDates = null;
+      if (paymentPlan === 'deposit') {
+        const elig = depositPolicy.isDepositEligible(tour, booking_date, todayInGalapagos());
+        if (!elig.eligible) return sendError(res, 400, 'DEPOSIT_NOT_ELIGIBLE', 'Deposit is not available for this booking');
+        split = depositPolicy.splitAmounts(pricing.amountCents);
+        dDates = depositPolicy.depositDates(booking_date);
+      }
+
       /* Gate + snapshot de notas (server-authoritative): si alguna nota activa
          exige aceptación y no se aceptó (o la versión no coincide), se rechaza.
          El snapshot se congela en la reserva; cambiar notas después no la altera. */
@@ -178,8 +204,18 @@ module.exports = async function handler(req, res) {
           is_test: isStripeTestMode(),   // TRUE mientras el sistema use Stripe TEST; false en LIVE
           important_notes_snapshot: notesResolved.snapshot,
           notes_acknowledged_at: notesResolved.acknowledgedAt,
-          notes_acknowledgement_version: notesResolved.acknowledgementVersion
+          notes_acknowledgement_version: notesResolved.acknowledgementVersion,
+          payment_plan: paymentPlan
         };
+        if (split) {
+          candidate.deposit_cents = split.depositCents;
+          candidate.balance_cents = split.balanceCents;
+          candidate.balance_due_date = dDates.balanceDueDate;
+          candidate.deposit_refundable_until = dDates.depositRefundableUntil;
+          candidate.balance_refundable_until = dDates.balanceRefundableUntil;
+          candidate.deposit_terms_version = depositPolicy.DEPOSIT_TERMS_VERSION;
+          candidate.deposit_terms_accepted_at = new Date().toISOString();
+        }
         const { data: inserted, error } = await supabase.from('bookings').insert(candidate).select().single();
         if (!error) { row = inserted; freshlyInserted = true; break; }
         if (error.code === '23505') {
@@ -194,6 +230,10 @@ module.exports = async function handler(req, res) {
       if (!row) return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to create the booking');
     }
 
+    /* Lo que se cobra ahora: el depósito congelado, o el total en pago completo. */
+    const rowPlan = row.payment_plan || 'full';
+    const chargeCents = rowPlan === 'deposit' ? row.deposit_cents : row.amount_cents;
+
     if (!freshlyInserted) {
       // Fila existente (previa o insertada por una llamada concurrente).
       if (bookingDataMismatch(row, expected)) {
@@ -205,13 +245,13 @@ module.exports = async function handler(req, res) {
         catch (e) { logServer('pi-retrieve', e); return sendError(res, 500, 'INTERNAL_ERROR', 'Unable to load payment status'); }
 
         if (pi.status === 'succeeded') {
-          return sendJson(res, 200, { alreadyPaid: true, bookingCode: row.booking_code, amountCents: row.amount_cents, currency: row.currency, tourName: tour.name });
+          return sendJson(res, 200, { alreadyPaid: true, paymentPlan: rowPlan, bookingCode: row.booking_code, amountCents: row.amount_cents, currency: row.currency, tourName: tour.name });
         }
         if (pi.status === 'canceled') {
           return sendError(res, 409, 'PAYMENT_ATTEMPT_CANCELED', 'This payment attempt was canceled');
         }
         if (REUSABLE_PI_STATUSES.indexOf(pi.status) !== -1) {
-          return sendJson(res, 200, { clientSecret: pi.client_secret, bookingCode: row.booking_code, amountCents: row.amount_cents, currency: row.currency, tourName: tour.name });
+          return sendJson(res, 200, { clientSecret: pi.client_secret, bookingCode: row.booking_code, amountCents: row.amount_cents, paymentPlan: rowPlan, chargeCents: chargeCents, currency: row.currency, tourName: tour.name });
         }
         logServer('pi-status', new Error('unexpected PI status: ' + pi.status));
         return sendError(res, 409, 'PAYMENT_ATTEMPT_UNAVAILABLE', 'This payment attempt cannot be resumed');
@@ -226,12 +266,12 @@ module.exports = async function handler(req, res) {
     let pi;
     try {
       pi = await stripe.paymentIntents.create({
-        amount: row.amount_cents,
+        amount: chargeCents,
         currency: row.currency,
         payment_method_types: ['card'],
         receipt_email: emailNorm,
         description: 'Galápagos Hook Adventure — ' + tour.name + ' (' + row.booking_code + ')',
-        metadata: { booking_id: row.id, booking_code: row.booking_code, tenant_id: tenant }
+        metadata: { booking_id: row.id, booking_code: row.booking_code, tenant_id: tenant, kind: rowPlan }
       }, { idempotencyKey: 'create-pi:' + row.id });
     } catch (e) {
       logServer('pi-create', e);
@@ -253,6 +293,8 @@ module.exports = async function handler(req, res) {
       clientSecret: pi.client_secret,
       bookingCode: row.booking_code,
       amountCents: row.amount_cents,
+      paymentPlan: rowPlan,
+      chargeCents: chargeCents,
       currency: row.currency,
       tourName: tour.name
     });
