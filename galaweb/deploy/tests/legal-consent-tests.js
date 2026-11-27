@@ -165,21 +165,34 @@ function ymdYearsAgo(n) {
 
   /* ---- reembolso: 15 días en todos lados ---- */
   const terms = read('terms.html'), content = read('assets/js/content.js'), app = read('assets/js/app.js');
-  ok('28 terms.html: 15 días o menos sin reembolso', /15 días o menos de anticipación: sin reembolso/.test(terms) && /more than 15 days before the activity: 100% refund/.test(terms));
-  ok('29 content.js: políticas con 15 días y cancelDays: 15', /15 días o menos de anticipación: sin reembolso/.test(content) && /cancelDays:\s*15\b/.test(content));
+  /* Tarea 12 del depósito (2026-11-27): las viñetas de 15 días ahora llevan el prefijo "Pago completo:" (texto aprobado por el owner). */
+  ok('28 terms.html: 15 días o menos sin reembolso', /Pago completo: cancelación con 15 días o menos de anticipación, sin reembolso/.test(terms) && /Full payment: cancellation more than 15 days before the activity, 100% refund/.test(terms));
+  ok('29 content.js: políticas con 15 días y cancelDays: 15', /Pago completo: cancelación con 15 días o menos de anticipación, sin reembolso/.test(content) && /cancelDays:\s*15\b/.test(content));
   /* Única excepción permitida (owner, 2026-11-26): la recomendación de RESERVAR el
      León Dormido con 30 días de anticipación para asegurar el espacio. No es una
      regla de reembolso; cualquier otro "30 días/days" sigue prohibido. */
   /* Tarea 10 del depósito (2026-11-27): el bloque S.deposit SÍ nombra "30 días" a propósito
      (el depósito se reembolsa si cancelas con más de 30 días; el saldo/depósito se explican
      ahí). No es la antigua regla de reembolso, así que ese bloque se excluye de esta búsqueda. */
-  const contentNoDeposit = content.replace(/\/\* -+ DEPÓSITO DEL 30 %[\s\S]*?\r?\n  \},\r?\n/, '');
+  /* Tarea 12 del depósito (2026-11-27): excepción deliberada y estrecha para las dos viñetas
+     aprobadas que nombran "30 días" (A1 y A4: el depósito solo se ofrece con más de 30 días y se
+     reembolsa con más de 30 días). Se quitan esas oraciones exactas, ES y EN; cualquier otro
+     "30 días/days" sigue fallando. */
+  const depositLegal = [
+    'Para reservar pagas el total, o un depósito del 30 % si faltan más de 30 días para tu viaje (paquetes, tours de día y charters de pesca con precio en línea).',
+    'To book, you pay the full price, or a 30% deposit if your trip is more than 30 days away (packages, day tours and fishing charters priced online).',
+    'Depósito del 30 %: se reembolsa si cancelas con más de 30 días de anticipación; con 30 días o menos no se reembolsa.',
+    '30% deposit: refunded if you cancel more than 30 days before the trip; not refunded at 30 days or less.'
+  ];
+  const stripDepositLegal = function (str) { return depositLegal.reduce(function (acc, sentence) { return acc.split(sentence).join(''); }, str); };
+  const termsNoDeposit = stripDepositLegal(terms);
+  const contentNoDeposit = stripDepositLegal(content).replace(/\/\* -+ DEPÓSITO DEL 30 %[\s\S]*?\r?\n  \},\r?\n/, '');
   const contentNoAdvance = contentNoDeposit
     .replace(/Reserva con 30 días de anticipación para asegurar tu espacio\./g, '')
     .replace(/Te recomendamos reservar con 30 días de anticipación para asegurar tu espacio\./g, '')
     .replace(/Book 30 days ahead to secure your spot\./g, '')
     .replace(/We recommend booking 30 days in advance to secure your spot\./g, '');
-  ok('30 sin restos de la regla de 30 días en términos/políticas/badge', !/30 d(ías|ays)/.test(terms) && !/30 d(ías|ays)/.test(contentNoAdvance) && !/up to 30 days/.test(app) && !/cancelDays\|\|60/.test(app));
+  ok('30 sin restos de la regla de 30 días en términos/políticas/badge', !/30 d(ías|ays)/.test(termsNoDeposit) && !/30 d(ías|ays)/.test(contentNoAdvance) && !/up to 30 days/.test(app) && !/cancelDays\|\|60/.test(app));
   ok('31 badge del checkout: "más de N días" (coherente con 15 o menos sin reembolso)', /Cancelación gratis con más de '\+\(S\.meta\.cancelDays\|\|15\)/.test(app));
 
   /* ---- páginas legales: hechos del dueño ---- */

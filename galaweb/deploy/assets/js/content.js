@@ -204,10 +204,14 @@ window.GHA_DEFAULT = {
   policies: {
     title: { en: "Booking & cancellation policy", es: "Políticas de reserva y cancelación" },
     items: [
-      { en: "Full payment is required to reserve your place.", es: "Se requiere el pago completo para reservar tu lugar." },
+      { en: "To book, you pay the full price, or a 30% deposit if your trip is more than 30 days away (packages, day tours and fishing charters priced online).", es: "Para reservar pagas el total, o un depósito del 30 % si faltan más de 30 días para tu viaje (paquetes, tours de día y charters de pesca con precio en línea)." },
       { en: "If availability differs from what's shown on the site, we'll notify you within 24 hours of your reservation — you may then pick another date or receive a refund.", es: "Si la disponibilidad difiere de lo mostrado en el sitio, te avisaremos dentro de las 24 horas de tu reserva; podrás elegir otra fecha o recibir un reembolso." },
-      { en: "Cancellation more than 15 days before the activity: 100% refund.", es: "Cancelación con más de 15 días de anticipación: reembolso del 100%." },
-      { en: "Cancellation 15 days or less before the activity: no refund.", es: "Cancelación con 15 días o menos de anticipación: sin reembolso." },
+      { en: "Full payment: cancellation more than 15 days before the activity, 100% refund.", es: "Pago completo: cancelación con más de 15 días de anticipación, reembolso del 100 %." },
+      { en: "Full payment: cancellation 15 days or less before the activity, no refund.", es: "Pago completo: cancelación con 15 días o menos de anticipación, sin reembolso." },
+      { en: "30% deposit: refunded if you cancel more than 30 days before the trip; not refunded at 30 days or less.", es: "Depósito del 30 %: se reembolsa si cancelas con más de 30 días de anticipación; con 30 días o menos no se reembolsa." },
+      { en: "Balance (70%): due 6 days before the trip, by 11:59 p.m. Galápagos time. We email you the payment link, with a reminder 7 days before and a last notice 6 days before. You can pay it early.", es: "Saldo (70 %): vence 6 días antes del viaje, hasta las 23:59 hora de Galápagos. Te enviamos el enlace de pago por correo, con un recordatorio 7 días antes y un último aviso 6 días antes. Puedes pagarlo antes." },
+      { en: "If the balance is not paid on time, the booking is cancelled automatically 5 days before the trip and the deposit is not refunded.", es: "Si el saldo no se paga a tiempo, la reserva se cancela automáticamente 5 días antes del viaje y el depósito no se reembolsa." },
+      { en: "Once paid, the balance follows the 15-day rule: it is refunded if you cancel more than 15 days before the trip.", es: "Una vez pagado, el saldo sigue la regla de 15 días: se reembolsa si cancelas con más de 15 días de anticipación." },
       { en: "A reservation made and confirmed 15 days or less before the date is non-refundable.", es: "Una reserva hecha y confirmada con 15 días o menos de anticipación no es reembolsable." },
       { en: "Itineraries may change without notice. Española tours run on Thursdays.", es: "Los itinerarios pueden cambiar sin previo aviso. Los tours a Española se realizan los jueves." },
       { en: "Date changes carry additional charges — contact us for any itinerary change.", es: "Los cambios de fecha tienen cargos adicionales; contáctanos para cualquier cambio de itinerario." },

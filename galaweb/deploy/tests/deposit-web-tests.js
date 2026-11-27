@@ -148,11 +148,12 @@ ok('43 saldo.js maneja los estados (paid, cancelled, token inválido, reintento)
 const pages = fs.readdirSync(BASE).filter(function (f) { return /\.html$/.test(f); });
 const withApp = pages.filter(function (f) { return /assets\/js\/app\.js\?v=hp1\d/.test(read(f)); });
 ok('44 las 10 páginas públicas + saldo cargan app.js', withApp.length === 11 && withApp.indexOf('saldo.html') >= 0);
-ok('45 todas cargan app.js y content.js en ?v=hp11', withApp.every(function (f) { const h = read(f); return /app\.js\?v=hp11/.test(h) && /content\.js\?v=hp11/.test(h) && !/\?v=hp10/.test(h); }));
+/* Tarea 12 del depósito (2026-11-27): content.js sube a hp12 por los textos legales; app.js y deposit-ui.js siguen en hp11. */
+ok('45 todas cargan app.js en ?v=hp11 y content.js en ?v=hp12', withApp.every(function (f) { const h = read(f); return /app\.js\?v=hp11/.test(h) && /content\.js\?v=hp12/.test(h) && !/\?v=hp10/.test(h); }));
 ok('46 todas cargan deposit-ui.js?v=hp11 ANTES de app.js', withApp.every(function (f) {
   const h = read(f); const i = h.indexOf('assets/js/deposit-ui.js?v=hp11'); return i > 0 && i < h.indexOf('assets/js/app.js?v=hp11');
 }));
-ok('47 admin.html también usa content.js?v=hp11', /content\.js\?v=hp11/.test(read('admin.html')));
+ok('47 admin.html también usa content.js?v=hp12', /content\.js\?v=hp12/.test(read('admin.html')));
 const sal = exists('saldo.html') ? read('saldo.html') : '';
 ok('48 saldo.html es noindex, nofollow', /<meta name="robots" content="noindex, nofollow">/.test(sal));
 ok('49 saldo.html carga Stripe, payments.js y saldo.js (saldo.js al final)',
