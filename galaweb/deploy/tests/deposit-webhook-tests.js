@@ -229,6 +229,53 @@ const EV_ISO = new Date(1790000000 * 1000).toISOString();
   m = await throws(function () { return processEvent(FAKE, piEvent('charge.refunded', charge('pi_dep', true))); });
   ok('6.33 reembolso con más de una fila lanza', !!m && /expected exactly one booking/.test(m));
 
+  /* 6.34 carrera: el barrido cancela entre la lectura y la escritura del saldo */
+  reset([booking({ payment_status: 'deposit_paid', booking_status: 'confirmed' })]);
+  const origFrom = FAKE.from;
+  let raced = false;
+  FAKE.from = function (t) {
+    const q = origFrom(t);
+    if (t === 'bookings') {
+      const u = q.update;
+      q.update = function () { if (!raced) { raced = true; row().booking_status = 'cancelled'; } return u.apply(q, arguments); };
+    }
+    return q;
+  };
+  m = await throws(function () { return processEvent(FAKE, piEvent('payment_intent.succeeded', pi('pi_bal', 70000, 'balance'))); });
+  ok('6.34 carrera: la actualización del saldo sobre una reserva recién cancelada lanza (Stripe reintenta)',
+    raced && !!m && /expected exactly one row updated, got 0/.test(m) && row().payment_status === 'deposit_paid' && !row().balance_paid_at && MAIL.length === 0);
+  await processEvent(FAKE, piEvent('payment_intent.succeeded', pi('pi_bal', 70000, 'balance')));
+  ok('6.35 reintento: toma la rama balance_paid_after_cancel y no marca paid',
+    row().needs_review_reason === 'balance_paid_after_cancel' && row().payment_status === 'deposit_paid' && row().booking_status === 'cancelled' && !row().balance_paid_at);
+
+  /* 6.36-6.39 depósito: processing / failed / canceled solo hacia delante */
+  reset([booking({ payment_status: 'deposit_paid', booking_status: 'confirmed', paid_at: 'x' })]);
+  await processEvent(FAKE, piEvent('payment_intent.payment_failed', pi('pi_dep', 30000, 'deposit')));
+  ok('6.36 depósito payment_failed tras deposit_paid: fila intacta', row().payment_status === 'deposit_paid' && row().booking_status === 'confirmed' && row().paid_at === 'x' && bookingWrites().length === 0);
+  reset([booking({ payment_status: 'paid', booking_status: 'confirmed', paid_at: 'x' })]);
+  await processEvent(FAKE, piEvent('payment_intent.processing', pi('pi_dep', 30000, 'deposit')));
+  ok('6.37 depósito processing tras paid: fila intacta', row().payment_status === 'paid' && row().booking_status === 'confirmed' && bookingWrites().length === 0);
+  reset([booking({ payment_status: 'refunded', booking_status: 'cancelled' })]);
+  await processEvent(FAKE, piEvent('payment_intent.canceled', pi('pi_dep', 30000, 'deposit')));
+  ok('6.38 depósito canceled tras refunded/cancelled: fila intacta', row().payment_status === 'refunded' && row().booking_status === 'cancelled' && bookingWrites().length === 0);
+  reset([booking()]);
+  await processEvent(FAKE, piEvent('payment_intent.processing', pi('pi_dep', 30000, 'deposit')));
+  ok('6.39 depósito processing aún pendiente: igual que antes', row().payment_status === 'processing');
+
+  /* 6.40-6.43 plantilla owner_payment_review según ctx.reason */
+  const TPL = require(BASE + '/server/lib/email-templates.js').TEMPLATES;
+  const b0 = booking({ booking_code: 'HK-<9>', cancel_reason: 'balance_unpaid' });
+  const twice = TPL.owner_payment_review.build(b0, { reason: 'balance_paid_twice' });
+  const after = TPL.owner_payment_review.build(b0, { reason: 'balance_paid_after_cancel' });
+  const gen = TPL.owner_payment_review.build(b0, {});
+  ok('6.40 revisión balance_paid_twice: reembolsar el cobro duplicado, sin hablar de cancelación',
+    /reembolsa el cobro duplicado en Stripe/.test(twice.text) && /efectivo\/transferencia/.test(twice.text) && !/cancelad/i.test(twice.text) && !/reactiv/i.test(twice.text));
+  ok('6.41 revisión balance_paid_after_cancel: sin "automáticamente", con motivo y "Nada se reactivó solo"',
+    /ya estaba cancelada/.test(after.text) && !/autom[aá]ticamente/i.test(after.text) && /balance_unpaid/.test(after.text) && /Nada se reactiv[oó] solo/.test(after.text));
+  ok('6.42 revisión sin motivo: genérica con "nada cambió solo"', /Revisar pago/.test(gen.html) && /nada cambió solo/.test(gen.text) && !/duplicado/.test(gen.text));
+  ok('6.43 revisión escapa valores en html', twice.html.indexOf('HK-<9>') < 0 && twice.html.indexOf('HK-&lt;9&gt;') >= 0 && after.subject !== twice.subject);
+
+  console.error = realError;
   console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);
 })().catch(function (e) { console.error(e); process.exit(1); });

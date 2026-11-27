@@ -234,17 +234,34 @@ function buildDepositTemplates(h) {
     return { subject: subject, html: html, text: text };
   }
 
-  function ownerPaymentReview(b) {
-    const subject = 'REVISAR: pago de saldo después de la cancelación — ' + (b.booking_code || '');
+  /* Revisión de pago del dueño. El texto depende de ctx.reason:
+     balance_paid_twice (ya pagado por otro medio) / balance_paid_after_cancel / genérico. */
+  function ownerPaymentReview(b, ctx) {
+    const reason = ctx && ctx.reason;
+    const cancelWhy = b.cancel_reason ? ' (motivo de la cancelación: ' + b.cancel_reason + ')' : '';
+    let subject, title, sub, msg;
+    if (reason === 'balance_paid_twice') {
+      subject = 'REVISAR: saldo cobrado dos veces — ';
+      title = 'Revisar pago: saldo duplicado'; sub = 'Reembolsa el cobro duplicado en Stripe';
+      msg = 'El cliente pagó el saldo con Stripe, pero ya estaba registrado como pagado por otro medio (efectivo/transferencia). Revisa y reembolsa el cobro duplicado en Stripe.';
+    } else if (reason === 'balance_paid_after_cancel') {
+      subject = 'REVISAR: pago de saldo después de la cancelación — ';
+      title = 'Revisar pago: llegó DESPUÉS de la cancelación'; sub = 'Hay que reembolsar o reactivar';
+      msg = 'Llegó un pago del saldo, pero la reserva ya estaba cancelada' + cancelWhy + '. Revisa: reembolsa el pago o reactiva la reserva. Nada se reactivó solo.';
+    } else {
+      subject = 'REVISAR PAGO — ';
+      title = 'Revisar pago'; sub = 'Requiere decisión del equipo';
+      msg = 'Llegó un pago de saldo que necesita revisión (por ejemplo, DESPUÉS de una cancelación). Decide si reembolsar o reactivar según el caso. No se reactivó nada solo; nada cambió solo.';
+    }
+    subject += (b.booking_code || '');
     const html = shell(subject,
-      h1('Revisar pago: llegó DESPUÉS de la cancelación', 'Hay que reembolsar o reactivar')
-      + '<p style="margin:0 0 14px;color:#11302f;">Entró un pago de saldo cuando la reserva ya estaba cancelada automáticamente. Revisa y decide si reembolsar o reactivar la reserva. No se reactivó nada automáticamente.</p>'
+      h1(title, sub)
+      + '<p style="margin:0 0 14px;color:#11302f;">' + esc(msg) + '</p>'
       + ownerRows(b, [
         ['Saldo recibido', esc(money(b.balance_cents, b.currency))]
       ])
       + adminLink());
-    const text = 'REVISAR PAGO DE SALDO\n\n'
-      + 'Llegó un pago de saldo DESPUÉS de que la reserva fue cancelada automáticamente. Revisa y decide: reembolsar o reactivar. No se reactivó nada automáticamente.\n\n'
+    const text = 'REVISAR PAGO DE SALDO\n\n' + msg + '\n\n'
       + ownerText(b, ['Saldo recibido: ' + money(b.balance_cents, b.currency)]);
     return { subject: subject, html: html, text: text };
   }

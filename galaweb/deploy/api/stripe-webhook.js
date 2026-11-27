@@ -136,13 +136,16 @@ const PI_COLUMN = { full: 'stripe_payment_intent_id', deposit: 'stripe_payment_i
 
 /* Actualización segura: apunta a la fila exacta (id + PI id + tenant) y exige 1 fila.
    piColumn indica contra qué columna de PI se filtra (depósito/completo vs saldo). */
-async function updateBooking(supabase, booking, fields, piColumn) {
+async function updateBooking(supabase, booking, fields, piColumn, notEq) {
   const col = piColumn || 'stripe_payment_intent_id';
-  const u = await supabase.from('bookings').update(fields)
+  let q = supabase.from('bookings').update(fields)
     .eq('id', booking.id)
     .eq(col, booking[col])
-    .eq('tenant_id', booking.tenant_id)
-    .select();
+    .eq('tenant_id', booking.tenant_id);
+  // Precondición opcional ([[columna, valor]...] que NO debe tener la fila): cierra
+  // carreras con el barrido (si 0 filas → lanza → Stripe reintenta con el estado nuevo).
+  (notEq || []).forEach(function (c) { q = q.not(c[0], 'eq', c[1]); });
+  const u = await q.select();
   if (u.error) throw new Error('booking update failed');
   if (!u.data || u.data.length !== 1) throw new Error('expected exactly one row updated, got ' + ((u.data || []).length));
 }
@@ -235,6 +238,7 @@ async function processPaymentIntent(supabase, event, pi) {
 
   switch (event.type) {
     case 'payment_intent.processing':
+      if (kind === 'deposit' && depositAlreadyAdvanced(booking)) { logSafe('processing del depósito ignorado (estado avanzado)', booking.id); return; }
       if (kind === 'balance') { logSafe('saldo en proceso (sin cambios en la reserva)', booking.id); return; }
       await updateBooking(supabase, booking, { payment_status: 'processing', booking_status: 'pending_payment' });
       return;
@@ -247,6 +251,7 @@ async function processPaymentIntent(supabase, event, pi) {
     case 'payment_intent.payment_failed':
     case 'payment_intent.canceled':
       // Un saldo fallido/cancelado NO marca la reserva (el depósito ya está pagado).
+      if (kind === 'deposit' && depositAlreadyAdvanced(booking)) { logSafe(event.type + ' del depósito ignorado (estado avanzado)', booking.id); return; }
       if (kind === 'balance') { logSafe(event.type + ' del saldo (sin cambios en la reserva)', booking.id); return; }
       await updateBooking(supabase, booking, { payment_status: 'failed', booking_status: 'failed', paid_at: null });
       return;
@@ -254,6 +259,11 @@ async function processPaymentIntent(supabase, event, pi) {
     default:
       throw new Error('unhandled PI event: ' + event.type);
   }
+}
+
+/* Solo hacia delante: un evento reordenado/reentregado del depósito no debe degradar la reserva. */
+function depositAlreadyAdvanced(b) {
+  return b.payment_status === 'deposit_paid' || b.payment_status === 'paid' || b.payment_status === 'refunded' || b.booking_status === 'cancelled';
 }
 
 /* Valida moneda e importe contra la reserva (fuente segura). */
@@ -338,7 +348,9 @@ async function balanceSucceeded(supabase, event, pi, booking) {
   }
 
   const fields = { payment_status: 'paid', balance_paid_at: eventIso(event, pi), balance_payment_method: 'stripe' };
-  await updateBooking(supabase, booking, fields, col);
+  // Precondición: la reserva no debe haberse cancelado/pagado entre la lectura y la escritura.
+  await updateBooking(supabase, booking, fields, col,
+    [['booking_status', 'cancelled'], ['payment_status', 'paid'], ['payment_status', 'refunded']]);
   try {
     const row = await freshRow(supabase, booking, fields);
     await notifyBooking(row, 'customer_balance_receipt', 'owner_balance_received');
