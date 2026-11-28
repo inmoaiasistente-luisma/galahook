@@ -290,6 +290,34 @@ function depBooking(extra) {
   const mm = await throws(function () { return processEvent(FAKE, piEvent('charge.refunded', charge('pi_zzz', 70000, true), 'evt_z')); });
   ok('2.12 reembolso ajeno sigue devolviendo sin error y sin tocar reservas', mm === null && row().payment_status === 'paid' && ledgerNote('no_booking_ignored'));
 
+  /* ---------- R1 · carrera entre los dos reembolsos totales ---------- */
+  function raceOnFirstUpdate(setFn) {
+    const origFrom = FAKE.from; let raced = false;
+    FAKE.from = function (t) {
+      const q = origFrom(t);
+      if (t === 'bookings') { const u = q.update; q.update = function () { if (!raced) { raced = true; setFn(row()); } return u.apply(q, arguments); }; }
+      return q;
+    };
+  }
+  reset([depBooking(PAID_STRIPE)]);
+  raceOnFirstUpdate(function (r) { r.balance_refunded_at = EV_ISO; });
+  let rm = await throws(refundDep);
+  ok('2.13 R1 depósito: si el saldo se reembolsó en paralelo, la escritura lanza (0 filas) y no deja deposit_refunded_at a medias',
+    !!rm && /expected exactly one row updated, got 0/.test(rm) && !row().deposit_refunded_at && row().payment_status === 'paid');
+  row().booking_status = 'cancelled'; row().payment_status = 'deposit_paid';   // lo que dejó el otro evento
+  await refundDep();
+  ok('2.14 R1 reintento del depósito con lectura fresca: refunded + cancelled', row().payment_status === 'refunded' && row().booking_status === 'cancelled' && row().deposit_refunded_at === EV_ISO && row().balance_refunded_at === EV_ISO);
+  reset([depBooking(PAID_STRIPE)]);
+  raceOnFirstUpdate(function (r) { r.deposit_refunded_at = EV_ISO; r.needs_review_reason = 'refund_review'; });
+  rm = await throws(refundBal);
+  ok('2.15 R1 saldo: si el depósito se reembolsó en paralelo, lanza y no marca balance_refunded_at', !!rm && /got 0/.test(rm) && !row().balance_refunded_at);
+  await refundBal();
+  ok('2.16 R1 reintento del saldo con lectura fresca: refunded + cancelled sin revisión', row().payment_status === 'refunded' && row().booking_status === 'cancelled' && row().needs_review_reason === null && row().balance_refunded_at === EV_ISO);
+  reset([depBooking(PAID_STRIPE)]);
+  raceOnFirstUpdate(function (r) { r.balance_refunded_at = EV_ISO; });
+  rm = await throws(refundDep);
+  ok('2.17 R1 la guarda cubre también la rama refund_review (saldo vigente)', !!rm && !row().deposit_refunded_at && row().needs_review_reason === null);
+
   /* ---------- I2 · finanzas ---------- */
   const finance = require(BASE + '/server/admin-handlers/finance-summary.js');
   async function fin(query, rows) {

@@ -136,7 +136,7 @@ const PI_COLUMN = { full: 'stripe_payment_intent_id', deposit: 'stripe_payment_i
 
 /* Actualización segura: apunta a la fila exacta (id + PI id + tenant) y exige 1 fila.
    piColumn indica contra qué columna de PI se filtra (depósito/completo vs saldo). */
-async function updateBooking(supabase, booking, fields, piColumn, notEq) {
+async function updateBooking(supabase, booking, fields, piColumn, notEq, mustBeNull) {
   const col = piColumn || 'stripe_payment_intent_id';
   let q = supabase.from('bookings').update(fields)
     .eq('id', booking.id)
@@ -145,6 +145,8 @@ async function updateBooking(supabase, booking, fields, piColumn, notEq) {
   // Precondición opcional ([[columna, valor]...] que NO debe tener la fila): cierra
   // carreras con el barrido (si 0 filas → lanza → Stripe reintenta con el estado nuevo).
   (notEq || []).forEach(function (c) { q = q.not(c[0], 'eq', c[1]); });
+  // Columnas que debían seguir nulas desde la lectura (p. ej. el otro reembolso): 0 filas → lanza → Stripe reintenta.
+  (mustBeNull || []).forEach(function (c) { q = q.is(c, null); });
   const u = await q.select();
   if (u.error) throw new Error('booking update failed');
   if (!u.data || u.data.length !== 1) throw new Error('expected exactly one row updated, got ' + ((u.data || []).length));
@@ -404,6 +406,9 @@ async function processRefund(supabase, event) {
     return;
   }
 
+  // Carrera de los dos reembolsos totales: si al leer el otro cargo seguía sin reembolsar, la
+  // escritura exige que siga así; si no, 0 filas → lanza y el reintento relee la fila fresca.
+  const otherRefundGuard = kind === 'deposit' ? (booking.balance_refunded_at ? null : ['balance_refunded_at']) : (booking.deposit_refunded_at ? null : ['deposit_refunded_at']);
   const stripeBalance = booking.balance_payment_method === 'stripe';
   const offlineBalance = booking.balance_payment_method === 'cash' || booking.balance_payment_method === 'transfer';
 
@@ -412,12 +417,12 @@ async function processRefund(supabase, event) {
     // 'paid' implica saldo cobrado aunque falte la fecha (fila inconsistente): ante la duda, revisión manual.
     const balanceKept = (!!booking.balance_paid_at || booking.payment_status === 'paid') && !(stripeBalance && booking.balance_refunded_at);
     if (!balanceKept) {
-      await updateBooking(supabase, booking, { deposit_refunded_at: when, payment_status: 'refunded', booking_status: 'cancelled', needs_review_reason: null }, PI_COLUMN[kind]);
+      await updateBooking(supabase, booking, { deposit_refunded_at: when, payment_status: 'refunded', booking_status: 'cancelled', needs_review_reason: null }, PI_COLUMN[kind], null, otherRefundGuard);
       return;
     }
     // Queda un saldo (Stripe sin reembolsar, efectivo o transferencia): decide el dueño.
     logSafe('refund del depósito con saldo vigente: revisión manual', booking.id);
-    await updateBooking(supabase, booking, { deposit_refunded_at: when, needs_review_reason: 'refund_review' }, PI_COLUMN[kind]);
+    await updateBooking(supabase, booking, { deposit_refunded_at: when, needs_review_reason: 'refund_review' }, PI_COLUMN[kind], null, otherRefundGuard);
     await noteLedger(supabase, event, 'refund_review_manual');
     return;
   }
@@ -435,7 +440,7 @@ async function processRefund(supabase, event) {
   const upd = depositGone
     ? { balance_refunded_at: when, payment_status: 'refunded', booking_status: 'cancelled', needs_review_reason: null }
     : { balance_refunded_at: when, payment_status: 'deposit_paid', booking_status: 'cancelled', needs_review_reason: null };   // solo se retiene el depósito
-  await updateBooking(supabase, booking, upd, PI_COLUMN[kind]);
+  await updateBooking(supabase, booking, upd, PI_COLUMN[kind], null, otherRefundGuard);
 }
 
 /* Solo para pruebas: el export principal (handler de Vercel) no cambia. */
