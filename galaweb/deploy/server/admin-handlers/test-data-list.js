@@ -19,7 +19,7 @@ const FIELDS = 'id,booking_code,customer_name,customer_email,tour_name,request_t
   'created_at,sales_channel,payment_status,booking_status,amount_cents,is_test,deleted_at,deletion_reason';
 
 const REQUEST_TYPES = ['booking', 'quote'];
-const PAYMENT_STATUSES = ['not_required', 'pending', 'processing', 'paid', 'failed', 'refunded'];
+const PAYMENT_STATUSES = ['not_required', 'pending', 'processing', 'paid', 'deposit_paid', 'failed', 'refunded'];
 const SALES_CHANNELS = ['web', 'agency'];
 const MAX_LIMIT = 100;
 const MAX_SEARCH = 100;

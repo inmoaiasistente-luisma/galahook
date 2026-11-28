@@ -57,9 +57,9 @@ ok('18 admin: ya NO tiene campo "Instagram handle (2nd account)"', !/Instagram h
 ok('19 admin: ya NO tiene campo "TikTok handle (2nd account)"', !/TikTok handle \(2nd account\)/.test(admin));
 ok('20 admin: conserva los campos de la cuenta principal', /strField\('Instagram handle',m,'instagram'\)/.test(admin) && /strField\('TikTok handle',m,'tiktok'\)/.test(admin));
 
-/* --- F) cache-busting: páginas públicas en hp10 ------------------------ */
-ok('21 inicio en ?v=hp10', /\?v=hp10/.test(index));
-ok('22 contacto en ?v=hp10', (function () { const c = read('contact.html'); return /\?v=hp10/.test(c); })());
+/* --- F) cache-busting: páginas públicas en hp11 (Tarea 10 del depósito: hp10 → hp11) --- */
+ok('21 inicio en ?v=hp11', /\?v=hp11/.test(index));
+ok('22 contacto en ?v=hp11', (function () { const c = read('contact.html'); return /\?v=hp11/.test(c); })());
 
 /* ------------------------------------------------------------------ */
 console.log('\n' + pass + ' PASS · ' + fail + ' FAIL');

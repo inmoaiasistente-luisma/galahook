@@ -29,10 +29,14 @@ function createFakeSupabase(seed) {
       upsert(payload, opts) { state.op = 'upsert'; state.payload = payload; state.conflict = opts && opts.onConflict; return q; },
       delete() { state.op = 'delete'; return q; },
       eq(k, v) { state.filters.push(function (r) { return r[k] === v; }); return q; },
+      in(k, arr) { state.filters.push(function (r) { return arr.indexOf(r[k]) !== -1; }); return q; },
       gte(k, v) { state.filters.push(function (r) { return r[k] >= v; }); return q; },
+      lte(k, v) { state.filters.push(function (r) { return r[k] <= v; }); return q; },
       lt(k, v) { state.filters.push(function (r) { return r[k] < v; }); return q; },
-      not(k, op, v) { state.filters.push(function (r) { return r[k] !== v; }); return q; },
-      is(k, v) { state.filters.push(function (r) { return r[k] === v; }); return q; },
+      // not(k,'is',null) = "no es nulo"; el resto de operadores se trata como eq (como siempre).
+      not(k, op, v) { state.filters.push(function (r) { return (op === 'is' && v === null) ? r[k] != null : r[k] !== v; }); return q; },
+      // is(k,null) = "es nulo": una columna ausente en la fila de prueba cuenta como nula (igual que en Postgres).
+      is(k, v) { state.filters.push(function (r) { return v === null ? r[k] == null : r[k] === v; }); return q; },
       order(k, opts) { state.orderBy = { k: k, asc: !opts || opts.ascending !== false }; return q; },
       range(a, b) { state.offset = a; state.max = b - a + 1; return q; },
       limit(n) { state.max = n; return q; },

@@ -341,11 +341,20 @@ ok('19 buildAuditRow: sin sesión o sin acción → null',
     /CRON_SECRET/.test(runH) && /requireWriter\(req, res\)/.test(runH) && /timingSafeEqual/.test(runH));
   ok('52 el barrido no cae si 0019 no está aplicada (select \'*\')',
     /select\('\*'\)/.test(runH));
-  /* Se mira el CÓDIGO, no los comentarios: el barrido solo lee reservas y
-     envía correos — no importa la librería de Stripe ni escribe en bookings. */
-  ok('53 el barrido no toca Stripe ni modifica la reserva',
+  /* Se mira el CÓDIGO, no los comentarios. Cambio por el barrido del saldo
+     del depósito (decisión del owner 2026-11-26): reminders-run ahora SÍ
+     dispara cancelaciones en Stripe y escritura en bookings, pero solo a
+     través de server/lib/deposit-sweep.js. Invariante vigente: el código de
+     recordatorios pre-viaje es de solo lectura y TODO acceso a Stripe y toda
+     escritura de reservas del barrido viven en deposit-sweep.js. */
+  const sweepSrc = read('server/lib/deposit-sweep.js');
+  const preSrc = read('server/lib/pretrip-reminders.js');
+  ok('53 recordatorios pre-viaje de solo lectura; Stripe y escrituras de reservas solo en deposit-sweep.js',
     !/require\([^)]*stripe/i.test(runH) && !/amount_cents:/.test(runH) &&
-    !/\.update\(/.test(runH) && !/\.delete\(/.test(runH));
+    !/\.update\(/.test(runH) && !/\.delete\(/.test(runH) &&
+    !/\.update\(|\.delete\(|require\([^)]*stripe/i.test(preSrc) &&
+    /from\('bookings'\)\s*\.update\(/.test(sweepSrc) && /paymentIntents\.cancel\(/.test(sweepSrc) &&
+    !/paymentIntents\.cancel\(/.test(runH) && !/paymentIntents\.cancel\(/.test(preSrc));
 
   const togH = read('server/admin-handlers/reminders-toggle.js');
   ok('54 pausar/reanudar es solo del owner y no borra nada',

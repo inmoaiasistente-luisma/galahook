@@ -7,6 +7,7 @@
   "rewrites": [
     { "source": "/trivia/(.*)", "destination": "/trivia/index.html" },
     { "source": "/tarjeta", "destination": "/tarjeta.html" },
+    { "source": "/saldo", "destination": "/saldo.html" },
     { "source": "/resena", "destination": "/resena.html" },
     { "source": "/api/admin-login", "destination": "/api/admin-router?action=login" },
     { "source": "/api/admin-page-views", "destination": "/api/admin-router?action=page-views" },
@@ -32,6 +33,8 @@
     { "source": "/api/admin-booking-cost-line-add", "destination": "/api/admin-router?action=booking-cost-line-add" },
     { "source": "/api/admin-booking-cost-line-delete", "destination": "/api/admin-router?action=booking-cost-line-delete" },
     { "source": "/api/admin-booking-costs-confirm", "destination": "/api/admin-router?action=booking-costs-confirm" },
+    { "source": "/api/admin-booking-balance-offline", "destination": "/api/admin-router?action=booking-balance-offline" },
+    { "source": "/api/admin-booking-review-clear", "destination": "/api/admin-router?action=booking-review-clear" },
     { "source": "/api/admin-booking-comms", "destination": "/api/admin-router?action=booking-comms" },
     { "source": "/api/admin-booking-document-save", "destination": "/api/admin-router?action=booking-document-save" },
     { "source": "/api/admin-booking-document-upload-url", "destination": "/api/admin-router?action=booking-document-upload-url" },

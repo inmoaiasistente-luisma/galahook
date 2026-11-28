@@ -382,7 +382,10 @@ function bkMoney(cents, cur){
 }
 
 /* ---- badges compactos (color + texto siempre visible) ---- */
-const BK_PAY_KIND ={paid:'ok',pending:'warn',processing:'warn',failed:'bad',refunded:'muted',not_required:'info'};
+const BK_PAY_KIND ={paid:'ok',deposit_paid:'warn',pending:'warn',processing:'warn',failed:'bad',refunded:'muted',not_required:'info'};
+/* Depósito del 30 %: la lógica de pintado vive en admin-deposit.js (se carga antes). */
+const DEPOSIT=window.ghaAdminDeposit({ES:ES,escapeHtml:escapeHtml,money:bkMoney,fmtDate:bkFmtDate,fmtDT:bkFmtDT,canWrite:canWrite,apiPost:apiPost,adminToast:adminToast,onUnauthorized:onUnauthorized,confirm:function(m){return confirm(m);}});
+function bkPayLabel(s){ return DEPOSIT.payLabel(s); }
 const BK_BOOK_KIND={confirmed:'ok',pending_payment:'warn',new:'info',cancelled:'bad',completed:'muted',failed:'bad'};
 function bkBadge(txt,kind){ return '<span class="bdg bdg-'+(kind||'muted')+'">'+escapeHtml(txt||'')+'</span>'; }
 
@@ -1128,7 +1131,7 @@ function bkAdminDetail(b, onUpdated){
       +bkDl('Email', bkMailTo(b.customer_email))
       +bkDl(ES?'Teléfono':'Phone', bkTelTo(b.customer_phone))
       +bkDl(ES?'Importe':'Amount', isQuote?(ES?'Cotización':'Quote'):bkMoney(b.amount_cents,b.currency))
-      +bkDl(ES?'Pago':'Payment', bkBadge(b.payment_status, BK_PAY_KIND[b.payment_status]))
+      +bkDl(ES?'Pago':'Payment', bkBadge(bkPayLabel(b.payment_status), BK_PAY_KIND[b.payment_status]))
       +bkDl(ES?'Reserva':'Booking', bkBadge(b.booking_status, BK_BOOK_KIND[b.booking_status]))
       +bkDl(ES?'Canal':'Channel', b.sales_channel==='agency'?(ES?'Agencia (venta directa)':'Agency (direct sale)'):'Web (Stripe)')
       +(b.payment_method?bkDl(ES?'Método de pago':'Payment method', escapeHtml(b.payment_method)):'')
@@ -1137,7 +1140,10 @@ function bkAdminDetail(b, onUpdated){
       +bkDl(ES?'Pagada':'Paid at', bkFmtDT(b.paid_at))
       +bkDl(ES?'Creada':'Created', bkFmtDT(b.created_at))
       +(b.notes?bkDl(ES?'Notas':'Notes', escapeHtml(b.notes)):'')
-    +'</div>';
+    +'</div>'
+    +DEPOSIT.detailHtml(b);   // alerta roja + bloque del depósito 30 %
+  /* "Marcar como revisado" dentro de la alerta roja (solo owner). */
+  DEPOSIT.bindReviewClear(body,b,function(){ bkCloseModal(); if(onUpdated) onUpdated(b); });
   /* QR y notificaciones: solo para reservas pagadas y confirmadas/completadas.
      Ambos bloques son exclusivos de owner/admin (este detalle no se usa en staff). */
   if(b.payment_status==='paid' && (b.booking_status==='confirmed'||b.booking_status==='completed')){
@@ -1181,6 +1187,19 @@ function bkAdminDetail(b, onUpdated){
     body.appendChild(ctrl);
   }
   else { const ro=readOnlyBanner(); if(ro) body.appendChild(ro); }
+  /* Saldo pagado por otro medio (solo owner, depósito pagado y no cancelada). */
+  if(DEPOSIT.canOffline(b)){
+    const offHost=el('<div class="dep-offline"></div>');
+    const offBtn=el('<button class="btn btn-gold btn-sm" type="button" style="margin-top:14px">'+escapeHtml(DEPOSIT.buttonLabel())+'</button>');
+    offBtn.addEventListener('click',function(){
+      offBtn.style.display='none';
+      DEPOSIT.renderOfflineForm(offHost,b,function(res){
+        if(res&&res.kind==='cancel'){ offBtn.style.display=''; return; }
+        bkCloseModal(); if(onUpdated) onUpdated(b);   // refresca la lista con el estado nuevo
+      });
+    });
+    body.appendChild(offBtn); body.appendChild(offHost);
+  }
   m.classList.add('open');
 }
 
@@ -1301,14 +1320,14 @@ function bkAdminRow(b, open, opts){
   opts=opts||{};
   const tr=document.createElement('tr'); tr.className='bk-rowclick';
   const isQuote=b.request_type==='quote';
-  tr.innerHTML='<td class="mono">'+escapeHtml(b.booking_code||'')+bkTestBadge(b)+'</td>'
+  tr.innerHTML='<td class="mono">'+escapeHtml(b.booking_code||'')+bkTestBadge(b)+DEPOSIT.reviewMarker(b)+'</td>'
     +'<td class="ell" title="'+escapeHtml(b.customer_name||'')+'">'+escapeHtml(b.customer_name||'')+'</td>'
     +'<td class="ell" title="'+escapeHtml(b.tour_name||'')+'">'+escapeHtml(b.tour_name||'')+'</td>'
     +'<td>'+bkFmtDate(b.booking_date)+'</td>'
     +'<td class="num">'+escapeHtml(b.guests)+'</td>'
     +'<td class="num">'+(isQuote?(ES?'Cotización':'Quote'):bkMoney(b.amount_cents,b.currency))+'</td>'
     +'<td>'+bkBadge(b.booking_status, BK_BOOK_KIND[b.booking_status])+'</td>'
-    +'<td>'+bkBadge(b.payment_status, BK_PAY_KIND[b.payment_status])+'</td>';
+    +'<td>'+bkBadge(bkPayLabel(b.payment_status), BK_PAY_KIND[b.payment_status])+DEPOSIT.tableLine(b)+'</td>';
   if(canWrite()){
     const td=document.createElement('td'); td.className='bk-del-cell';
     const del=el('<button class="bk-del-icon" type="button" title="'+(ES?'Eliminar':'Delete')+'" aria-label="'+(ES?'Eliminar':'Delete')+'">🗑</button>');
@@ -1388,7 +1407,7 @@ function bkScreen(o){
      la propia cuadrícula); en Reservas se pliegan detrás de "Más filtros". */
   if(!isStaff && !isCal){
     typeF=bkSelectField(ES?'Tipo':'Type',[['',ES?'Todos':'All'],['booking',ES?'Reserva':'Booking'],['quote',ES?'Cotización':'Quote']]);
-    payF =bkSelectField(ES?'Estado de pago':'Payment status',[['',ES?'Todos':'All'],['not_required','not_required'],['pending','pending'],['processing','processing'],['paid','paid'],['failed','failed'],['refunded','refunded']]);
+    payF =bkSelectField(ES?'Estado de pago':'Payment status',[['',ES?'Todos':'All'],['not_required','not_required'],['pending','pending'],['processing','processing'],['paid','paid'],['deposit_paid',ES?'Depósito pagado':'Deposit paid'],['failed','failed'],['refunded','refunded']]);
     bookF=bkSelectField(ES?'Estado de reserva':'Booking status',[['',ES?'Todos':'All'],['new','new'],['pending_payment','pending_payment'],['confirmed','confirmed'],['cancelled','cancelled'],['completed','completed'],['failed','failed']]);
     sortF=bkSelectField(ES?'Orden':'Sort',[['newest',ES?'Más recientes':'Newest'],['oldest',ES?'Más antiguas':'Oldest'],['booking_date_asc',ES?'Fecha viaje ↑':'Travel date ↑'],['booking_date_desc',ES?'Fecha viaje ↓':'Travel date ↓']]);
     chanF=bkSelectField(ES?'Canal':'Channel',[['',ES?'Todos':'All'],['web','web'],['agency',ES?'agencia':'agency']]);
@@ -1536,6 +1555,8 @@ function bkScreen(o){
         +chip(ES?'Agencia':'Agency',bkMoney(d.revenue.agency,'usd'))
         +chip(ES?'Total':'Total',bkMoney(d.revenue.total,'usd'))
         +chip(ES?'Ventas':'Sales',d.counts.total)
+        +DEPOSIT.financeTilesHtml(d,function(l,v){ return chip(l,v); },function(c){ return bkMoney(c,'usd'); })
+        +'<span class="bk-fin-lab">'+DEPOSIT.methodLabel()+'</span>'
         +meth('cash',ES?'Efectivo':'Cash')+meth('card',ES?'Tarjeta':'Card')
         +meth('bank_transfer',ES?'Transferencia':'Transfer')+meth('zelle','Zelle')+meth('other',ES?'Otro':'Other');
     }).catch(function(){ finance.innerHTML=''; });
@@ -1919,6 +1940,7 @@ function panelRemindersSettings(role){
       }).catch(function(){ runB.disabled=false; out.textContent=ES?'No se pudo ejecutar el barrido.':'The sweep could not run.'; });
     });
     c.appendChild(runB); c.appendChild(out);
+    c.appendChild(el('<div class="bk-sub-hint" style="font-weight:600">'+escapeHtml(DEPOSIT.reminderWarning())+'</div>'));
     c.appendChild(el('<div class="bk-sub-hint">'+(ES
       ?'En Producción el barrido lo dispara el cron todos los días. Este botón sirve para probarlo o para ponerse al día.'
       :'In Production the sweep runs daily via cron. This button is for testing or catching up.')+'</div>'));
@@ -1997,7 +2019,8 @@ function panelFinance(role, only){
        +tile(ES?'Ingreso por pax':'Revenue / pax', fin$(d.revenue_per_pax_cents))
        +tile(ES?'Costo por pax':'Cost / pax', fin$(d.known_cost_per_pax_cents))
        +tile(ES?'Utilidad por pax':'Profit / pax', fin$(d.known_profit_per_pax_cents))
-       +tile(ES?'Ventas sin costo confirmado':'Sales without confirmed cost', d.missing_cost_sales_count, d.missing_cost_sales_count>0?'warn':'');
+       +tile(ES?'Ventas sin costo confirmado':'Sales without confirmed cost', d.missing_cost_sales_count, d.missing_cost_sales_count>0?'warn':'')
+       +DEPOSIT.financeTilesHtml(d,tile,fin$);
       partial.style.display=d.profit_is_partial?'':'none';
       partial.textContent=d.profit_is_partial
         ? (ES?'Utilidad PARCIAL: '+d.missing_cost_sales_count+' venta(s) sin costo configurado no se descuentan.'
@@ -2305,7 +2328,7 @@ function panelTestData(role){
   const searchInput=document.createElement('input'); searchInput.maxLength=100; searchInput.placeholder=ES?'Código, cliente, email o tour':'Code, customer, email or tour'; searchWrap.appendChild(searchInput);
   const fromF=bkDateField(ES?'Desde':'From'), toF=bkDateField(ES?'Hasta':'To');
   const typeF=bkSelectField(ES?'Tipo':'Type',[['',ES?'Todos':'All'],['booking',ES?'Reserva':'Booking'],['quote',ES?'Cotización':'Quote']]);
-  const payF=bkSelectField(ES?'Estado de pago':'Payment status',[['',ES?'Todos':'All'],['not_required','not_required'],['pending','pending'],['processing','processing'],['paid','paid'],['failed','failed'],['refunded','refunded']]);
+  const payF=bkSelectField(ES?'Estado de pago':'Payment status',[['',ES?'Todos':'All'],['not_required','not_required'],['pending','pending'],['processing','processing'],['paid','paid'],['deposit_paid',ES?'Depósito pagado':'Deposit paid'],['failed','failed'],['refunded','refunded']]);
   const chanF=bkSelectField(ES?'Canal':'Channel',[['',ES?'Todos':'All'],['web','web'],['agency',ES?'agencia':'agency']]);
   const testF=bkSelectField(ES?'Marca TEST':'TEST flag',[['',ES?'Todas':'All'],['true',ES?'Solo prueba':'Test only'],['false',ES?'Solo reales':'Real only']]);
   const viewF=bkSelectField(ES?'Vista':'View',[['active',ES?'Activas':'Active'],['all',ES?'Todas':'All'],['only',ES?'Archivadas':'Archived']]);
@@ -2362,7 +2385,7 @@ function panelTestData(role){
         +'<td>'+escapeHtml(b.request_type||'')+'</td>'
         +'<td>'+escapeHtml(b.booking_date||'—')+'</td>'
         +'<td>'+escapeHtml(b.sales_channel||'—')+'</td>'
-        +'<td>'+escapeHtml(b.payment_status||'—')+'</td>'
+        +'<td>'+escapeHtml(bkPayLabel(b.payment_status)||'—')+'</td>'
         +'<td class="num">'+tdMoney(b.amount_cents)+'</td>'
         +'<td>'+(b.is_test?'<span class="notif-badge notif-test">TEST</span>':'—')+'</td>'
         +'<td>'+(archived?'<span class="notif-badge notif-archived">'+(ES?'archivada':'archived')+'</span>':'—')+'</td>';

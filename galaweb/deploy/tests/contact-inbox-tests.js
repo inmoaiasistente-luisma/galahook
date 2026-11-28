@@ -143,7 +143,8 @@ ok('61 admin.html: cache-buster admin.js versionado', /admin\.js\?v=[a-z0-9]+/.t
    ======================================================================= */
 ok('62 nudge: solo visitantes recurrentes (gha_first + umbral de regreso)', /K_FIRST='gha_first'/.test(app) && /RETURN_AFTER/.test(app) && /\(now\(\)-first\) < RETURN_AFTER/.test(app));
 ok('63 nudge: no repite ~14 días (cooldown)', /COOLDOWN=14\*DAY/.test(app) && /K_NUDGE='gha_nudge'/.test(app) && /\(now\(\)-lastNudge\) < COOLDOWN/.test(app));
-ok('64 nudge: solo páginas públicas (bloquea admin/pasajeros/checkin/lock/tarjeta)', /BLOCK=\['\/admin','\/passengers','\/checkin','\/lock','\/tarjeta'\]/.test(app));
+/* Fix ronda 1 del depósito (Tarea 10): /saldo se agrega a propósito a la lista bloqueada. */
+ok('64 nudge: solo páginas públicas (bloquea admin/pasajeros/checkin/lock/tarjeta/saldo)', /BLOCK=\['\/admin','\/passengers','\/checkin','\/lock','\/tarjeta','\/saldo'\]/.test(app));
 ok('65 nudge: postea con source visit_nudge', /source:'visit_nudge'/.test(app) && /fetch\('\/api\/contact-message'/.test(app));
 ok('66 nudge: honeypot company', /name="company"/.test(app) && /company:\(d\.company\|\|''\)/.test(app));
 ok('67 nudge: exige nombre y (email o teléfono)', /!email && !phone/.test(app));

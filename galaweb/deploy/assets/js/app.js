@@ -126,7 +126,7 @@ function buildHeader(){
         +'<button data-lang="en" class="'+(L==='en'?'on':'')+'">EN</button>'
         +'<button data-lang="es" class="'+(L==='es'?'on':'')+'">ES</button>'
      +'</div>'
-     +'<button type="button" class="btn btn-gold btn-sm js-book" data-name="" data-price="0" data-unit="person" data-en="Book Now" data-es="Reservar">'+(L==='es'?'Reservar':'Book Now')+'</button>'
+     +(document.body.dataset.page==='saldo'?'':'<button type="button" class="btn btn-gold btn-sm js-book" data-name="" data-price="0" data-unit="person" data-en="Book Now" data-es="Reservar">'+(L==='es'?'Reservar':'Book Now')+'</button>')   // /saldo: sin checkout (comparte Stripe con la página)
      +'<button class="nav-toggle" id="navToggle" aria-label="Menu"><span></span><span></span><span></span></button>'
    +'</div>'
   +'</div>';
@@ -320,6 +320,8 @@ let bkPromoDebounce=null;
 let bkNotesState={tourId:null, notes:[], version:null, requiresAck:false};
 /* ---- idempotencia del formulario (Fase 3) ---- */
 let bkRequestId=null, bkFingerprint=null, bkSubmitting=false;
+/* Bloque de depósito vigente al pagar (para el recibo si la respuesta es alreadyPaid, sin chargeCents). */
+let bkRecapDep=null;
 function bkUuid(){
   try{ if(window.crypto && crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
   const b=new Uint8Array(16);
@@ -333,7 +335,8 @@ function bkComputeFingerprint(){
   const dt=(document.getElementById('bkDate')||{}).value||'';
   const guests=Math.max(bkState.min||1, parseInt(((document.getElementById('bkGuests')||{}).value||'1'),10));
   const email=bkNormEmail((document.getElementById('bkTravEmail')||{}).value);
-  return [bkState.tourId||'', dt, guests, email].join('|');
+  const plan=(window.GHADeposit&&GHADeposit.plan())||'full';   // cambiar de plan = nueva huella = nuevo request_id
+  return [bkState.tourId||'', dt, guests, email, plan].join('|');
 }
 /* Reutiliza el request_id salvo que cambien tour/fecha/guests/email → entonces genera uno nuevo */
 function bkEnsureRequestId(){
@@ -397,6 +400,8 @@ function buildBookingModal(){
        +'</div>'
        +'<div class="field" id="bkMsgWrap" style="display:none"><label id="bkLabMsg">Your message</label><textarea id="bkMsg"></textarea></div>'
        // Política de cancelación ANTES de cobrar (Fla. Stat. 559.9335(10); LODC Ecuador: información veraz).
+       // Opción de depósito del 30 % (la pinta GHADeposit con el bloque `deposit` de pricing-preview).
+       +'<div class="bk-plan" id="bkPlan" style="display:none"></div>'
        +'<p class="bk-policy" id="bkPolicy"></p>'
        +'<button type="submit" class="btn btn-gold btn-block" id="bkPayBtn" style="margin-top:6px">Pay</button>'
        +'<p class="bk-secure" id="bkSecure"></p>'
@@ -425,7 +430,8 @@ function buildBookingModal(){
     const inp=document.getElementById('bkPromoInput'); inp.value=b.dataset.code;
     clearTimeout(bkPromoDebounce); updateBkSummary(); refreshPricing();
   });
-  d.querySelector('#bkDate').addEventListener('change',updateBkSummary);
+  d.querySelector('#bkDate').addEventListener('change',function(){ updateBkSummary(); refreshPricing(); });
+  if(window.GHADeposit) GHADeposit.onChange(updateBkSummary);   // plan o casilla de aceptación cambiaron
   // Los campos de tarjeta son Stripe Elements — formateo/validación los maneja Stripe (ver setupPaymentFields).
   d.querySelector('#bkForm').addEventListener('submit',e=>{ e.preventDefault(); submitBooking(); });
   document.addEventListener('keydown',e=>{ if(e.key==='Escape' && d.classList.contains('open')) closeBooking(); });
@@ -447,7 +453,20 @@ function applyBookingLang(){
   if(pol) pol.innerHTML=es
     ?('Cancelación con más de '+cd+' días de anticipación: reembolso del 100%. Con '+cd+' días o menos: <b>sin reembolso</b>. Al reservar aceptas los <a href="terms.html" target="_blank" rel="noopener">Términos y Condiciones</a>.')
     :('Cancel more than '+cd+' days before: 100% refund. '+cd+' days or less: <b>no refund</b>. By booking you accept the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>.');
+  const t2=document.getElementById('bkT2');
+  bkPolicyOrig={pol:pol?pol.innerHTML:'', t2:t2?t2.textContent:''};   // textos de pago completo, para restaurarlos tal cual
   renderBkNotes();   // relocaliza cabecera y casilla de notas
+}
+/* Con depósito, la política y la insignia lateral deben decir la regla del depósito (no la de 15 días). */
+let bkPolicyOrig=null;
+function setBkPolicy(dep){
+  const pol=document.getElementById('bkPolicy'), t2=document.getElementById('bkT2'); if(!pol||!t2) return;
+  if(dep && window.GHADeposit){
+    const G=GHADeposit, es=L==='es';
+    const terms=es?' Al reservar aceptas los <a href="terms.html" target="_blank" rel="noopener">Términos y Condiciones</a>.':' By booking you accept the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>.';
+    pol.innerHTML=G.fill(G.tx(S,'policyBox',L),{refund:G.date(dep.depositRefundableUntil,L)})+terms;
+    t2.textContent=G.tx(S,'badgeDeposit',L);
+  } else if(bkPolicyOrig){ pol.innerHTML=bkPolicyOrig.pol; t2.textContent=bkPolicyOrig.t2; }
 }
 /* Renderiza las notas importantes activas del tour y, si corresponde, la
    casilla obligatoria de aceptación (conserva su estado al re-renderizar). */
@@ -526,11 +545,21 @@ function updateBkSummary(){
     }
   }
   document.getElementById('bkSumGuestsRow').style.display=bkState.unit==='boat'?'none':'';
+  const dep=request?null:bkCurrentDeposit(sp, document.getElementById('bkDate').value);
+  renderBkPlan(dep);   // si ya no es elegible, GHADeposit vuelve a 'full' y borra la aceptación
+  const depPlan=!!(dep&&dep.eligible&&window.GHADeposit&&GHADeposit.plan()==='deposit');
+  setBkPolicy(depPlan?dep:null);
   const pb=document.getElementById('bkPayBtn'); pb.disabled=false; if(pb.dataset.idle) delete pb.dataset.idle;
-  pb.textContent= request?(es?'Enviar solicitud':'Send request'):((es?'Pagar ':'Pay ')+money2(amount));
+  /* El botón muestra lo que se cobra HOY: el depósito si el plan es 'deposit', el total si no. */
+  pb.textContent= request?(es?'Enviar solicitud':'Send request'):((es?'Pagar ':'Pay ')+(depPlan?GHADeposit.money(dep.depositCents):money2(amount)));
   /* Gate de notas: si exige aceptación y la casilla no está marcada, se bloquea. */
   if(bkNotesState.requiresAck){ const cb=document.getElementById('bkNotesAck'); if(!cb||!cb.checked) pb.disabled=true; }
+  /* Gate del depósito: sin la casilla de aceptación marcada no se puede pagar el 30 %. */
+  if(depPlan && !GHADeposit.ack()) pb.disabled=true;
 }
+/* Bloque `deposit` del servidor para ESTA fecha (si cambió la fecha, aún no vale). */
+function bkCurrentDeposit(sp, dt){ return (sp && sp.date===dt && sp.deposit)?sp.deposit:null; }
+function renderBkPlan(dep){ const el=document.getElementById('bkPlan'); if(el&&window.GHADeposit) GHADeposit.render(el, dep, L, S); }
 /* Bruto local para la estimación inmediata (base × pax). Los descuentos ya
    NO viven en el frontend: los calcula el servidor con reglas configurables
    (/api/pricing-preview). El antiguo −20 % fijo se retiró. */
@@ -549,6 +578,8 @@ function refreshPricing(){
   const promoEl=document.getElementById('bkPromoInput');
   const code=promoEl?promoEl.value.trim():'';
   const reqBody={tour_id:tourId, guests:guests}; if(code) reqBody.discount_code=code;
+  const bdt=(document.getElementById('bkDate')||{}).value||'';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(bdt)) reqBody.booking_date=bdt;   // el servidor decide si hay depósito
   bkPricing.pending=true;
   bkPost('/api/pricing-preview',reqBody).then(function(r){
     if(mySeq!==bkPricing.seq) return;                 // respuesta fuera de orden → ignorar
@@ -564,12 +595,14 @@ function refreshPricing(){
       bkNotesState={tourId:tourId, notes:[], version:null, requiresAck:false}; renderBkNotes();
     }
     if(r&&r.ok&&typeof data.amountCents==='number'){
-      bkPricing.applied={tourId:tourId, guests:guests, gross:data.grossAmountCents, discount:data.discountCents, amount:data.amountCents, label:data.discountLabel};
+      bkPricing.applied={tourId:tourId, guests:guests, gross:data.grossAmountCents, discount:data.discountCents, amount:data.amountCents, label:data.discountLabel, date:bdt, deposit:(data.deposit&&typeof data.deposit==='object')?data.deposit:null};
     } else { bkPricing.applied=null; }
     updateBkSummary();
   }).catch(function(){ if(mySeq!==bkPricing.seq) return; bkPricing.pending=false; bkPricing.applied=null; updateBkSummary(); });
 }
 function openBooking(opts){
+  /* /saldo (pago del saldo) usa los mismos Stripe Elements: el checkout nunca debe abrirse ahí. */
+  if(document.body.dataset.page==='saldo') return;
   /* HOTFIX contención: no abrir checkout de paquetes mientras el precio se estabiliza. */
   if(PKG_CHECKOUT_PAUSED && isPackageTour(opts&&opts.tourId)){
     if(window.GHA&&GHA.toast) GHA.toast(L==='es'?'Precio temporalmente no disponible. Contáctenos para completar su reserva.':'Price temporarily unavailable. Contact us to complete your reservation.');
@@ -577,7 +610,7 @@ function openBooking(opts){
   }
   buildBookingModal();
   const general=!opts.name;
-  bkSubmitting=false; bkResetRequestId();
+  bkSubmitting=false; bkResetRequestId(); bkRecapDep=null; if(window.GHADeposit) GHADeposit.reset();
   if(window.GHAPayments) GHAPayments.unmount();   // re-montaje limpio en cada apertura (sin duplicados)
   bkPricing.applied=null; bkPricing.pending=false; bkPricing.codeInvalid=false; bkPricing.quoteDiscount=null;
   clearTimeout(bkPromoDebounce);
@@ -612,7 +645,7 @@ function setupPaymentFields(){
   if(P.ready()) return;
   P.mount({number:'bkCardNumber', expiry:'bkCardExpiry', cvc:'bkCardCvc'}).catch(function(){ /* sin exponer detalles */ });
 }
-function closeBooking(){ const d=document.getElementById('bkDrop'); if(d) d.classList.remove('open'); document.documentElement.style.overflow=''; bkSubmitting=false; if(window.GHAPayments) GHAPayments.unmount(); }
+function closeBooking(){ const d=document.getElementById('bkDrop'); if(d) d.classList.remove('open'); document.documentElement.style.overflow=''; bkSubmitting=false; if(window.GHADeposit) GHADeposit.reset(); if(window.GHAPayments) GHAPayments.unmount(); }
 function syncGuestsMin(){
   const g=document.getElementById('bkGuests'); if(!g) return;
   const min=bkState.min||1; g.min=min;
@@ -639,6 +672,8 @@ function bkErrorMessage(code, es){
     case 'PAYMENT_ATTEMPT_CANCELED': return es?'Ese intento se canceló. Vuelve a intentarlo.':'That attempt was canceled. Please try again.';
     case 'PAYMENT_ATTEMPT_FAILED':   return es?'El intento anterior falló. Vuelve a intentarlo.':'The previous attempt failed. Please try again.';
     case 'REQUEST_ID_CONFLICT':      return es?'Los datos cambiaron. Vuelve a intentarlo.':'The details changed. Please try again.';
+    case 'INVALID_PAYMENT_PLAN': case 'DEPOSIT_TERMS_REQUIRED': return es?'Revisa la forma de pago y las condiciones del depósito, e inténtalo de nuevo.':'Please review the payment option and deposit conditions, then try again.';
+    case 'DEPOSIT_NOT_ELIGIBLE':          return es?'El depósito ya no está disponible para esa fecha. Elige pagar el 100 % ahora.':'The deposit is no longer available for that date. Please choose to pay 100% now.';
     case 'INVALID_EMAIL':            return es?'Revisa el correo.':'Please check the email.';
     case 'INVALID_DATE': case 'DATE_IN_PAST': return es?'Revisa la fecha del viaje.':'Please check the travel date.';
     case 'GUESTS_BELOW_MIN':         return es?'No alcanza el mínimo de viajeros.':'Below the minimum number of travelers.';
@@ -653,6 +688,7 @@ function bkErrorMessage(code, es){
 function handleBkError(r, es){
   const code=r.data && r.data.error;
   if(code==='PAYMENT_ATTEMPT_FAILED'||code==='PAYMENT_ATTEMPT_CANCELED'||code==='REQUEST_ID_CONFLICT') bkResetRequestId();
+  if(code==='INVALID_PAYMENT_PLAN'||code==='DEPOSIT_TERMS_REQUIRED'||code==='DEPOSIT_NOT_ELIGIBLE'){ bkResetRequestId(); if(window.GHADeposit) GHADeposit.reset(); refreshPricing(); updateBkSummary(); }
   GHA.toast(bkErrorMessage(code, es));
 }
 /* Normalización central de errores de Stripe → mensajes claros para el cliente.
@@ -679,19 +715,43 @@ function normalizeStripeError(err, es){
 }
 /* ---- pantallas de éxito (usan datos confirmados por el backend) ---- */
 function bkShowSuccessShell(){ document.getElementById('bkGrid').style.display='none'; document.getElementById('bkSuccess').classList.add('show'); const m=document.querySelector('.bkmodal'); if(m) m.scrollTop=0; }
+/* Cifras del depósito para el recibo. Normal: chargeCents de la respuesta. alreadyPaid no trae
+   chargeCents → se derivan del último bloque `deposit` de pricing-preview. null = pago completo. */
+function bkDepositFigures(data){
+  const dep=bkRecapDep; const isDep=(data&&data.paymentPlan==='deposit')||!!dep; if(!isDep) return null;
+  const total=(data&&typeof data.amountCents==='number')?data.amountCents:null;
+  const charge=(data&&typeof data.chargeCents==='number')?data.chargeCents:(dep?dep.depositCents:null);
+  if(charge==null) return null;
+  const balance=(total!=null)?(total-charge):(dep?dep.balanceCents:null);
+  return {total:total, charge:charge, balance:balance, due:dep?dep.balanceDueDate:null};
+}
 function bkRenderRecap(data, dt, guests, es, showAmount, amountLabel){
   const code=data&&data.bookingCode?data.bookingCode:''; const tourName=data&&data.tourName?data.tourName:bkState.name;
   let recap='<div><span>'+(es?'Código':'Code')+'</span><b>'+esc(code)+'</b></div>'
     +'<div><span>'+(es?'Experiencia':'Experience')+'</span><b>'+esc(tourName)+'</b></div>'
     +'<div><span>'+(es?'Fecha':'Date')+'</span><b>'+fmtDate(dt)+'</b></div>'
     +(bkState.unit==='person'?'<div><span>'+(es?'Viajeros':'Guests')+'</span><b>'+guests+'</b></div>':'');
-  if(showAmount && data && typeof data.amountCents==='number') recap+='<div class="tot"><span>'+amountLabel+'</span><b>'+money2(Math.round(data.amountCents/100))+'</b></div>';
+  const fig=showAmount?bkDepositFigures(data):null;
+  if(fig){
+    const G=GHADeposit, lab=function(k){ return G.tx(S,k,L); };
+    if(fig.total!=null) recap+='<div><span>'+lab('recapTotal')+'</span><b>'+G.money(fig.total)+'</b></div>';
+    recap+='<div class="tot"><span>'+(amountLabel===(es?'Pagado':'Paid')?lab('recapDeposit'):amountLabel)+'</span><b>'+G.money(fig.charge)+'</b></div>';
+    if(fig.balance!=null) recap+='<div><span>'+lab('recapBalance')+'</span><b>'+G.money(fig.balance)+'</b></div>';
+    if(fig.due) recap+='<div><span>'+lab('recapDue')+'</span><b>'+G.date(fig.due,L)+'</b></div>';
+  }
+  else if(showAmount && data && typeof data.amountCents==='number') recap+='<div class="tot"><span>'+amountLabel+'</span><b>'+money2(Math.round(data.amountCents/100))+'</b></div>';
   document.getElementById('bkRecap').innerHTML=recap;
 }
 function showPaidSuccess(data, name, email, dt, guests, es){
   bkShowSuccessShell();
   document.getElementById('bkSucTitle').textContent= es?'¡Reserva confirmada!':'Booking confirmed!';
   document.getElementById('bkSucMsg').textContent= es?'Tu reserva está confirmada. Recibirás en breve un correo con tu código QR.':'Your booking is confirmed. A confirmation email with your QR code will arrive shortly.';
+  const fig=bkDepositFigures(data);
+  if(fig && fig.due && fig.balance!=null){   // reserva con depósito: recuerda el saldo y su fecha
+    const G=GHADeposit;
+    document.getElementById('bkSucTitle').textContent=G.tx(S,'sucTitle',L);
+    document.getElementById('bkSucMsg').textContent=G.fill(G.tx(S,'sucMsg',L),{balance:G.money(fig.balance), due:G.date(fig.due,L)});
+  }
   bkRenderRecap(data, dt, guests, es, true, es?'Pagado':'Paid');
 }
 function showProcessing(data, name, email, dt, guests, es){
@@ -720,6 +780,10 @@ async function submitBooking(){
   /* Gate de notas: si exigen aceptación y no se marcó la casilla, no se envía. */
   if(bkNotesState.requiresAck){ const cb=document.getElementById('bkNotesAck'); if(!cb||!cb.checked){ GHA.toast(es?'Debes aceptar las notas importantes.':'Please accept the important notes.'); return; } }
 
+  /* Depósito: si eligió el 30 % debe haber marcado la casilla de aceptación. */
+  const plan=(!bkState.requiresQuote&&window.GHADeposit)?GHADeposit.plan():'full';
+  if(plan==='deposit' && !GHADeposit.ack()){ GHA.toast(GHADeposit.tx(S,'ackRequired',L)); return; }
+
   // Solo tour_id / fecha / guests / datos de contacto van al backend. NUNCA amount/price/total ni datos de tarjeta.
   const payload={ request_id:bkEnsureRequestId(), tour_id:bkState.tourId, booking_date:dt, guests:guests, customer_name:name, customer_email:email };
   if(notes) payload.notes=notes;
@@ -745,6 +809,10 @@ async function submitBooking(){
   if(!(window.GHAPayments && GHAPayments.ready())){
     GHA.toast(normalizeStripeError({type:'api_error'}, es)); bkSubmitting=false; setPayBusy(false); return;
   }
+  /* Solo el plan y la aceptación van al servidor; los montos los calcula él. */
+  payload.payment_plan=plan;
+  if(plan==='deposit') payload.deposit_ack=GHADeposit.ack();
+  bkRecapDep=(plan==='deposit')?bkCurrentDeposit(bkPricing.applied, dt):null;
   try{
     const r=await bkPost('/api/create-payment-intent', payload);
     if(!r.ok){ handleBkError(r, es); bkSubmitting=false; setPayBusy(false); return; }
@@ -1118,6 +1186,7 @@ function render(){
 /* Barra de promo (Black Friday 2026): módulo aparte (promo-bf.js). Solo se
    descarga mientras la promo está vigente; al vencer, ni se carga. */
 function loadPromo(){
+  if(document.body.dataset.page==='saldo') return;   // /saldo: sin barra ni popup de promo
   if(!S.promo || document.getElementById('bfJs')) return;
   if(!(Date.parse(S.promo.endsAt)>Date.now())) return;
   const s=document.createElement('script'); s.id='bfJs'; s.src='/assets/js/promo-bf.js?v=bf2';
@@ -1197,7 +1266,7 @@ if(document.readyState!=='loading') init(); else document.addEventListener('DOMC
 
   // Solo páginas públicas de marketing.
   var path=(location.pathname||'/').toLowerCase();
-  var BLOCK=['/admin','/passengers','/checkin','/lock','/tarjeta'];
+  var BLOCK=['/admin','/passengers','/checkin','/lock','/tarjeta','/saldo'];
   for(var i=0;i<BLOCK.length;i++){ if(path.indexOf(BLOCK[i])===0) return; }
 
   var first=0, lastNudge=0;

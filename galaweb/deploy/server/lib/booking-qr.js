@@ -96,7 +96,7 @@ function computeExpiresAt(bookingDate) {
 function isQrEligible(booking) {
   return !!booking
     && booking.request_type === 'booking'
-    && booking.payment_status === 'paid'
+    && ['paid', 'deposit_paid'].indexOf(booking.payment_status) !== -1   // depósito 30 %: deposit_paid también es confirmada
     && QR_BOOKING_STATUSES.indexOf(booking.booking_status) !== -1;
 }
 

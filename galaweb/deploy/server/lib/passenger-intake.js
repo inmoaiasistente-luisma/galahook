@@ -94,7 +94,7 @@ function computeExpiry() {
 function isIntakeEligible(booking) {
   return !!booking
     && booking.request_type === 'booking'
-    && booking.payment_status === 'paid'
+    && ['paid', 'deposit_paid'].indexOf(booking.payment_status) !== -1   // depósito 30 %
     && ELIGIBLE_BOOKING_STATUSES.indexOf(booking.booking_status) !== -1
     && booking.is_test !== true
     && !booking.deleted_at;

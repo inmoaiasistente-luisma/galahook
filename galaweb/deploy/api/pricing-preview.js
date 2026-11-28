@@ -11,13 +11,14 @@
    configuración interna. El navegador no envía ni decide importes.
    ========================================================= */
 
-const { sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys, isPositiveInt, getTenantId } = require('../server/lib/http');
+const { sendJson, sendError, logServer, methodNotAllowed, readJsonBody, rejectUnknownKeys, isPositiveInt, getTenantId, isRealYmd, isNotPastGalapagos, todayInGalapagos } = require('../server/lib/http');
 const catalog = require('../server/lib/tour-catalog');
 const { computeWebPricing, resolveQuoteDiscount } = require('../server/lib/pricing-engine');
 const { getPublicNotesForTour } = require('../server/lib/tour-notes');
 const { publicPackagePriceList } = require('../server/lib/package-pricing');
+const depositPolicy = require('../server/lib/deposit-policy');
 
-const ALLOWED_KEYS = ['tour_id', 'guests', 'discount_code'];
+const ALLOWED_KEYS = ['tour_id', 'guests', 'discount_code', 'booking_date'];
 const MAX_GUESTS = 20;
 const MAX_CODE_LEN = 30;
 
@@ -88,8 +89,23 @@ module.exports = async function handler(req, res) {
     try { notes = await getPublicNotesForTour(tenant, tour.id); }
     catch (e) { logServer('pricing-preview:notes', e && e.message); }
 
+    /* Bloque de depósito (informativo): solo si llega una fecha válida y no pasada.
+       Con fecha mala se omite sin error; create-payment-intent valida de nuevo. */
+    let deposit;
+    if (body.booking_date != null && isRealYmd(body.booking_date) && isNotPastGalapagos(body.booking_date)) {
+      const elig = depositPolicy.isDepositEligible(tour, body.booking_date, todayInGalapagos());
+      const sp = depositPolicy.splitAmounts(p.amountCents);
+      const dd = depositPolicy.depositDates(body.booking_date);
+      deposit = {
+        eligible: elig.eligible, reason: elig.reason, pct: depositPolicy.DEPOSIT_PCT,
+        depositCents: sp.depositCents, balanceCents: sp.balanceCents,
+        balanceDueDate: dd.balanceDueDate, depositRefundableUntil: dd.depositRefundableUntil,
+        termsVersion: depositPolicy.DEPOSIT_TERMS_VERSION
+      };
+    }
+
     /* Proyección pública: SOLO precios visibles; nada de costos ni config. */
-    return sendJson(res, 200, {
+    const out = {
       tourId: tour.id,
       guests: body.guests,
       grossAmountCents: p.grossAmountCents,
@@ -104,7 +120,9 @@ module.exports = async function handler(req, res) {
       notes: notes.notes,
       notesVersion: notes.notes_version,
       requiresAcknowledgement: notes.requires_acknowledgement
-    });
+    };
+    if (deposit) out.deposit = deposit;
+    return sendJson(res, 200, out);
   } catch (err) {
     if (err && err.message === 'QUOTE_ONLY') return sendError(res, 400, 'QUOTE_REQUIRED', 'This experience requires a quote request');
     if (err && err.message === 'PACKAGE_PRICE_UNAVAILABLE') return sendError(res, 409, 'PACKAGE_PRICE_UNAVAILABLE', 'Package price is not available');

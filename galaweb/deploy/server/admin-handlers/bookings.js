@@ -27,7 +27,10 @@ const { requireAdmin } = require('../lib/admin-auth');
 const ADMIN_FIELDS = 'id,booking_code,request_type,tour_id,tour_name,unit,booking_date,guests,' +
   'customer_name,customer_email,customer_phone,notes,amount_cents,currency,' +
   'payment_status,booking_status,paid_at,created_at,updated_at,' +
-  'sales_channel,payment_method,created_by_name,sold_at,is_test';
+  'sales_channel,payment_method,created_by_name,sold_at,is_test,' +
+  // depósito 30 % (sin el PI del saldo)
+  'payment_plan,deposit_cents,balance_cents,balance_due_date,deposit_refundable_until,balance_refundable_until,' +
+  'deposit_paid_at,balance_paid_at,balance_payment_method,balance_offline_note,needs_review_reason,cancel_reason,auto_cancelled_at,deposit_refunded_at,balance_refunded_at';
 
 /* Campos operativos (staff). Sin datos financieros ni internos.
    La restricción va en el SELECT: esos campos NO salen de la base de datos. */
@@ -35,7 +38,7 @@ const STAFF_FIELDS = 'booking_code,tour_name,booking_date,guests,' +
   'customer_name,customer_phone,customer_email,notes';
 
 const REQUEST_TYPES = ['booking', 'quote'];
-const PAYMENT_STATUSES = ['not_required', 'pending', 'processing', 'paid', 'failed', 'refunded'];
+const PAYMENT_STATUSES = ['not_required', 'pending', 'processing', 'paid', 'deposit_paid', 'failed', 'refunded'];
 const BOOKING_STATUSES = ['new', 'pending_payment', 'confirmed', 'cancelled', 'completed', 'failed'];
 const SORTS = ['newest', 'oldest', 'booking_date_asc', 'booking_date_desc'];
 const SALES_CHANNELS = ['web', 'agency'];
@@ -113,7 +116,7 @@ module.exports = async function handler(req, res) {
       /* Filtros BLOQUEADOS: se fuerzan en el servidor. Cualquier valor enviado
          por el navegador para estos tres campos se ignora por completo. */
       query = query.eq('request_type', 'booking')
-                   .eq('payment_status', 'paid')
+                   .in('payment_status', ['paid', 'deposit_paid'])
                    .eq('booking_status', 'confirmed');
       /* Por defecto, agenda de hoy en adelante (staff puede consultar fechas pasadas). */
       query = query.gte('booking_date', date_from || todayInGalapagos());

@@ -92,7 +92,7 @@ module.exports = async function handler(req, res) {
     if (booking.deleted_at) return sendError(res, 400, 'QR_INVALID', 'Invalid code');
 
     const okState = booking.request_type === 'booking'
-      && booking.payment_status === 'paid'
+      && ['paid', 'deposit_paid'].indexOf(booking.payment_status) !== -1   // depósito 30 %
       && QR_BOOKING_STATUSES.indexOf(booking.booking_status) !== -1;
     if (!okState) return sendError(res, 409, 'BOOKING_NOT_CONFIRMED', 'This booking is not valid for check-in');
 
@@ -107,7 +107,8 @@ module.exports = async function handler(req, res) {
     /* 5) Proyección por rol (server-side). */
     const isStaff = session.role === 'staff';
     const data = pick(booking, isStaff ? COMMON : COMMON.concat(ADMIN_EXTRA));
-    data.paid = true;
+    data.paid = booking.payment_status === 'paid';                  // depósito 30 %: 'deposit_paid' NO es pagado del todo
+    data.balance_due = booking.payment_status === 'deposit_paid';   // saldo pendiente: cobrar antes del tour
     data.confirmed = booking.booking_status === 'confirmed';
     data.completed = booking.booking_status === 'completed';
 

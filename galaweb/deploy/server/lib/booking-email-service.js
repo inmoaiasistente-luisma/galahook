@@ -29,8 +29,12 @@ const { getResend, getMailConfig } = require('./resend');
 const { TEMPLATES } = require('./email-templates');
 const { ensureBookingQrAccess, generateBookingQrPng } = require('./booking-qr');
 const { logServer, normalizeEmail, isEmail, maskEmail } = require('./http');
+const { balanceUrl } = require('./deposit-policy');
 
 const QR_CID = 'booking-qr';
+
+/* Correos que SIEMPRE deben llevar el enlace de pago del saldo. */
+const BALANCE_LINK_TYPES = ['customer_deposit_confirmation', 'balance_reminder_d7', 'balance_reminder_d6'];
 
 function sanitize(msg) { return String(msg == null ? '' : msg).replace(/\s+/g, ' ').slice(0, 300); }
 
@@ -161,8 +165,17 @@ async function sendBookingEmail(o) {
       } catch (e) { logServer('email-service', 'qr: ' + sanitize(e && e.message)); }
     }
 
+    /* 3b) Contexto que cualquier llamador (webhook, barrido, reintento del panel)
+       recibe de forma uniforme: enlace de saldo y motivo de revisión. */
+    const fullCtx = Object.assign({}, ctx, extraCtx);
+    if (BALANCE_LINK_TYPES.indexOf(type) !== -1 && !fullCtx.balanceUrl) {
+      try { fullCtx.balanceUrl = balanceUrl(booking.id); }
+      catch (e) { throw new Error('balance_url_unavailable'); }   // nunca sale sin enlace: queda 'failed' y reintentable
+    }
+    if (type === 'owner_payment_review' && !fullCtx.reason && booking.needs_review_reason) fullCtx.reason = booking.needs_review_reason;
+
     /* 4) Enviar. */
-    const tpl = TEMPLATES[type].build(booking, Object.assign({}, ctx, extraCtx));
+    const tpl = TEMPLATES[type].build(booking, fullCtx);
     const cfg = getMailConfig();
     const payload = {
       from: cfg.from, to: [recipient], subject: tpl.subject, html: tpl.html, text: tpl.text
